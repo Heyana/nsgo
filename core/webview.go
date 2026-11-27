@@ -27,18 +27,18 @@ type WebView struct {
 	InjectedJavaScriptBeforeContentFunc func() string
 	// UserAgent replaces the platform's.
 	UserAgent string
-	// UserAgentSuffix is appended after a space to UserAgent, or to the platform's own user agent when UserAgent is empty, such as Version/26.0 Safari/605.1.15 for sites that want Safari's in WKWebView. Apple platforms add it to their own user agent only as the native view is first made, so changing it afterwards takes effect there only with UserAgent set. HarmonyOS, the web and mini programs ignore it, as they do UserAgent.
+	// UserAgentSuffix is appended after a space to UserAgent, or to the platform's own user agent when UserAgent is empty, such as Version/26.0 Safari/605.1.15 for sites that want Safari's in WKWebView. Apple platforms add it to their own user agent only as the native view is first made, so changing it afterwards takes effect there only with UserAgent set. The web and mini programs ignore it, as they do UserAgent.
 	UserAgentSuffix string
 	// Headers are sent with the initial URL request where the platform
 	// supports custom request headers. HTML sources do not make one.
 	Headers map[string]string
-	// Incognito keeps website data in memory for this view, apart from the app's other web views, on Apple platforms, Windows and Linux. Android has one cookie store and one set of website data per app, so there it only keeps the view from the HTTP cache, DOM storage and saved form data. It is read when the native view is first made; changing it afterwards has no effect.
+	// Incognito keeps website data in memory for this view, apart from the app's other web views, on Apple platforms, Windows, Linux and HarmonyOS. Android has one cookie store and one set of website data per app, so there it only keeps the view from the HTTP cache, DOM storage and saved form data. It is read when the native view is first made; changing it afterwards has no effect.
 	Incognito bool
 	// NoScroll keeps the user from scrolling the page; NoJavaScript keeps
 	// pages from running scripts.
 	NoScroll     bool
 	NoJavaScript bool
-	// Muted silences the entire web view on Windows and Linux, including frames and Web Audio. macOS 12 and iOS 15 or later suspend media playback until cleared. Other hosts keep their usual playback. The setting persists across navigations. MutedFunc updates it in place.
+	// Muted silences the entire web view on Windows, Linux and HarmonyOS, including frames and Web Audio. macOS 12 and iOS 15 or later suspend media playback until cleared. Other hosts keep their usual playback. The setting persists across navigations. MutedFunc updates it in place.
 	Muted     bool
 	MutedFunc func() bool
 	// PinchZoom lets the user magnify the page with a pinch: a trackpad's on macOS, a touchpad's or a touch screen's on Windows, where it also allows Ctrl with the wheel or with + and -, as a touchpad's pinch reaches the page as Ctrl with the wheel, and a touch screen's on Android. Without it the page keeps its size on those platforms. iOS zooms as the page's viewport says, and WebKitGTK on Linux and the browser on the web keep their own handling, having no switch for it.

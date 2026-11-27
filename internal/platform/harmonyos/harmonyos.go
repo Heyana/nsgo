@@ -396,11 +396,58 @@ func (s *surface) event(args []js.Value) {
 	case "videoerror":
 		s.dispatch(driver.Event{Kind: driver.EventError, ID: id, Text: str(4)})
 	case "webloadstart":
-		s.dispatch(driver.Event{Kind: driver.EventLoadStart, ID: id, Navigation: &driver.WebNavigation{URL: str(4), Loading: true}})
+		nav := decodeWebNavigation(str(4), str(5), int(num(2)), true)
+		s.dispatch(driver.Event{Kind: driver.EventLoadStart, ID: id, Navigation: nav})
+		navCopy := *nav
+		s.dispatch(driver.Event{Kind: driver.EventNavigationStateChange, ID: id, Navigation: &navCopy})
 	case "webload":
-		s.dispatch(driver.Event{Kind: driver.EventLoad, ID: id, Navigation: &driver.WebNavigation{URL: str(4), Title: str(5)}})
+		nav := decodeWebNavigation(str(4), str(5), int(num(2)), false)
+		s.dispatch(driver.Event{Kind: driver.EventLoad, ID: id, Navigation: nav})
+		navCopy := *nav
+		s.dispatch(driver.Event{Kind: driver.EventNavigationStateChange, ID: id, Navigation: &navCopy})
+	case "webnav":
+		flags := int(num(2))
+		nav := decodeWebNavigation(str(4), str(5), flags, flags&4 != 0)
+		s.dispatch(driver.Event{Kind: driver.EventNavigationStateChange, ID: id, Navigation: nav})
 	case "weberror":
-		s.dispatch(driver.Event{Kind: driver.EventError, ID: id, Navigation: &driver.WebNavigation{URL: str(4)}})
+		ev := driver.Event{
+			Kind:       driver.EventError,
+			ID:         id,
+			Text:       str(5),
+			Navigation: &driver.WebNavigation{URL: str(4)},
+		}
+		if code, hasDomain := int(num(2)), int(num(3)) != 0; hasDomain || code != 0 {
+			domain := ""
+			if hasDomain {
+				domain = "ohos.web.webview"
+			}
+			ev.Data = driver.WebFailure{Domain: domain, Code: code}
+		}
+		s.dispatch(ev)
+	case "webmessage":
+		pageURL := str(5)
+		s.dispatch(driver.Event{
+			Kind:      driver.EventMessage,
+			ID:        id,
+			Text:      str(4),
+			URL:       pageURL,
+			Origin:    driver.WebOrigin(pageURL),
+			MainFrame: true,
+		})
+	case "webdownload":
+		if dl, ok := decodeWebDownload(str(4)); ok {
+			s.dispatch(driver.Event{Kind: driver.EventDownload, ID: id, Data: dl})
+		}
+	case "webopenwindow":
+		req := driver.WebWindowRequest{URL: str(4), UserInitiated: int(num(2)) != 0}
+		var ev driver.Event
+		if v := s.m.views[id]; v != nil && v.web != nil {
+			ev = v.web.OpenWindowEvent(req)
+		} else {
+			ev = driver.Event{Kind: driver.EventWebOpenWindow, Data: req}
+		}
+		ev.ID = id
+		s.dispatch(ev)
 	case "selection":
 		s.m.selectionChanged(id, driver.TextRange{Start: int(num(2)), End: int(num(3))})
 	case "alert":

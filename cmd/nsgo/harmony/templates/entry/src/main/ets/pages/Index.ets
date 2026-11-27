@@ -16,6 +16,25 @@ import { userAuth } from '@kit.UserAuthenticationKit';
 import MeasureText, { MeasureOptions } from '@ohos.measure';
 import { SandboxFiles } from './SandboxFiles';
 import { SpanBackgroundPaint, SpanRectangle, backgroundBand, spanLineRange, joinSpanBoxes } from './SpanBackground';
+import {
+  WebHeaderPair,
+  WebConfigOp,
+  WebLoadOp,
+  parseWebConfigOp,
+  parseWebLoadOp,
+  resolveWebUserAgent,
+  webHooksKey,
+  webReloadKey,
+  webDocumentStartScripts,
+  webDocumentEndScripts,
+  webSourceNeedsFileAccess,
+  webNavigable,
+  refusedNavigationMessage,
+  webMediaWant,
+  sanitizeDownloadName,
+  normalizeReportedWebURL,
+  webShouldReportError
+} from './WebViewConfig';
 
 // The host the harmonyos target builds: the app's engine runs in WebAssembly
 // in a 1x1 Web view, and this page draws what it mounts with ArkUI views.
@@ -377,15 +396,29 @@ class VNode {
   pv: number = 0;
   // A canvas's drawing, as operations to replay.
   drawing: string = '';
-  // A web view's page, whether its scripts run, the scripts injected before and after its content, and the command it waits for.
+  // A web view's configuration, queued commands, and live controller state.
   webSrc: string = '';
+  webHTML: string = '';
+  webBaseURL: string = '';
   noJS: boolean = false;
   webBefore: string = '';
   webAfter: string = '';
-  webCmd: number = 0;
-  webCmdValue: string = '';
-  // webController is the web view's, made with the node.
-  webController: webview.WebviewController | undefined = undefined;
+  webUA: string = '';
+  webUASuffix: string = '';
+  webHeaders: WebHeaderPair[] = [];
+  webIncognito: boolean = false;
+  webNoScroll: boolean = false;
+  webMuted: boolean = false;
+  webPinchZoom: boolean = false;
+  webDownloadDir: string = '';
+  webRestricted: boolean = false;
+  webHosts: string[] = [];
+  webSchemes: string[] = [];
+  webAppSchemes: string[] = [];
+  webMedia: number = 0;
+  webFileAccess: boolean = false;
+  webCmds: WebCmd[] = [];
+  webState: WebViewState | undefined = undefined;
   // A video's source, how it plays and where it is, and its controller.
   videoSrc: string = '';
   videoPaused: boolean = false;
@@ -817,13 +850,29 @@ class Tree {
           v.cw = o[2] as number;
           v.ch = o[3] as number;
         } else if (code === 'web') {
-          v.webSrc = o[2] as string;
-          v.noJS = o[3] as boolean;
-          v.webBefore = o[4] as string;
-          v.webAfter = o[5] as string;
+          const cfg: WebConfigOp = parseWebConfigOp(o[2] as string);
+          v.webSrc = cfg.src ?? '';
+          v.webHTML = cfg.html ?? '';
+          v.webBaseURL = cfg.base ?? '';
+          v.noJS = cfg.noJS ?? false;
+          v.webBefore = cfg.before ?? '';
+          v.webAfter = cfg.after ?? '';
+          v.webUA = cfg.ua ?? '';
+          v.webUASuffix = cfg.uas ?? '';
+          v.webHeaders = cfg.headers ?? [];
+          v.webIncognito = cfg.incognito ?? false;
+          v.webNoScroll = cfg.noScroll ?? false;
+          v.webMuted = cfg.muted ?? false;
+          v.webPinchZoom = cfg.pinchZoom ?? false;
+          v.webDownloadDir = cfg.downloadDir ?? '';
+          v.webRestricted = cfg.restricted ?? false;
+          v.webHosts = cfg.hosts ?? [];
+          v.webSchemes = cfg.schemes ?? [];
+          v.webAppSchemes = cfg.appSchemes ?? [];
+          v.webMedia = cfg.media ?? 0;
+          v.webFileAccess = webSourceNeedsFileAccess(v.webSrc, v.webHTML, v.webBaseURL);
         } else if (code === 'wcmd') {
-          v.webCmd = o[2] as number;
-          v.webCmdValue = o[3] as string;
+          v.webCmds.push({ cmd: o[2] as number, value: o[3] as string });
         } else if (code === 'video') {
           v.videoSrc = o[2] as string;
           v.videoPaused = o[3] as boolean;
@@ -1709,6 +1758,53 @@ struct Index {
       return;
     }
     this.send('perm', id, status(), 0, '');
+  }
+
+  // hasWebPermissions checks whether the app holds all requested media capture
+  // permissions (microphone / camera).
+  hasWebPermissions(perms: Permissions[]): boolean {
+    if (this.hostCtx === undefined || perms.length === 0) {
+      return false;
+    }
+    const at = abilityAccessCtrl.createAtManager();
+    const token = this.tokenID();
+    for (let i = 0; i < perms.length; i++) {
+      try {
+        if (at.checkAccessTokenSync(token, perms[i]) !== abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+          return false;
+        }
+      } catch (_e) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // requestWebPermissions asks the user for missing media capture permissions
+  // on behalf of a web view's getUserMedia request.
+  requestWebPermissions(perms: Permissions[], done: (granted: boolean) => void): void {
+    const ctx = this.hostCtx;
+    if (ctx === undefined || perms.length === 0) {
+      done(false);
+      return;
+    }
+    const at = abilityAccessCtrl.createAtManager();
+    at.requestPermissionsFromUser(ctx, perms).then((r: PermissionRequestResult) => {
+      if (r.authResults.length < perms.length) {
+        done(false);
+        return;
+      }
+      for (let i = 0; i < r.authResults.length; i++) {
+        if (r.authResults[i] !== 0) {
+          done(false);
+          return;
+        }
+      }
+      done(this.hasWebPermissions(perms));
+    }).catch((e: Error) => {
+      console.error('NSGO harmony: web permission ask: ' + e);
+      done(false);
+    });
   }
 
   // title names the app in the task switcher, which has no window title.
@@ -3189,49 +3285,635 @@ struct VideoView {
       })
   }
 }
-// webHooks is what a web view's ArkWeb hooks are set from, which ArkWeb takes only as the view is made: whether its scripts run and the scripts injected before and after its content.
-function webHooks(v: VNode): string {
-  return JSON.stringify([v.noJS, v.webBefore, v.webAfter]);
+interface WebCmd {
+  cmd: number;
+  value: string;
 }
 
-// WebView draws a web view's page: the engine gives it a URL, the scripts to inject and its commands, and the page reports loading back.
-@Component
-struct WebView {
-  v: VNode = new VNode();
-  c: webview.WebviewController | undefined = undefined;
-  host: Index | undefined = undefined;
+interface WebPendingMedia {
+  request: PermissionRequest;
+  want: number;
+}
 
-  // scripts are the ArkWeb script items for an injected script. ArkWeb runs them in every frame whose URL matches, so the script runs only in the main frame, inside a block, as on Windows.
-  scripts(script: string): ScriptItem[] {
-    if (this.v.noJS || script === '') {
-      return [];
-    }
-    return [{ script: 'if (window === window.top) {\n' + script + '\n}', scriptRules: ['*'] }];
+interface WebDownloadMeta {
+  id: string;
+  url: string;
+  filename: string;
+  path: string;
+}
+
+interface WebPendingLoad {
+  url: string;
+  isHTML: boolean;
+}
+
+interface WebDownloadPayload {
+  state: number;
+  id: string;
+  url: string;
+  filename: string;
+  path: string;
+  bytes: number;
+  message: string;
+}
+
+let webTokenSerial: number = 0;
+let webDownloadSerial: number = 0;
+
+// WebMessageProxy receives window.nsgo.postMessage calls from the page's top
+// frame, verified against the WebViewState's per-instance token.
+class WebMessageProxy {
+  private state: WebViewState;
+
+  constructor(state: WebViewState) {
+    this.state = state;
   }
 
-  // currentHost is the host while this Web is still the view's, since a replaced or removed Web can still have a navigation callback pending.
+  post(token: string, data: string): void {
+    this.state.handleMessage(token, data);
+  }
+}
+
+// WebViewState holds the live ArkWeb controller, applied settings, navigation
+// state, active downloads, and pending media permission requests for one WebView.
+class WebViewState {
+  id: number;
+  controller: webview.WebviewController = new webview.WebviewController();
+  token: string;
+  attached: boolean = false;
+  closed: boolean = false;
+  defaultUA: string = '';
+  appliedUA: string = '';
+  appliedMuted: boolean = false;
+  appliedNoScroll: boolean = false;
+  loading: boolean = false;
+  currentURL: string = '';
+  currentTitle: string = '';
+  loadedHTMLNoBase: boolean = false;
+  pendingAppLoad: WebPendingLoad | undefined = undefined;
+  allowAppHistory: boolean = false;
+  pendingMedia: WebPendingMedia[] = [];
+  activeDownloads: Map<string, webview.WebDownloadItem> = new Map();
+  downloadMeta: Map<string, WebDownloadMeta> = new Map();
+  proxy: WebMessageProxy;
+  delegate: webview.WebDownloadDelegate = new webview.WebDownloadDelegate();
+
+  constructor(id: number) {
+    this.id = id;
+    webTokenSerial++;
+    this.token = 'nsgo-' + webTokenSerial + '-' + Date.now().toString(36);
+    this.proxy = new WebMessageProxy(this);
+  }
+
   currentHost(): Index | undefined {
-    const host = this.host;
-    if (host !== undefined && host.tree.at(this.v.id)?.webController === this.c) {
+    if (this.closed) {
+      return undefined;
+    }
+    const host = nsgoHost;
+    if (host !== undefined && host.tree.at(this.id)?.webState === this) {
       return host;
     }
     return undefined;
   }
 
+  navFlags(loading: boolean): number {
+    let flags = 0;
+    try {
+      if (this.controller.accessBackward()) {
+        flags |= 1;
+      }
+      if (this.controller.accessForward()) {
+        flags |= 2;
+      }
+    } catch (_e) {
+    }
+    if (loading) {
+      flags |= 4;
+    }
+    return flags;
+  }
+
+  effectiveURL(): string {
+    if (this.currentURL !== '') {
+      return this.currentURL;
+    }
+    try {
+      const raw = this.controller.getUrl();
+      return normalizeReportedWebURL(raw, this.loadedHTMLNoBase);
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  handleMessage(token: string, data: string): void {
+    if (this.closed || token !== this.token) {
+      return;
+    }
+    const host = this.currentHost();
+    if (host === undefined) {
+      return;
+    }
+    host.send('webmessage', this.id, 0, 0, data, this.effectiveURL());
+  }
+
+  retireMedia(): void {
+    const list = this.pendingMedia;
+    this.pendingMedia = [];
+    for (let i = 0; i < list.length; i++) {
+      try {
+        list[i].request.deny();
+      } catch (_e) {
+      }
+    }
+  }
+
+  retireMediaDisallowed(allowedMedia: number): void {
+    const keep: WebPendingMedia[] = [];
+    for (let i = 0; i < this.pendingMedia.length; i++) {
+      const item = this.pendingMedia[i];
+      if ((allowedMedia & item.want) !== item.want) {
+        try {
+          item.request.deny();
+        } catch (_e) {
+        }
+      } else {
+        keep.push(item);
+      }
+    }
+    this.pendingMedia = keep;
+  }
+
+  handlePermission(v: VNode, host: Index, req: PermissionRequest): void {
+    if (this.closed) {
+      req.deny();
+      return;
+    }
+    const info = webMediaWant(req.getAccessibleResource());
+    if (info.want === 0 || (v.webMedia & info.want) !== info.want) {
+      req.deny();
+      return;
+    }
+    const perms: Permissions[] = info.perms as Permissions[];
+    if (host.hasWebPermissions(perms)) {
+      req.grant(info.resources);
+      return;
+    }
+    const pending: WebPendingMedia = { request: req, want: info.want };
+    this.pendingMedia.push(pending);
+    host.requestWebPermissions(perms, (granted: boolean) => {
+      const idx = this.pendingMedia.indexOf(pending);
+      if (idx < 0) {
+        return;
+      }
+      this.pendingMedia.splice(idx, 1);
+      const current = this.currentHost();
+      const node = current?.tree.at(this.id);
+      if (granted && !this.closed && node !== undefined && (node.webMedia & pending.want) === pending.want) {
+        try {
+          req.grant(info.resources);
+        } catch (_e) {
+        }
+      } else {
+        try {
+          req.deny();
+        } catch (_e) {
+        }
+      }
+    });
+  }
+
+  reportDownload(host: Index, payload: WebDownloadPayload): void {
+    if (this.closed) {
+      return;
+    }
+    host.send('webdownload', this.id, 0, 0, JSON.stringify(payload));
+  }
+
+  installDownloadDelegate(): void {
+    this.delegate.onBeforeDownload((item: webview.WebDownloadItem) => {
+      const host = this.currentHost();
+      const v = host?.tree.at(this.id);
+      if (host === undefined || v === undefined || v.webDownloadDir === '') {
+        try {
+          item.cancel();
+        } catch (_e) {
+        }
+        return;
+      }
+      webDownloadSerial++;
+      const dlID = Date.now().toString(36) + '-' + webDownloadSerial.toString(36);
+      const url = item.getUrl();
+      const filename = sanitizeDownloadName(item.getSuggestedFileName());
+      const dir = v.webDownloadDir + '/' + dlID;
+      const dest = dir + '/' + filename;
+      const guid = item.getGuid();
+      try {
+        fs.mkdirSync(dir, true);
+      } catch (e) {
+        this.reportDownload(host, {
+          state: 2,
+          id: dlID,
+          url: url,
+          filename: filename,
+          path: dest,
+          bytes: 0,
+          message: 'Cannot create download directory: ' + e
+        });
+        try {
+          item.cancel();
+        } catch (_e) {
+        }
+        return;
+      }
+      this.activeDownloads.set(guid, item);
+      this.downloadMeta.set(guid, { id: dlID, url: url, filename: filename, path: dest });
+      this.reportDownload(host, {
+        state: 0,
+        id: dlID,
+        url: url,
+        filename: filename,
+        path: dest,
+        bytes: 0,
+        message: ''
+      });
+      try {
+        item.start(dest);
+      } catch (e) {
+        this.activeDownloads.delete(guid);
+        this.downloadMeta.delete(guid);
+        this.reportDownload(host, {
+          state: 2,
+          id: dlID,
+          url: url,
+          filename: filename,
+          path: dest,
+          bytes: 0,
+          message: '' + e
+        });
+      }
+    });
+    this.delegate.onDownloadFinish((item: webview.WebDownloadItem) => {
+      const guid = item.getGuid();
+      this.activeDownloads.delete(guid);
+      const meta = this.downloadMeta.get(guid);
+      this.downloadMeta.delete(guid);
+      const host = this.currentHost();
+      if (host === undefined || meta === undefined) {
+        return;
+      }
+      this.reportDownload(host, {
+        state: 1,
+        id: meta.id,
+        url: meta.url,
+        filename: meta.filename,
+        path: item.getFullPath() !== '' ? item.getFullPath() : meta.path,
+        bytes: item.getReceivedBytes(),
+        message: ''
+      });
+    });
+    this.delegate.onDownloadFailed((item: webview.WebDownloadItem) => {
+      const guid = item.getGuid();
+      this.activeDownloads.delete(guid);
+      const meta = this.downloadMeta.get(guid);
+      this.downloadMeta.delete(guid);
+      const host = this.currentHost();
+      if (host === undefined || meta === undefined) {
+        return;
+      }
+      this.reportDownload(host, {
+        state: 2,
+        id: meta.id,
+        url: meta.url,
+        filename: meta.filename,
+        path: meta.path,
+        bytes: item.getReceivedBytes(),
+        message: 'download failed (code ' + item.getLastErrorCode() + ')'
+      });
+    });
+    try {
+      this.controller.setDownloadDelegate(this.delegate);
+    } catch (e) {
+      console.error('NSGO harmony: setDownloadDelegate: ' + e);
+    }
+  }
+
+  applyLiveSettings(v: VNode, force: boolean = false): void {
+    this.retireMediaDisallowed(v.webMedia);
+    if (!this.attached || this.closed) {
+      return;
+    }
+    const wantUA = resolveWebUserAgent(this.defaultUA, v.webUA, v.webUASuffix);
+    if (force || wantUA !== this.appliedUA) {
+      this.appliedUA = wantUA;
+      try {
+        this.controller.setCustomUserAgent(wantUA);
+      } catch (e) {
+        console.error('NSGO harmony: setCustomUserAgent: ' + e);
+      }
+    }
+    if (force || v.webMuted !== this.appliedMuted) {
+      this.appliedMuted = v.webMuted;
+      try {
+        this.controller.setAudioMuted(v.webMuted);
+      } catch (e) {
+        console.error('NSGO harmony: setAudioMuted: ' + e);
+      }
+    }
+    if (force || v.webNoScroll !== this.appliedNoScroll) {
+      this.appliedNoScroll = v.webNoScroll;
+      try {
+        this.controller.setScrollable(!v.webNoScroll);
+      } catch (e) {
+        console.error('NSGO harmony: setScrollable: ' + e);
+      }
+    }
+  }
+
+  loadSource(v: VNode, src: string, html: string, baseURL: string): void {
+    if (!this.attached || this.closed) {
+      return;
+    }
+    this.retireMedia();
+    this.loadedHTMLNoBase = html !== '' && baseURL === '';
+    try {
+      if (html !== '') {
+        this.pendingAppLoad = { url: baseURL !== '' ? baseURL : 'data:', isHTML: true };
+        if (baseURL !== '') {
+          this.controller.loadData(html, 'text/html', 'UTF-8', baseURL, baseURL);
+        } else {
+          this.controller.loadData(encodeURIComponent(html), 'text/html', 'UTF-8');
+        }
+      } else if (src !== '') {
+        this.pendingAppLoad = { url: src, isHTML: false };
+        if (v.webHeaders.length > 0) {
+          const headers: Array<webview.WebHeader> = [];
+          for (let i = 0; i < v.webHeaders.length; i++) {
+            headers.push({ headerKey: v.webHeaders[i].k, headerValue: v.webHeaders[i].v });
+          }
+          this.controller.loadUrl(src, headers);
+        } else {
+          this.controller.loadUrl(src);
+        }
+      }
+    } catch (e) {
+      console.error('NSGO harmony: web load: ' + e);
+    }
+  }
+
+  drainCommands(v: VNode, updateLeaf: () => void): void {
+    if (!this.attached || this.closed || v.webCmds.length === 0) {
+      return;
+    }
+    const cmds = v.webCmds;
+    v.webCmds = [];
+    for (let i = 0; i < cmds.length; i++) {
+      const item = cmds[i];
+      try {
+        if (item.cmd === 1) {
+          this.allowAppHistory = true;
+          this.controller.refresh();
+        } else if (item.cmd === 2) {
+          if (this.controller.accessBackward()) {
+            this.allowAppHistory = true;
+            this.controller.backward();
+          }
+        } else if (item.cmd === 3) {
+          if (this.controller.accessForward()) {
+            this.allowAppHistory = true;
+            this.controller.forward();
+          }
+        } else if (item.cmd === 4) {
+          this.controller.stop();
+        } else if (item.cmd === 5 || item.cmd === 6) {
+          this.controller.runJavaScript(item.value);
+        } else if (item.cmd === 8) {
+          const load: WebLoadOp = parseWebLoadOp(item.value);
+          const loadSrc = load.src ?? '';
+          const loadHTML = load.html ?? '';
+          const loadBase = load.base ?? '';
+          const needsFile = webSourceNeedsFileAccess(loadSrc, loadHTML, loadBase);
+          if (needsFile !== v.webFileAccess) {
+            v.webFileAccess = needsFile;
+            updateLeaf();
+          }
+          this.loadSource(v, loadSrc, loadHTML, loadBase);
+        }
+      } catch (e) {
+        console.error('NSGO harmony: web command ' + item.cmd + ': ' + e);
+      }
+    }
+  }
+
+  close(): void {
+    this.closed = true;
+    this.retireMedia();
+    this.activeDownloads.forEach((item: webview.WebDownloadItem) => {
+      try {
+        item.cancel();
+      } catch (_e) {
+      }
+    });
+    this.activeDownloads.clear();
+    this.downloadMeta.clear();
+  }
+}
+
+function webPropsKey(v: VNode): string {
+  return JSON.stringify([v.webNoScroll, v.webPinchZoom, v.webFileAccess]);
+}
+
+function noWebController(): webview.WebviewController | null {
+  return null;
+}
+
+// WebView draws a web view's page: the engine gives it its source, headers,
+// user agent, injected scripts, media/navigation/download policy, and commands.
+@Component
+struct WebView {
+  v: VNode = new VNode();
+  state: WebViewState | undefined = undefined;
+  host: Index | undefined = undefined;
+  @Prop noScroll: boolean = false;
+  @Prop pinchZoom: boolean = false;
+  @Prop fileAccess: boolean = false;
+
+  startScripts(state: WebViewState): ScriptItem[] {
+    const list = webDocumentStartScripts(this.v.noJS, state.token, this.v.webBefore);
+    const out: ScriptItem[] = [];
+    for (let i = 0; i < list.length; i++) {
+      out.push({ script: list[i], scriptRules: ['*'] });
+    }
+    return out;
+  }
+
+  endScripts(): ScriptItem[] {
+    const list = webDocumentEndScripts(this.v.noJS, this.v.webAfter);
+    const out: ScriptItem[] = [];
+    for (let i = 0; i < list.length; i++) {
+      out.push({ script: list[i], scriptRules: ['*'] });
+    }
+    return out;
+  }
+
   build() {
-    if (this.c !== undefined) {
-      Web({ src: this.v.webSrc, controller: this.c })
+    if (this.state !== undefined) {
+      Web({ src: '', controller: this.state.controller, incognitoMode: this.v.webIncognito })
+        .width('100%')
+        .height('100%')
         .javaScriptAccess(!this.v.noJS)
-        .javaScriptOnDocumentStart(this.scripts(this.v.webBefore))
-        .javaScriptOnDocumentEnd(this.scripts(this.v.webAfter))
+        .domStorageAccess(true)
+        .fileAccess(this.fileAccess)
+        .zoomAccess(this.pinchZoom)
+        .pinchSmooth(this.pinchZoom)
+        .verticalScrollBarAccess(!this.noScroll)
+        .horizontalScrollBarAccess(!this.noScroll)
+        .multiWindowAccess(true)
+        .allowWindowOpenMethod(true)
+        .javaScriptProxy({
+          object: this.state.proxy,
+          name: '__nsgoWebBridge',
+          methodList: ['post'],
+          controller: this.state.controller
+        })
+        .javaScriptOnDocumentStart(this.startScripts(this.state))
+        .javaScriptOnDocumentEnd(this.endScripts())
+        .onControllerAttached(() => {
+          const st = this.state;
+          const host = st?.currentHost();
+          if (st === undefined || host === undefined) {
+            return;
+          }
+          try {
+            st.defaultUA = st.controller.getUserAgent();
+          } catch (_e) {
+            st.defaultUA = '';
+          }
+          st.attached = true;
+          st.installDownloadDelegate();
+          st.applyLiveSettings(this.v, true);
+          st.loadSource(this.v, this.v.webSrc, this.v.webHTML, this.v.webBaseURL);
+          st.drainCommands(this.v, () => {});
+        })
+        .onLoadIntercept((e: OnLoadInterceptEvent): boolean => {
+          const st = this.state;
+          const host = st?.currentHost();
+          if (st === undefined || host === undefined) {
+            return false;
+          }
+          const req = e.data;
+          if (!req.isMainFrame()) {
+            return false;
+          }
+          const url = req.getRequestUrl();
+          let isAppSource = false;
+          const pending = st.pendingAppLoad;
+          if (!req.isRedirect() && pending !== undefined) {
+            const matched = pending.isHTML
+              ? (url === pending.url || url.toLowerCase().startsWith('data:'))
+              : url === pending.url;
+            if (matched) {
+              st.pendingAppLoad = undefined;
+              isAppSource = true;
+            }
+          }
+          if (!isAppSource && !req.isRedirect() && st.allowAppHistory) {
+            st.allowAppHistory = false;
+            isAppSource = true;
+          }
+          if (!isAppSource) {
+            st.pendingAppLoad = undefined;
+          }
+          if (!webNavigable(this.v.webRestricted, this.v.webHosts, this.v.webSchemes, this.v.webAppSchemes, url, isAppSource)) {
+            host.send('weberror', this.v.id, 0, 0, url, refusedNavigationMessage(url));
+            return true;
+          }
+          if (!isAppSource || !(this.v.webHTML !== '' && this.v.webBaseURL === '')) {
+            if (!url.toLowerCase().startsWith('data:')) {
+              st.loadedHTMLNoBase = false;
+            }
+          }
+          return false;
+        })
         .onPageBegin((e: OnPageBeginEvent) => {
-          this.currentHost()?.send('webloadstart', this.v.id, 0, 0, e.url);
+          const st = this.state;
+          const host = st?.currentHost();
+          if (st === undefined || host === undefined) {
+            return;
+          }
+          st.retireMedia();
+          st.loading = true;
+          const url = normalizeReportedWebURL(e.url, st.loadedHTMLNoBase);
+          st.currentURL = url;
+          host.send('webloadstart', this.v.id, st.navFlags(false), 0, url, st.currentTitle);
         })
         .onPageEnd((e: OnPageEndEvent) => {
-          this.currentHost()?.send('webload', this.v.id, 0, 0, e.url, this.c?.getTitle() ?? '');
+          const st = this.state;
+          const host = st?.currentHost();
+          if (st === undefined || host === undefined) {
+            return;
+          }
+          st.loading = false;
+          const url = normalizeReportedWebURL(e.url, st.loadedHTMLNoBase);
+          st.currentURL = url;
+          let title = st.currentTitle;
+          try {
+            title = st.controller.getTitle();
+          } catch (_e) {
+          }
+          st.currentTitle = title;
+          host.send('webload', this.v.id, st.navFlags(false), 0, url, title);
+        })
+        .onTitleReceive((e: OnTitleReceiveEvent) => {
+          const st = this.state;
+          const host = st?.currentHost();
+          if (st === undefined || host === undefined) {
+            return;
+          }
+          st.currentTitle = e.title;
+          host.send('webnav', this.v.id, st.navFlags(st.loading), 0, st.effectiveURL(), e.title);
+        })
+        .onNavigationEntryCommitted((e: LoadCommittedDetails) => {
+          const st = this.state;
+          const host = st?.currentHost();
+          if (st === undefined || host === undefined || !e.isMainFrame) {
+            return;
+          }
+          const url = normalizeReportedWebURL(e.url, st.loadedHTMLNoBase);
+          st.currentURL = url;
+          if (e.isSameDocument) {
+            host.send('webnav', this.v.id, st.navFlags(st.loading), 0, url, st.currentTitle);
+          }
         })
         .onErrorReceive((e: OnErrorReceiveEvent) => {
-          this.currentHost()?.send('weberror', this.v.id, 0, 0, e.request.getRequestUrl());
+          const st = this.state;
+          const host = st?.currentHost();
+          if (st === undefined || host === undefined) {
+            return;
+          }
+          const req = e.request;
+          const err = e.error;
+          if (!webShouldReportError(req.isMainFrame(), err.getErrorCode())) {
+            return;
+          }
+          host.send('weberror', this.v.id, err.getErrorCode(), 1, req.getRequestUrl(), err.getErrorInfo());
+        })
+        .onWindowNew((e: OnWindowNewEvent) => {
+          e.handler.setWebController(noWebController() as webview.WebviewController);
+          const st = this.state;
+          const host = st?.currentHost();
+          if (st === undefined || host === undefined) {
+            return;
+          }
+          host.send('webopenwindow', this.v.id, e.isUserTrigger ? 1 : 0, 0, e.targetUrl);
+        })
+        .onPermissionRequest((e: OnPermissionRequestEvent) => {
+          const st = this.state;
+          const host = st?.currentHost();
+          if (st === undefined || host === undefined) {
+            e.request.deny();
+            return;
+          }
+          st.handlePermission(this.v, host, e.request);
         })
     }
   }
@@ -3393,7 +4075,14 @@ struct SpanTextView {
 }
 
 @Builder function webBuilder(v: VNode) {
-  WebView({ v: v, c: v.webController, host: nsgoHost })
+  WebView({
+    v: v,
+    state: v.webState,
+    host: nsgoHost,
+    noScroll: v.webNoScroll,
+    pinchZoom: v.webPinchZoom,
+    fileAccess: v.webFileAccess
+  })
 }
 
 // HeaderView draws a screen's system header: the bar with its title, and a
@@ -3490,11 +4179,12 @@ class Renderer {
   contents: Map<number, FrameNode> = new Map();
   scrollers: Map<number, Scroller> = new Map();
   leaves: Map<number, BuilderNode<[VNode]>> = new Map();
-  // webControllers are the web views' controllers, which commands use.
-  webControllers: Map<number, webview.WebviewController> = new Map();
+  // webStates are the web views' live states (controllers, applied settings, downloads, media permissions).
+  webStates: Map<number, WebViewState> = new Map();
   webShown: Map<number, string> = new Map();
-  // webHooksShown are the hooks each web view's ArkWeb view was made with (webHooks).
+  // webHooksShown are the hooks each web view's ArkWeb view was made with (webHooksKey).
   webHooksShown: Map<number, string> = new Map();
+  webPropsShown: Map<number, string> = new Map();
   videoShown: Map<number, string> = new Map();
   // headers are the system headers the screens draw, and their builders.
   headers: Map<number, FrameNode> = new Map();
@@ -3622,9 +4312,11 @@ class Renderer {
     this.contents.delete(id);
     this.scrollers.delete(id);
     this.leaves.delete(id);
-    this.webControllers.delete(id);
+    this.webStates.get(id)?.close();
+    this.webStates.delete(id);
     this.webShown.delete(id);
     this.webHooksShown.delete(id);
+    this.webPropsShown.delete(id);
     this.videoShown.delete(id);
     this.headers.delete(id);
     this.headerBuilders.delete(id);
@@ -3680,11 +4372,12 @@ class Renderer {
       return this.leaf(v, KIND_CANVAS);
     }
     if (v.kind === KIND_WEB) {
-      const c = new webview.WebviewController();
-      v.webController = c;
-      this.webControllers.set(v.id, c);
-      this.webHooksShown.set(v.id, webHooks(v));
-      this.webShown.set(v.id, v.webSrc);
+      const st = new WebViewState(v.id);
+      v.webState = st;
+      this.webStates.set(v.id, st);
+      this.webHooksShown.set(v.id, webHooksKey(v.noJS, v.webBefore, v.webAfter));
+      this.webShown.set(v.id, webReloadKey(v.webSrc, v.webHTML, v.webBaseURL, v.webHeaders));
+      this.webPropsShown.set(v.id, webPropsKey(v));
       return this.leaf(v, KIND_WEB);
     }
     if (v.kind === KIND_VIDEO) {
@@ -3824,40 +4517,44 @@ class Renderer {
         b.update(v);
       }
     } else if (v.kind === KIND_WEB) {
-      if (this.webHooksShown.get(v.id) !== webHooks(v)) {
+      const wantHooks = webHooksKey(v.noJS, v.webBefore, v.webAfter);
+      const wantReload = webReloadKey(v.webSrc, v.webHTML, v.webBaseURL, v.webHeaders);
+      const wantProps = webPropsKey(v);
+      if (this.webHooksShown.get(v.id) !== wantHooks) {
         // ArkWeb takes its script and JavaScript hooks only as a Web is made, and a new source can start loading before changed modifiers apply, so a new Web loads the source with them, starting a new history.
+        this.webStates.get(v.id)?.close();
         const old = this.leaves.get(v.id);
         const drawn = old?.getFrameNode();
         if (drawn !== undefined && drawn !== null) {
           node.removeChild(drawn);
         }
         old?.dispose();
-        const c = new webview.WebviewController();
-        v.webController = c;
-        this.webControllers.set(v.id, c);
-        this.webHooksShown.set(v.id, webHooks(v));
-        this.webShown.set(v.id, v.webSrc);
+        const st = new WebViewState(v.id);
+        v.webState = st;
+        this.webStates.set(v.id, st);
+        this.webHooksShown.set(v.id, wantHooks);
+        this.webShown.set(v.id, wantReload);
+        this.webPropsShown.set(v.id, wantProps);
         this.leaf(v, KIND_WEB, node);
-      }
-      const b = this.leaves.get(v.id);
-      const c = this.webControllers.get(v.id);
-      if (b !== undefined && c !== undefined) {
-        if (this.webShown.get(v.id) !== v.webSrc) {
-          this.webShown.set(v.id, v.webSrc);
-          b.update(v);
-        }
-        const cmd = v.webCmd;
-        v.webCmd = 0;
-        if (cmd === 1) {
-          c.refresh();
-        } else if (cmd === 2) {
-          c.backward();
-        } else if (cmd === 3) {
-          c.forward();
-        } else if (cmd === 4) {
-          c.stop();
-        } else if (cmd === 6) {
-          c.runJavaScript(v.webCmdValue);
+      } else {
+        const b = this.leaves.get(v.id);
+        const st = this.webStates.get(v.id);
+        if (b !== undefined && st !== undefined) {
+          if (this.webPropsShown.get(v.id) !== wantProps) {
+            this.webPropsShown.set(v.id, wantProps);
+            b.update(v);
+          }
+          st.applyLiveSettings(v);
+          if (this.webShown.get(v.id) !== wantReload) {
+            this.webShown.set(v.id, wantReload);
+            if (st.attached) {
+              st.loadSource(v, v.webSrc, v.webHTML, v.webBaseURL);
+            }
+          }
+          st.drainCommands(v, () => {
+            this.webPropsShown.set(v.id, webPropsKey(v));
+            b.update(v);
+          });
         }
       }
     } else if (v.kind === KIND_VIDEO) {

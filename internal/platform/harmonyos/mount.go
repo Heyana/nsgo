@@ -93,8 +93,10 @@ type view struct {
 	// screen is a screen's system header config, when it has one, and the last EventScreenInsets sent for it.
 	screen         *driver.ScreenConfig
 	reportedInsets *driver.Edges
-	content        driver.Size
-	offset         driver.Point
+	// web is a web view's current config, kept for host-side navigation policy checks such as OpenWindowEvent.
+	web     *driver.WebConfig
+	content driver.Size
+	offset  driver.Point
 	// applied counts the scrolls the engine asked for, which its event
 	// answers carry.
 	applied   uint32
@@ -501,12 +503,29 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 		m.o.op("vseek", it.ID).num(it.Time.Seconds())
 	case driver.ItemWeb:
 		if c := it.Web; c != nil {
-			m.o.op("web", it.ID).str(c.Source.Src).boolean(c.NoJavaScript).str(c.InjectedJavaScriptBeforeContent).str(c.InjectedJavaScript)
+			if v := m.views[it.ID]; v != nil {
+				v.web = cloneWebConfig(c)
+			}
+			if data, err := encodeWebConfig(c); err == nil {
+				m.o.op("web", it.ID).str(data)
+			}
 		}
 	case driver.ItemWebCookies:
 		m.s.dispatch(driver.NoWebCookies(it))
 	case driver.ItemWebCommand:
-		m.o.op("wcmd", it.ID).num(float64(it.WebCommand)).str(it.Value)
+		switch it.WebCommand {
+		case driver.WebPostMessage:
+			m.o.op("wcmd", it.ID).num(float64(it.WebCommand)).str(driver.WebMessageScript(it.Value))
+		case driver.WebLoad:
+			src, _ := it.Data.(*driver.WebSource)
+			if data, err := encodeWebLoad(src); err == nil {
+				m.o.op("wcmd", it.ID).num(float64(it.WebCommand)).str(data)
+			}
+		case driver.WebSendInput:
+			// Env.CanSendInput is false on HarmonyOS.
+		default:
+			m.o.op("wcmd", it.ID).num(float64(it.WebCommand)).str(it.Value)
+		}
 	case driver.ItemScreen:
 		if c := it.Screen; c != nil {
 			if v := m.views[it.ID]; v != nil {

@@ -65,11 +65,11 @@ var unsupportedEvents = map[string]string{
 		EventPointerDelta EventPointerUnlocked`,
 	"keyboard, text and selection": `EventKeyPress EventCompositionChange
 		EventCaretMove EventAccessibilityAction`,
-	"loading, media and animation": `EventLoadEnd EventDownload EventNative
+	"loading, media and animation": `EventLoadEnd EventNative
 		EventNativeSize EventAnimation EventBuffer`,
 	"overlays, navigation and windows": `EventRequestClose EventModalSize
 		EventScreenHeader
-		EventNavigationStateChange EventMenu EventMenuClosed EventMessage
+		EventMenu EventMenuClosed
 		EventBackStarted EventBackCancelled EventWindowClose
 		EventWindowHidden EventReopen EventOpenFiles`,
 	"notifications and input modality": `EventNotificationPress EventInputModality
