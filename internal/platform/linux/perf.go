@@ -47,6 +47,11 @@ type hud struct {
 	sampler  perfhud.Sampler
 	snapshot engine.PerfSnapshot
 	text     string
+	// node caches the HUD's GskRenderNode between 500 ms updates so
+	// unrelated surface snapshots never re-run Cairo/Pango for the panel.
+	node      uintptr
+	nodeText  string
+	nodeWidth float32
 	// clock is the frame clock connected to; laidOut when its frame's
 	// layout began.
 	clock   uintptr
@@ -79,6 +84,10 @@ func (w *window) startPerf() *engine.PerfMonitor {
 // stopPerf stops sampling as the window closes.
 func (w *window) stopPerf() {
 	if w.hud != nil {
+		if w.hud.node != 0 {
+			gskRenderNodeUnref(w.hud.node)
+			w.hud.node = 0
+		}
 		close(w.hud.done)
 	}
 }
@@ -98,6 +107,10 @@ func (w *window) updatePerf() {
 	h := w.hud
 	h.snapshot = h.monitor.Snapshot()
 	h.text = h.snapshot.Readings()
+	if h.node != 0 {
+		gskRenderNodeUnref(h.node)
+		h.node = 0
+	}
 	gtkWidgetQueueDraw(w.surface)
 }
 
@@ -133,9 +146,9 @@ func perfPaintedCallback(clock, data uintptr) {
 	}
 }
 
-// snapshotPerf draws the panel over the surface's width, in one Cairo
-// node, laid out with the text as that node draws it: the system's
-// monospaced face may be wider than macOS's.
+// snapshotPerf draws the panel over the surface's width, caching its render
+// node between the 500 ms reading updates so frames that redraw the surface
+// reuse the panel without re-running Cairo and Pango.
 func (w *window) snapshotPerf(snap uintptr, width float32) {
 	h := w.hud
 	if h == nil || h.text == "" {
@@ -146,25 +159,38 @@ func (w *window) snapshotPerf(snap uintptr, width float32) {
 	if area.w <= 0 {
 		return
 	}
-	cr := gtkSnapshotAppendCairo(snap, &area)
-	layout := perfLayout(cr, h.text)
-	var tw, th int32
-	pangoLayoutGetSize(layout, &tw, &th)
-	panelW := min(max(pw, float64(fromPango(tw))+2*pad), float64(area.w))
-	x, y := float64(width)-m-panelW, float64(m)
-	setColor(cr, engine.PerfPanelColor)
-	roundRect(cr, rect{x: x, y: y, w: panelW, h: 3*pad + graph + float64(fromPango(th)), r: engine.PerfRadius})
-	cairoFill(cr)
-	for _, b := range engine.PerfTrace(h.snapshot, panelW-2*pad, graph) {
-		setColor(cr, b.Color)
-		cairoRectangle(cr, x+pad+b.X, y+pad+b.Y, b.W, b.H)
+	if h.node == 0 || h.nodeText != h.text || h.nodeWidth != width {
+		if h.node != 0 {
+			gskRenderNodeUnref(h.node)
+			h.node = 0
+		}
+		sub := gtkSnapshotNew()
+		cr := gtkSnapshotAppendCairo(sub, &area)
+		layout := perfLayout(cr, h.text)
+		var tw, th int32
+		pangoLayoutGetSize(layout, &tw, &th)
+		panelW := min(max(pw, float64(fromPango(tw))+2*pad), float64(area.w))
+		x, y := float64(width)-m-panelW, float64(m)
+		setColor(cr, engine.PerfPanelColor)
+		roundRect(cr, rect{x: x, y: y, w: panelW, h: 3*pad + graph + float64(fromPango(th)), r: engine.PerfRadius})
 		cairoFill(cr)
+		for _, b := range engine.PerfTrace(h.snapshot, panelW-2*pad, graph) {
+			setColor(cr, b.Color)
+			cairoRectangle(cr, x+pad+b.X, y+pad+b.Y, b.W, b.H)
+			cairoFill(cr)
+		}
+		cairoMoveTo(cr, x+pad, y+2*pad+graph)
+		setColor(cr, engine.PerfTextColor)
+		pangoCairoShowLayout(cr, layout)
+		gObjectUnref(layout)
+		cairoDestroy(cr)
+		h.node = gtkSnapshotFreeToNode(sub)
+		h.nodeText = h.text
+		h.nodeWidth = width
 	}
-	cairoMoveTo(cr, x+pad, y+2*pad+graph)
-	setColor(cr, engine.PerfTextColor)
-	pangoCairoShowLayout(cr, layout)
-	gObjectUnref(layout)
-	cairoDestroy(cr)
+	if h.node != 0 {
+		gtkSnapshotAppendNode(snap, h.node)
+	}
 }
 
 // perfLayout lays the readings out for cr in a monospaced face.

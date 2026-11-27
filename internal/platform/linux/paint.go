@@ -3,13 +3,15 @@
 package linux
 
 import (
-	"time"
-
 	"math"
+	"time"
+	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 )
+
+var emptyEffects driver.Effects
 
 // painter draws a view's Cairo content (an image) into a context.
 type painter struct {
@@ -48,7 +50,7 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 	}
 	e := s.Effects
 	if e == nil {
-		e = &driver.Effects{}
+		e = &emptyEffects
 	}
 	pops += pushFilters(snap, e.Filters)
 	if e.Mask != nil {
@@ -123,23 +125,53 @@ func (w *window) snapshotView(v *view, snap uintptr) {
 	if sh := shaders.Load(); sh != nil {
 		drawn = sh.snapshotEffect(w, v, cur)
 	}
-	for c := gtkWidgetGetFirstChild(v.widget); c != 0 && !drawn; c = gtkWidgetGetNextSibling(c) {
-		if w.backdropStop != nil && c == w.backdropStop.widget {
-			w.backdropStopped = true
-			break
-		}
-		if c == v.fxArea {
-			continue // drawn only while its effect shows
-		}
-		// A view inserted since the last layout has no allocation until
-		// the next frame's; a snapshot taken between skips it.
-		if r, ok := lookupWidget(c); ok && r.v != nil && gtkWidgetGetWidth(c) == 0 && gtkWidgetGetHeight(c) == 0 &&
-			r.v.frame.Size.Width >= 1 && r.v.frame.Size.Height >= 1 {
-			continue
-		}
-		cur = w.snapshotChild(v, c, cur, clip, &sh)
-		if w.backdropStopped {
-			break
+	if !drawn {
+		if v.plainChildren() && !blends {
+			for _, child := range v.children {
+				if w.backdropStop != nil && child == w.backdropStop {
+					w.backdropStopped = true
+					break
+				}
+				c := child.widget
+				if c == 0 {
+					continue
+				}
+				// A view inserted since the last layout has no allocation until
+				// the next frame's; a snapshot taken between skips it.
+				if !child.allocated && child.frame.Size.Width >= 1 && child.frame.Size.Height >= 1 &&
+					gtkWidgetGetWidth(c) == 0 && gtkWidgetGetHeight(c) == 0 {
+					continue
+				}
+				w.snapshotChildWidget(v, c, cur)
+				if w.backdropStopped {
+					break
+				}
+			}
+		} else {
+			for c := gtkWidgetGetFirstChild(v.widget); c != 0; c = gtkWidgetGetNextSibling(c) {
+				if w.backdropStop != nil && c == w.backdropStop.widget {
+					w.backdropStopped = true
+					break
+				}
+				if c == v.fxArea {
+					continue // drawn only while its effect shows
+				}
+				// A view inserted since the last layout has no allocation until
+				// the next frame's; a snapshot taken between skips it.
+				if r, ok := lookupWidget(c); ok && r.v != nil && !r.v.allocated &&
+					r.v.frame.Size.Width >= 1 && r.v.frame.Size.Height >= 1 &&
+					gtkWidgetGetWidth(c) == 0 && gtkWidgetGetHeight(c) == 0 {
+					continue
+				}
+				if blends {
+					cur = w.snapshotChild(v, c, cur, clip, &sh)
+				} else {
+					w.snapshotChildWidget(v, c, cur)
+				}
+				if w.backdropStopped {
+					break
+				}
+			}
 		}
 	}
 	if !w.backdropStopped && v.kind == driver.KindScroll {
@@ -295,36 +327,31 @@ func (w *window) snapshotContent(v *view, s *driver.ViewStyle, snap uintptr) {
 	}
 	if l, ok := v.text.(*textLayout); ok && l != nil && l.text != "" {
 		// Glyphs and decoration lines may paint past their view's box.
-		x, y := float32(v.content.Origin.X), float32(v.content.Origin.Y)
 		a := v.animated
 		tinted := a != nil && a.Has(driver.PropTextColor)
-		selected := v.selEnd > v.selStart
-		if !tinted || selected {
-			var tint *driver.Color
-			if tinted {
-				tint = &a.TextColor
-			}
-			l.snapshotBackgrounds(snap, v.content.Origin.X, v.content.Origin.Y, tint)
-			snapshotSelection(v, l, snap, v.content.Origin.X, v.content.Origin.Y)
+		var tint *driver.Color
+		if tinted {
+			tint = &a.TextColor
 		}
+		l.snapshotBackgrounds(snap, v.content.Origin.X, v.content.Origin.Y, tint)
+		snapshotSelection(v, l, snap, v.content.Origin.X, v.content.Origin.Y)
 		if sh := l.shadow; sh.Color != 0 {
 			s := gskShadow{rgba(sh.Color), float32(sh.Offset.X), float32(sh.Offset.Y), float32(sh.Radius) * shadowBlurPerUnit}
 			gtkSnapshotPushShadow(snap, &s, 1)
 		}
 		if tinted {
-			// A bound color paints the whole text as a mask.
-			grown := l.contentBounds(x, y, float32(width), float32(height))
-			cr := gtkSnapshotAppendCairo(snap, &grown)
-			cairoPushGroup(cr)
-			if !selected {
-				l.drawBackgrounds(cr, v.content.Origin.X, v.content.Origin.Y)
-			}
-			l.draw(cr, v.content.Origin.X, v.content.Origin.Y)
-			glyphs := cairoPopGroup(cr)
-			setColorAlpha(cr, a.TextColor, 1)
-			cairoMask(cr, glyphs)
-			cairoPatternDestroy(glyphs)
-			cairoDestroy(cr)
+			// Recolor the cached text render node on the GPU via a color matrix
+			// rather than rasterizing into a Cairo surface every animation frame.
+			c := rgba(a.TextColor)
+			var buf [24]float32
+			off := int((16 - uintptr(unsafe.Pointer(&buf[0]))%16) % 16 / 4)
+			mat := buf[off : off+16]
+			vec := buf[off+16 : off+20]
+			mat[15] = c.a
+			vec[0], vec[1], vec[2] = c.r, c.g, c.b
+			gtkSnapshotPushColorMatrix(snap, unsafe.Pointer(&mat[0]), unsafe.Pointer(&vec[0]))
+			l.snapshot(snap, v.content.Origin.X, v.content.Origin.Y)
+			gtkSnapshotPop(snap)
 		} else {
 			l.snapshot(snap, v.content.Origin.X, v.content.Origin.Y)
 		}
@@ -337,7 +364,7 @@ func (w *window) snapshotContent(v *view, s *driver.ViewStyle, snap uintptr) {
 // fillRounded paints c inside r's corners.
 func fillRounded(snap uintptr, r *gskRoundedRect, c driver.Color) {
 	color := rgba(c)
-	if r.corner[0].w > 0 {
+	if r.corner[0].w > 0 || r.corner[1].w > 0 || r.corner[2].w > 0 || r.corner[3].w > 0 {
 		gtkSnapshotPushRoundedClip(snap, r)
 		gtkSnapshotAppendColor(snap, &color, &r.bounds)
 		gtkSnapshotPop(snap)

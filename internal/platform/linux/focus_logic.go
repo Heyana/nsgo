@@ -71,19 +71,23 @@ func syncFocusTree[N focusTreeNode[N]](root N, set func(v N, viewWidget, editorW
 		return
 	}
 	scope := activeFocusScope(root)
-	var walk func(v N, insideScope, parentHidden bool)
-	walk = func(v N, insideScope, parentHidden bool) {
-		if v == zero || v.focusDeleted() {
-			return
-		}
-		hidden := parentHidden || v.focusHidden()
-		inside := insideScope || v == scope
-		stop := !hidden && inside && v.focusStopSelf()
-		viewFocus, editorFocus := widgetFocusableTargets(v.focusKind(), stop)
-		set(v, viewFocus, editorFocus)
-		for _, c := range v.focusChildren() {
-			walk(c, inside, hidden)
-		}
+	syncFocusSubtree(root, scope, false, false, set)
+}
+
+// syncFocusSubtree walks the subtree rooted at v, given whether an ancestor
+// entered scope and whether an ancestor is hidden, calling set on each live
+// node.
+func syncFocusSubtree[N focusTreeNode[N]](v, scope N, insideScope, parentHidden bool, set func(v N, viewWidget, editorWidget bool)) {
+	var zero N
+	if v == zero || v.focusDeleted() {
+		return
 	}
-	walk(root, false, false)
+	hidden := parentHidden || v.focusHidden()
+	inside := insideScope || v == scope
+	stop := !hidden && inside && v.focusStopSelf()
+	viewFocus, editorFocus := widgetFocusableTargets(v.focusKind(), stop)
+	set(v, viewFocus, editorFocus)
+	for _, c := range v.focusChildren() {
+		syncFocusSubtree(c, scope, inside, hidden, set)
+	}
 }

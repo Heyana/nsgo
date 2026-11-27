@@ -93,8 +93,12 @@ func (w *window) RegisterFont(data []byte) error {
 	}
 	if w.handle == 0 {
 		pangoFcFontMapConfigChanged(pangoCairoFontMapGetDefault())
+		clearMainFonts()
 		return nil
 	}
-	w.post(func() { pangoFcFontMapConfigChanged(pangoCairoFontMapGetDefault()) })
+	w.post(func() {
+		pangoFcFontMapConfigChanged(pangoCairoFontMapGetDefault())
+		clearMainFonts()
+	})
 	return nil
 }

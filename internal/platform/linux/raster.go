@@ -52,8 +52,8 @@ func bindRaster(cairoLib uintptr) {
 	reg(&cairoSurfaceSetDeviceScale, cairoLib, "cairo_surface_set_device_scale")
 	reg(&cairoSurfaceStatus, cairoLib, "cairo_surface_status")
 	reg(&gdkMemoryTextureNew, gtkLib, "gdk_memory_texture_new")
-	reg(&gtkSnapshotAppendTexture, gtkLib, "gtk_snapshot_append_texture")
-	reg(&gtkSnapshotAppendScaledTexture, gtkLib, "gtk_snapshot_append_scaled_texture")
+	bindSyscall(&gtkSnapshotAppendTexture, gtkLib, "gtk_snapshot_append_texture")
+	bindSyscall(&gtkSnapshotAppendScaledTexture, gtkLib, "gtk_snapshot_append_scaled_texture")
 }
 
 // tile is the side of a canvas's textures, in pixels.
@@ -201,6 +201,7 @@ func (w *window) snapshotCanvas(v *view, snap uintptr, width, height float64) {
 		if !c.hidden {
 			c.hidden = true
 			w.hiddenCanvases = append(w.hiddenCanvases, v)
+			w.watchRevealClock()
 		}
 		return
 	}
@@ -486,6 +487,47 @@ func (w *window) inSight(v *view) bool {
 // clips reports whether v clips its children, as snapshotView does.
 func clips(v *view) bool {
 	return v.style.Clip || v.kind == driver.KindScroll || v.kind == driver.KindImage || v.kind == driver.KindInput
+}
+
+// watchRevealClock connects cbRevealLayout after GTK's frame clock layout
+// phase so hidden canvases coming into sight draw even when w.surface itself
+// is not redrawn on that frame.
+func (w *window) watchRevealClock() {
+	if w.surface == 0 {
+		return
+	}
+	if gtkWidgetGetFrameClock == nil {
+		bindSyscall(&gtkWidgetGetFrameClock, gtkLib, "gtk_widget_get_frame_clock")
+	}
+	if clock := gtkWidgetGetFrameClock(w.surface); clock != 0 && clock != w.revealClock {
+		w.revealClock = clock
+		const gConnectAfter = 1 << 0
+		gSignalConnectData(clock, cstr("layout"), cbRevealLayout, w.handle, 0, gConnectAfter)
+	}
+}
+
+func revealLayoutCallback(clock, data uintptr) {
+	w := windowOf(data)
+	if w == nil || w.closing || clock != w.revealClock || !w.revealDue {
+		return
+	}
+	w.revealDue = false
+	w.revealCanvases()
+}
+
+// redrawCanvasesUnder queues a redraw for any canvas view in v's subtree when
+// an ancestor's transform scale changes (so canvasRasterScale updates cleanly
+// even when reposition keeps ancestor render nodes cached).
+func (w *window) redrawCanvasesUnder(v *view) {
+	if v == nil || v.deleted {
+		return
+	}
+	if v.kind == driver.KindCanvas && v.drawing != nil {
+		w.redrawCanvas(v)
+	}
+	for _, c := range v.children {
+		w.redrawCanvasesUnder(c)
+	}
 }
 
 // revealCanvases draws the canvases waiting out of sight that a layout

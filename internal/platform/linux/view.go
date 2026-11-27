@@ -36,6 +36,7 @@ type view struct {
 	props            driver.ViewProps
 	overflow         driver.Bounds // where its children reach outside it (ItemOverflow)
 	deleted          bool
+	allocated        bool // true once place allocated v.widget with a non-empty size
 	// transformedKids is ItemOverflow's Transformed: a child may be drawn transformed, outside overflow.
 	transformedKids bool
 
@@ -134,8 +135,43 @@ type view struct {
 	// appearing or leaving.
 	layout *layoutAnim
 	// dying views are deleted but still drawn while they leave; their
-	// IDs may belong to new views already.
-	dying bool
+	// IDs may belong to new views already. dyingChildren counts leaving
+	// child widgets still parented to v.widget while detached from v.children.
+	dying         bool
+	dyingChildren int
+	dyingParent   *view
+}
+
+// plainChildren reports whether v.widget's GTK child list consists solely of
+// v.children's widgets in order, with no hosted native widgets, effect area,
+// canvas accessibility parts or dying children attached.
+func (v *view) plainChildren() bool {
+	return v.entry == 0 && v.hint == 0 && v.fxArea == 0 && len(v.parts) == 0 &&
+		v.dyingChildren == 0 && v.web == nil && v.video == nil && v.native == nil &&
+		v.shader == nil && v.gpu == nil
+}
+
+// hasTransform reports whether placing v requires a general matrix transform
+// rather than a plain translation by (frame.Origin - scrollOffset).
+func (v *view) hasTransform() bool {
+	if v.transition != nil || styleHasTransform(&v.style) {
+		return true
+	}
+	if v.animated != nil && v.animated.Set&driver.AnimatedTransformMask != 0 {
+		return true
+	}
+	if l := v.layout; l != nil && l.fade != nil && l.fade.Property == driver.LayoutScale {
+		return true
+	}
+	if p := v.parent; p != nil {
+		if p.style.ChildPerspective > 0 || (p.transition != nil && p.transition.shown.ChildPerspective > 0) {
+			return true
+		}
+		if p.kind == driver.KindScroll && p.zoomScale() != 1 {
+			return true
+		}
+	}
+	return false
 }
 
 // detach takes v out of its parent's children.
@@ -260,6 +296,9 @@ func (w *window) movePointer(at driver.Point, state uint32) {
 
 // updatePointerCursor shows the cursor a text's span names under the pointer on the text's widget, and gives the widget back its own as the pointer leaves the span: GTK shows the cursor of the widget under the pointer, which a span is not.
 func (w *window) updatePointerCursor() {
+	if !w.pointerIn && w.cursorText == nil {
+		return
+	}
 	var text *view
 	if root := w.view(w.root); root != nil && w.pointerIn {
 		text = hit(root, w.lastPointer, func(v *view) bool { return v.kind == driver.KindText })

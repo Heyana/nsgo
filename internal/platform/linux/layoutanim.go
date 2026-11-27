@@ -218,6 +218,10 @@ func (w *window) retiring(v *view, lb *layoutBatch) bool {
 // it (retireInner). The ID is free at once: the outgoing drawing belongs
 // to the view, not to the ID.
 func (w *window) retire(v *view, lb *layoutBatch) {
+	if p := v.parent; p != nil {
+		p.dyingChildren++
+		v.dyingParent = p
+	}
 	v.detach()
 	w.retireInner(v)
 	gtkWidgetSetCanTarget(v.widget, 0)
@@ -228,6 +232,9 @@ func (w *window) retire(v *view, lb *layoutBatch) {
 // retireInner deletes v, a view leaving or inside one, keeping what it
 // draws until the view leaving goes.
 func (w *window) retireInner(v *view) {
+	if !v.deleted && v.kind == driver.KindModal {
+		w.modalCount--
+	}
 	w.forgetDestination(v)
 	w.hovered.Forget(v.id)
 	v.dying, v.deleted = true, true
@@ -255,6 +262,10 @@ func (w *window) retireInner(v *view) {
 
 // bury destroys a view that finished leaving, with the views inside it.
 func (w *window) bury(v *view) {
+	if p := v.dyingParent; p != nil {
+		p.dyingChildren--
+		v.dyingParent = nil
+	}
 	for _, c := range append([]*view(nil), v.children...) {
 		if c.dying {
 			w.bury(c)
@@ -289,17 +300,21 @@ func (w *window) stepLayout(now time.Time) bool {
 		if l == nil {
 			continue
 		}
+		inv := invalidateNone
 		if l.move != nil {
 			old := l.move.Shown()
 			_, done := l.move.Step(w.monotonic(now))
 			if done {
 				l.move = nil
 			}
-			if v.shownFrame().Size != old.Size && v.widget != 0 {
+			cur := v.shownFrame()
+			inv = classifyFrameInvalidation(old, cur)
+			if cur.Size != old.Size && v.widget != 0 {
 				w.queueAllocate(v.widget)
 			}
 		}
 		if l.fade != nil {
+			prop := l.fade.Property
 			p, done := l.fade.At(now.Sub(l.fadeStart))
 			if l.out {
 				l.shownPart = 1 - p
@@ -313,8 +328,21 @@ func (w *window) stepLayout(now time.Time) bool {
 					l.fade = nil
 				}
 			}
+			if prop == driver.LayoutOpacity {
+				if inv == invalidateReposition {
+					inv = invalidateBoth
+				} else if inv == invalidateNone {
+					inv = invalidateDraw
+				}
+			} else {
+				if inv == invalidateDraw {
+					inv = invalidateBoth
+				} else if inv == invalidateNone {
+					inv = invalidateReposition
+				}
+			}
 		}
-		w.moved(v)
+		w.invalidate(v, inv)
 		if l.move == nil && l.fade == nil {
 			presenting := l.presenting
 			v.layout = nil

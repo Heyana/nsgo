@@ -66,23 +66,23 @@ func bindDecor() {
 	gtk(&gtkSnapshotAppendLinear, "gtk_snapshot_append_linear_gradient")
 	gtk(&gtkSnapshotAppendRadial, "gtk_snapshot_append_radial_gradient")
 	gtk(&gtkSnapshotAppendConic, "gtk_snapshot_append_conic_gradient")
-	gtk(&gtkSnapshotPushColorMatrix, "gtk_snapshot_push_color_matrix")
-	gtk(&gtkSnapshotPushMask, "gtk_snapshot_push_mask")
-	gtk(&gtkSnapshotPushFill, "gtk_snapshot_push_fill")
+	bindSyscall(&gtkSnapshotPushColorMatrix, gtkLib, "gtk_snapshot_push_color_matrix")
+	bindSyscall(&gtkSnapshotPushMask, gtkLib, "gtk_snapshot_push_mask")
+	bindSyscall(&gtkSnapshotPushFill, gtkLib, "gtk_snapshot_push_fill")
 	gtk(&gtkSnapshotAppendFill, "gtk_snapshot_append_fill")
 	gtk(&gtkSnapshotAppendStroke, "gtk_snapshot_append_stroke")
-	gtk(&gskPathBuilderNew, "gsk_path_builder_new")
+	bindSyscall(&gskPathBuilderNew, gtkLib, "gsk_path_builder_new")
 	gtk(&gskPathBuilderMoveTo, "gsk_path_builder_move_to")
 	gtk(&gskPathBuilderLineTo, "gsk_path_builder_line_to")
 	gtk(&gskPathBuilderCubicTo, "gsk_path_builder_cubic_to")
-	gtk(&gskPathBuilderClose, "gsk_path_builder_close")
-	gtk(&gskPathBuilderFreeToPath, "gsk_path_builder_free_to_path")
-	gtk(&gskPathUnref, "gsk_path_unref")
+	bindSyscall(&gskPathBuilderClose, gtkLib, "gsk_path_builder_close")
+	bindSyscall(&gskPathBuilderFreeToPath, gtkLib, "gsk_path_builder_free_to_path")
+	bindSyscall(&gskPathUnref, gtkLib, "gsk_path_unref")
 	gtk(&gskStrokeNew, "gsk_stroke_new")
 	gtk(&gskStrokeSetDash, "gsk_stroke_set_dash")
-	gtk(&gskStrokeSetLineCap, "gsk_stroke_set_line_cap")
-	gtk(&gskStrokeFree, "gsk_stroke_free")
-	gtk(&gskTransformMatrix, "gsk_transform_matrix")
+	bindSyscall(&gskStrokeSetLineCap, gtkLib, "gsk_stroke_set_line_cap")
+	bindSyscall(&gskStrokeFree, gtkLib, "gsk_stroke_free")
+	bindSyscall(&gskTransformMatrix, gtkLib, "gsk_transform_matrix")
 	gtk(&gskTransformRotate, "gsk_transform_rotate")
 	gtk(&gskTransformSkew, "gsk_transform_skew")
 	gtk(&gskTransformScale, "gsk_transform_scale")
@@ -165,9 +165,17 @@ type shape struct {
 	padding *driver.ViewStyle
 }
 
+// continuousPaths caches GskPath handles for continuous rounded rectangles on
+// the main thread so GSK preserves its GPU path raster cache across frames and
+// widget moves.
+var continuousPaths boundedPathCache
+
 func newShape(s *driver.ViewStyle, w, h float32) shape {
+	if !s.Rounded() {
+		return shape{w: w, h: h, rect: gskRoundedRect{bounds: grapheneRect{0, 0, w, h}}}
+	}
 	radii := s.Radii(driver.Size{Width: driver.Points(w), Height: driver.Points(h)})
-	return shape{w: w, h: h, radii: radii, continuous: s.ContinuousCorners && s.Rounded(),
+	return shape{w: w, h: h, radii: radii, continuous: s.ContinuousCorners,
 		rect: cornersRect(0, 0, w, h, radii)}
 }
 
@@ -181,11 +189,24 @@ func cornersRect(x, y, w, h float32, c driver.Corners) gskRoundedRect {
 	return gskRoundedRect{bounds: grapheneRect{x, y, w, h}, corner: corner}
 }
 
-// path returns the box inset by d (outset when negative) as a new path.
-func (sh *shape) path(d float32) uintptr {
+// cachedPath returns the box inset by d (outset when negative) as a cached
+// GskPath owned by continuousPaths; callers must not unref it.
+func (sh *shape) cachedPath(d float32) uintptr {
+	inset := sh.radii.Inset(driver.Points(d))
+	r := inset.Array()
+	key := pathCacheKey{
+		x: d, y: d, w: sh.w - 2*d, h: sh.h - 2*d,
+		radii:      [4][2]float32{{float32(r[0]), float32(r[0])}, {float32(r[1]), float32(r[1])}, {float32(r[2]), float32(r[2])}, {float32(r[3]), float32(r[3])}},
+		continuous: sh.continuous,
+	}
+	if p, ok := continuousPaths.get(key); ok {
+		return p
+	}
 	dd := float64(d)
-	return gskPath(driver.RoundedRect(nil, dd, dd, float64(sh.w)-2*dd, float64(sh.h)-2*dd,
-		sh.radii.Inset(driver.Points(d)), sh.continuous, false))
+	p := gskPath(driver.RoundedRect(nil, dd, dd, float64(sh.w)-2*dd, float64(sh.h)-2*dd,
+		inset, sh.continuous, false))
+	continuousPaths.put(key, p, gskPathUnref)
+	return p
 }
 
 // pushClip clips what follows to the box, or its padding box when padding is set, until a pop.
@@ -195,18 +216,25 @@ func (sh *shape) pushClip(snap uintptr) {
 		return
 	}
 	if !sh.continuous {
+		if sh.radii == (driver.Corners{}) {
+			gtkSnapshotPushClip(snap, &sh.rect.bounds)
+			return
+		}
 		gtkSnapshotPushRoundedClip(snap, &sh.rect)
 		return
 	}
-	p := sh.path(0)
-	gtkSnapshotPushFill(snap, p, fillWinding)
-	gskPathUnref(p)
+	gtkSnapshotPushFill(snap, sh.cachedPath(0), fillWinding)
 }
 
 // pushClipPadding clips what follows to the box's padding box, inside the border of s, with its inner corners (driver.ViewStyle.ClipBox), until a pop.
 func (sh *shape) pushClipPadding(snap uintptr, s *driver.ViewStyle) {
 	x, y, w, h, inner := s.ClipBox(driver.Size{Width: driver.Points(sh.w), Height: driver.Points(sh.h)})
 	if !sh.continuous {
+		if inner == ([4][2]float64{}) {
+			box := grapheneRect{float32(x), float32(y), float32(w), float32(h)}
+			gtkSnapshotPushClip(snap, &box)
+			return
+		}
 		r := gskRoundedRect{bounds: grapheneRect{float32(x), float32(y), float32(w), float32(h)}}
 		for i, c := range inner {
 			r.corner[i] = grapheneSize{float32(c[0]), float32(c[1])}
@@ -214,9 +242,17 @@ func (sh *shape) pushClipPadding(snap uintptr, s *driver.ViewStyle) {
 		gtkSnapshotPushRoundedClip(snap, &r)
 		return
 	}
-	p := gskPath(driver.EllipticRect(nil, x, y, w, h, inner, true, false))
+	var radii [4][2]float32
+	for i, c := range inner {
+		radii[i] = [2]float32{float32(c[0]), float32(c[1])}
+	}
+	key := pathCacheKey{x: float32(x), y: float32(y), w: float32(w), h: float32(h), radii: radii, continuous: true}
+	p, ok := continuousPaths.get(key)
+	if !ok {
+		p = gskPath(driver.EllipticRect(nil, x, y, w, h, inner, true, false))
+		continuousPaths.put(key, p, gskPathUnref)
+	}
 	gtkSnapshotPushFill(snap, p, fillWinding)
-	gskPathUnref(p)
 }
 
 // fill paints c inside the box.
@@ -225,24 +261,20 @@ func (sh *shape) fill(snap uintptr, c driver.Color) {
 		fillRounded(snap, &sh.rect, c)
 		return
 	}
-	p := sh.path(0)
 	color := rgba(c)
-	gtkSnapshotAppendFill(snap, p, fillWinding, &color)
-	gskPathUnref(p)
+	gtkSnapshotAppendFill(snap, sh.cachedPath(0), fillWinding, &color)
 }
 
 // fillRim paints c inside the box inset by d, under its border.
 func (sh *shape) fillRim(snap uintptr, c driver.Color, d driver.Points) {
-	p := sh.path(float32(d))
 	color := rgba(c)
-	gtkSnapshotAppendFill(snap, p, fillWinding, &color)
-	gskPathUnref(p)
+	gtkSnapshotAppendFill(snap, sh.cachedPath(float32(d)), fillWinding, &color)
 }
 
 // stroke draws a line of width in c along the box inset by inset, dashed
 // as style says.
 func (sh *shape) stroke(snap uintptr, inset, width driver.Points, c driver.Color, style driver.BorderStyle) {
-	p := sh.path(float32(inset))
+	p := sh.cachedPath(float32(inset))
 	stroke := gskStrokeNew(float32(width))
 	if on, off, round, ok := style.Dashes(width); ok {
 		dash := []float32{float32(on), float32(off)}
@@ -254,7 +286,6 @@ func (sh *shape) stroke(snap uintptr, inset, width driver.Points, c driver.Color
 	color := rgba(c)
 	gtkSnapshotAppendStroke(snap, p, stroke, &color)
 	gskStrokeFree(stroke)
-	gskPathUnref(p)
 }
 
 // colorStops returns GSK's stops of p.

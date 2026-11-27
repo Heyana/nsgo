@@ -176,7 +176,9 @@ func viewSizeAllocateCallback(widget uintptr, width, height, baseline int32) {
 	} else {
 		r.w.allocateView(r.v)
 	}
-	r.w.revealDue = true
+	if len(r.w.hiddenCanvases) > 0 {
+		r.w.revealDue = true
+	}
 }
 
 // viewFocusCallback declines GTK's directional focus traversal (such as
@@ -230,7 +232,7 @@ func (w *window) newViewWidget(v *view) uintptr {
 	gObjectRefSink(widget)
 	setWidget(widget, widgetRef{w, v})
 	if v != nil {
-		gSignalConnect(widget, "notify::has-focus", cbControlFocus, w.handle)
+		gSignalConnectData(widget, cstrNotifyHasFocus, cbControlFocus, w.handle, 0, 0)
 	}
 	return widget
 }
@@ -244,6 +246,7 @@ func (w *window) dropWidget(v *view) {
 	forgetWidget(v.widget)
 	gObjectUnref(v.widget)
 	v.widget = 0
+	v.allocated = false
 }
 
 // unparentWidget takes widget from its parent, which places its
@@ -342,8 +345,8 @@ func (w *window) markAllocNeeded(v *view) {
 	}
 }
 
-// moved tells GTK that v's frame, transform or visibility changed: its
-// parent places it again.
+// moved tells GTK that v's frame, transform or visibility AND its own drawing
+// changed: its parent places it again and v re-snapshots.
 func (w *window) moved(v *view) {
 	if v.widget == 0 {
 		return
@@ -354,10 +357,38 @@ func (w *window) moved(v *view) {
 	gtkWidgetQueueDraw(v.widget)
 }
 
+// reposition tells GTK that only v's placement or transform in its parent
+// changed: its parent re-allocates it with the new transform while GTK keeps
+// v's cached GskRenderNode intact. Views whose own snapshot depends on their
+// transform (BackfaceHidden or shader effects) still queue a draw.
+func (w *window) reposition(v *view) {
+	if v.widget == 0 {
+		return
+	}
+	if parent := gtkWidgetGetParent(v.widget); parent != 0 {
+		w.queueAllocate(parent)
+	}
+	if v.style.BackfaceHidden || v.fx != nil {
+		gtkWidgetQueueDraw(v.widget)
+	}
+}
+
 // changed tells GTK that something v draws changed.
 func (w *window) changed(v *view) {
 	if v.widget != 0 {
 		gtkWidgetQueueDraw(v.widget)
+	}
+}
+
+// invalidate applies a classified invalidation to v.
+func (w *window) invalidate(v *view, inv viewInvalidation) {
+	switch inv {
+	case invalidateDraw:
+		w.changed(v)
+	case invalidateReposition:
+		w.reposition(v)
+	case invalidateBoth:
+		w.moved(v)
 	}
 }
 
@@ -441,6 +472,14 @@ func (w *window) allocateView(v *view) {
 	v.allocNeeded = false
 	v.childAllocNeeded = false
 	ox, oy := float32(math.Round(float64(v.offset.X))), float32(math.Round(float64(v.offset.Y)))
+	if v.plainChildren() {
+		for _, child := range v.children {
+			if child.widget != 0 {
+				w.place(child, ox, oy)
+			}
+		}
+		return
+	}
 	for c := gtkWidgetGetFirstChild(v.widget); c != 0; c = gtkWidgetGetNextSibling(c) {
 		if r, ok := lookupWidget(c); ok {
 			if r.v != nil {
@@ -477,24 +516,34 @@ func (w *window) allocateView(v *view) {
 // place allocates v's widget at the frame it shows, less its parent's
 // scroll offset ox, oy (and scaled by its parent's scroll zoom when set), with its transform around its center and the scale of a layout animation after it.
 func (w *window) place(v *view, ox, oy float32) {
-	if gtkWidgetGetChildVisible(v.widget) == 0 {
+	if v.style.Hidden {
 		return
 	}
 	f := v.shownFrame()
-	var m driver.Matrix3D
-	if p := v.parent; p != nil && p.kind == driver.KindScroll && p.zoomScale() != 1 {
-		z := p.zoomScale()
-		m = driver.Translate3D(-float64(ox), -float64(oy), 0).
-			Mul(driver.Matrix3D{z, 0, 0, 0, 0, z, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}).
-			Mul(v.placement(0, 0))
+	var t uintptr
+	if !v.hasTransform() {
+		tx, ty := float32(f.Origin.X)-ox, float32(f.Origin.Y)-oy
+		if tx != 0 || ty != 0 {
+			pt := graphenePoint{tx, ty}
+			t = gskTransformTranslate(0, &pt)
+		}
 	} else {
-		m = v.placement(ox, oy)
+		var m driver.Matrix3D
+		if p := v.parent; p != nil && p.kind == driver.KindScroll && p.zoomScale() != 1 {
+			z := p.zoomScale()
+			m = driver.Translate3D(-float64(ox), -float64(oy), 0).
+				Mul(driver.Matrix3D{z, 0, 0, 0, 0, z, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}).
+				Mul(v.placement(0, 0))
+		} else {
+			m = v.placement(ox, oy)
+		}
+		t = gskMatrixTransform(0, m)
 	}
-	t := gskMatrixTransform(0, m)
 	width := int32(math.Ceil(max(float64(f.Size.Width), 0)))
 	height := int32(math.Ceil(max(float64(f.Size.Height), 0)))
 	v.placed = false
 	gtkWidgetAllocate(v.widget, width, height, -1, t)
+	v.allocated = width > 0 || height > 0
 	if !v.placed {
 		if v.allocNeeded {
 			w.allocateView(v)
@@ -610,6 +659,7 @@ var (
 	gtkSnapshotSave                 func(uintptr)
 	gtkSnapshotTranslate            func(uintptr, *graphenePoint)
 	gtkSnapshotRestore              func(uintptr)
+	gskTextNodeNew                  func(uintptr, uintptr, *gdkRGBA, *graphenePoint) uintptr
 	gskRenderNodeDraw               func(uintptr, uintptr)
 	gskRenderNodeUnref              func(uintptr)
 	gskTransformTranslate           func(uintptr, *graphenePoint) uintptr
@@ -636,43 +686,44 @@ func bindWidget() {
 	gobject(&gInitiallyUnownedGetType, "g_initially_unowned_get_type")
 	gtk := func(fn any, name string) { purego.RegisterLibFunc(fn, gtkLib, name) }
 	gtk(&gtkWidgetGetType, "gtk_widget_get_type")
-	gtk(&gtkWidgetSetParent, "gtk_widget_set_parent")
-	gtk(&gtkWidgetUnparent, "gtk_widget_unparent")
-	gtk(&gtkWidgetInsertBefore, "gtk_widget_insert_before")
-	gtk(&gtkWidgetGetFirstChild, "gtk_widget_get_first_child")
-	gtk(&gtkWidgetGetNextSibling, "gtk_widget_get_next_sibling")
-	gtk(&gtkWidgetAllocate, "gtk_widget_allocate")
+	bindSyscall(&gtkWidgetSetParent, gtkLib, "gtk_widget_set_parent")
+	bindSyscall(&gtkWidgetUnparent, gtkLib, "gtk_widget_unparent")
+	bindSyscall(&gtkWidgetInsertBefore, gtkLib, "gtk_widget_insert_before")
+	bindSyscall(&gtkWidgetGetFirstChild, gtkLib, "gtk_widget_get_first_child")
+	bindSyscall(&gtkWidgetGetNextSibling, gtkLib, "gtk_widget_get_next_sibling")
+	bindSyscall(&gtkWidgetAllocate, gtkLib, "gtk_widget_allocate")
 	gtk(&gtkWidgetMeasure, "gtk_widget_measure")
-	gtk(&gtkWidgetSnapshotChild, "gtk_widget_snapshot_child")
-	gtk(&gtkWidgetSetChildVisible, "gtk_widget_set_child_visible")
-	gtk(&gtkWidgetGetChildVisible, "gtk_widget_get_child_visible")
+	bindSyscall(&gtkWidgetSnapshotChild, gtkLib, "gtk_widget_snapshot_child")
+	bindSyscall(&gtkWidgetSetChildVisible, gtkLib, "gtk_widget_set_child_visible")
+	bindSyscall(&gtkWidgetGetChildVisible, gtkLib, "gtk_widget_get_child_visible")
 	gtk(&gtkWidgetPick, "gtk_widget_pick")
 	gtk(&gtkWidgetComputePoint, "gtk_widget_compute_point")
 	gtk(&gtkWidgetComputeBounds, "gtk_widget_compute_bounds")
 	gtk(&gtkWidgetPaintableNew, "gtk_widget_paintable_new")
 	gtk(&gtkNativeGetSurfaceTransform, "gtk_native_get_surface_transform")
 	gtk(&gdkPaintableSnapshot, "gdk_paintable_snapshot")
-	gtk(&gtkSnapshotNew, "gtk_snapshot_new")
-	gtk(&gtkSnapshotFreeToNode, "gtk_snapshot_free_to_node")
-	gtk(&gtkSnapshotAppendColor, "gtk_snapshot_append_color")
-	gtk(&gtkSnapshotAppendCairo, "gtk_snapshot_append_cairo")
-	gtk(&gtkSnapshotAppendBorder, "gtk_snapshot_append_border")
+	bindSyscall(&gtkSnapshotNew, gtkLib, "gtk_snapshot_new")
+	bindSyscall(&gtkSnapshotFreeToNode, gtkLib, "gtk_snapshot_free_to_node")
+	bindSyscall(&gtkSnapshotAppendColor, gtkLib, "gtk_snapshot_append_color")
+	bindSyscall(&gtkSnapshotAppendCairo, gtkLib, "gtk_snapshot_append_cairo")
+	bindSyscall(&gtkSnapshotAppendBorder, gtkLib, "gtk_snapshot_append_border")
 	gtk(&gtkSnapshotAppendOutset, "gtk_snapshot_append_outset_shadow")
-	gtk(&gtkSnapshotPushRoundedClip, "gtk_snapshot_push_rounded_clip")
+	bindSyscall(&gtkSnapshotPushRoundedClip, gtkLib, "gtk_snapshot_push_rounded_clip")
 	gtk(&gtkSnapshotPushOpacity, "gtk_snapshot_push_opacity")
-	gtk(&gtkSnapshotPushClip, "gtk_snapshot_push_clip")
+	bindSyscall(&gtkSnapshotPushClip, gtkLib, "gtk_snapshot_push_clip")
 	gtk(&gtkSnapshotPushBlur, "gtk_snapshot_push_blur")
 	gtk(&gtkSnapshotPushShadow, "gtk_snapshot_push_shadow")
-	gtk(&gtkSnapshotPop, "gtk_snapshot_pop")
-	gtk(&gtkSnapshotPushBlend, "gtk_snapshot_push_blend")
-	gtk(&gtkSnapshotAppendNode, "gtk_snapshot_append_node")
-	gtk(&gtkSnapshotAppendLayout, "gtk_snapshot_append_layout")
-	gtk(&gtkSnapshotSave, "gtk_snapshot_save")
-	gtk(&gtkSnapshotTranslate, "gtk_snapshot_translate")
-	gtk(&gtkSnapshotRestore, "gtk_snapshot_restore")
-	gtk(&gskRenderNodeDraw, "gsk_render_node_draw")
-	gtk(&gskRenderNodeUnref, "gsk_render_node_unref")
-	gtk(&gskTransformTranslate, "gsk_transform_translate")
+	bindSyscall(&gtkSnapshotPop, gtkLib, "gtk_snapshot_pop")
+	bindSyscall(&gtkSnapshotPushBlend, gtkLib, "gtk_snapshot_push_blend")
+	bindSyscall(&gtkSnapshotAppendNode, gtkLib, "gtk_snapshot_append_node")
+	bindSyscall(&gtkSnapshotAppendLayout, gtkLib, "gtk_snapshot_append_layout")
+	bindSyscall(&gtkSnapshotSave, gtkLib, "gtk_snapshot_save")
+	bindSyscall(&gtkSnapshotTranslate, gtkLib, "gtk_snapshot_translate")
+	bindSyscall(&gtkSnapshotRestore, gtkLib, "gtk_snapshot_restore")
+	bindSyscall(&gskTextNodeNew, gtkLib, "gsk_text_node_new")
+	bindSyscall(&gskRenderNodeDraw, gtkLib, "gsk_render_node_draw")
+	bindSyscall(&gskRenderNodeUnref, gtkLib, "gsk_render_node_unref")
+	bindSyscall(&gskTransformTranslate, gtkLib, "gsk_transform_translate")
 	gtk(&gtkEventControllerLegacyNew, "gtk_event_controller_legacy_new")
 	gtk(&gdkEventGetEventType, "gdk_event_get_event_type")
 	gtk(&gdkEventGetPosition, "gdk_event_get_position")

@@ -287,7 +287,7 @@ func (w *window) stick(v *view, shift driver.Point) {
 	f.Origin.X += shift.X
 	f.Origin.Y += shift.Y
 	v.frame = f
-	w.moved(v)
+	w.reposition(v)
 }
 
 func (w *window) repinBound() {

@@ -275,6 +275,7 @@ type window struct {
 	// revealDue says a layout since the last frame may have shown some.
 	hiddenCanvases []*view
 	revealDue      bool
+	revealClock    uintptr
 	// hud is the performance panel, when the app shows one (perf.go).
 	hud *hud
 	// stickyBound are the scroll views with sticky cells whose insets
@@ -332,6 +333,7 @@ type window struct {
 	extents       map[fontKey]driver.FontExtent // the engine thread's font metrics
 	capHeights    map[fontKey]driver.Points     // and capital heights
 	lineMetrics   map[fontKey]lineMetrics       // and decoration lines
+	fontDescs     map[uintptr]string            // engine-thread PangoFont -> absolute description string
 	pressConsumed bool
 	pressedDown   bool
 	// windowMove is a press on a window drag region that has not moved the window yet (input.go).
@@ -358,10 +360,13 @@ type window struct {
 	wheelMotion *scrollbar.Motion
 	// roles are the accessible roles of the views the batch being applied
 	// creates (access.go).
-	roles        map[driver.NodeID]int32
-	longPress    uint64 // counts long presses waited for, to cancel the last
-	focus        *view  // the entry with keyboard focus
-	controlFocus *view  // the ordinary widget with keyboard focus
+	roles           map[driver.NodeID]int32
+	longPress       uint64 // counts long presses waited for, to cancel the last
+	focus           *view  // the entry with keyboard focus
+	controlFocus    *view  // the ordinary widget with keyboard focus
+	focusScopeCache *view
+	focusScopeValid bool
+	modalCount      int // live KindModal views in this window
 	// covered are the fields and stops modals covered while they had the keyboard focus, oldest first (focus.go).
 	covered      []*view
 	pinchTimeout uint32
@@ -1142,6 +1147,8 @@ func (w *window) apply(b *driver.MountBatch) {
 	defer func() { w.devGeometry.End(); w.reportGeometry() }()
 	w.batch++
 	var rescroll, loads, labels, removed []*view
+	var focusSingles, focusSubtrees []*view
+	var focusTreeDirty, pointerTargetsDirty, cursorDirty, inputRegionDirty bool
 	type focusChange struct {
 		v     *view
 		focus bool
@@ -1448,6 +1455,12 @@ func (w *window) apply(b *driver.MountBatch) {
 				v.parent = p
 				w.insertWidget(p, v, before)
 				w.inserted(v, p, lb)
+				if v.kind == driver.KindModal || w.modalCount > 0 {
+					focusTreeDirty = true
+				} else {
+					focusSubtrees = append(focusSubtrees, v)
+				}
+				pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
 				if v.kind == driver.KindModal && !v.presented {
 					v.presented = true
 					w.present(v)
@@ -1456,7 +1469,12 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemRemove:
 			v.detach()
 			w.unparentWidget(v.widget)
+			v.allocated = false
 			removed = append(removed, v)
+			if v.kind == driver.KindModal || w.modalCount > 0 {
+				focusTreeDirty = true
+			}
+			pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
 		case driver.ItemDelete:
 			w.animator.Forget(v.id)
 			isModal := v.kind == driver.KindModal
@@ -1469,39 +1487,77 @@ func (w *window) apply(b *driver.MountBatch) {
 			default:
 				w.delete(v)
 			}
+			if isModal || w.modalCount > 0 {
+				focusTreeDirty = true
+			}
+			pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
 			if isModal && w.engine != nil {
 				w.engine.Dispatch(driver.Event{Kind: driver.EventModalDismissed, ID: id})
 			}
 		case driver.ItemOverflow:
 			v.overflow, v.transformedKids = it.Frame, it.Transformed
+			pointerTargetsDirty = true
 		case driver.ItemMatch:
 			w.match(v, w.view(it.Before), lb)
+			pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
 		case driver.ItemFrame:
-			old := v.shownFrame().Size
+			oldFrame := v.shownFrame()
 			w.framed(v, it, lb)
-			resized := v.shownFrame().Size != old
-			w.moved(v)
+			newFrame := v.shownFrame()
+			resized := newFrame.Size != oldFrame.Size
+			inv := classifyFrameInvalidation(oldFrame, newFrame)
+			w.invalidate(v, inv)
 			if resized && v.widget != 0 {
 				w.queueAllocate(v.widget)
 			}
-			if v.kind == driver.KindScroll {
+			if inv != invalidateNone {
+				pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
+			}
+			if v.kind == driver.KindScroll && resized {
 				rescroll = append(rescroll, v)
 			}
 		case driver.ItemViewStyle:
-			hidden := v.style.Hidden
+			oldStyle := v.style
+			hadTransition := v.transition != nil
 			w.setStyle(v, it.ViewStyle)
-			if v.style.Hidden != hidden {
+			if v.style.Hidden != oldStyle.Hidden {
 				w.accessChanged(v)
+				w.showWidget(v)
+				if v.kind == driver.KindModal || w.modalCount > 0 {
+					focusTreeDirty = true
+				} else {
+					focusSubtrees = append(focusSubtrees, v)
+				}
+				pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
 			}
-			w.showWidget(v)
-			w.moved(v)
-			if v.entry != 0 {
+			inv, allocSelf := classifyStyleInvalidation(&oldStyle, &v.style, hadTransition, v.transition != nil)
+			w.invalidate(v, inv)
+			if allocSelf && v.widget != 0 {
+				w.queueAllocate(v.widget)
+			}
+			if v.style.Transform.RasterScale() != oldStyle.Transform.RasterScale() {
+				w.redrawCanvasesUnder(v)
+			}
+			if v.style.Cursor != oldStyle.Cursor || v.style.CursorImage != oldStyle.CursorImage {
+				cursorDirty = true
+			}
+			if v.style.Opacity != oldStyle.Opacity || v.style.Transform != oldStyle.Transform ||
+				v.style.Origin != oldStyle.Origin || v.style.OriginZ != oldStyle.OriginZ {
+				pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
+			}
+			if v.style.Background != oldStyle.Background {
+				inputRegionDirty = true
+				if v.id == w.root && w.surface != 0 {
+					gtkWidgetQueueDraw(w.surface)
+				}
+			}
+			if v.entry != 0 && v.style != oldStyle {
 				w.styleEntry(v)
 			}
-			if wh := webViews.Load(); wh != nil {
+			if wh := webViews.Load(); wh != nil && v.style.Background != oldStyle.Background {
 				wh.background(w, v)
 			}
-			if v.kind == driver.KindImage {
+			if v.kind == driver.KindImage && v.style.TintColor != oldStyle.TintColor {
 				w.playImage(v) // again once it is no longer tinted
 			}
 		case driver.ItemText:
@@ -1513,8 +1569,12 @@ func (w *window) apply(b *driver.MountBatch) {
 			v.plain, v.spans = it.Text.Text, it.Text.Spans
 			w.accessChanged(v)
 			w.changed(v)
+			if driver.HasSpanCursor(v.spans) || w.cursorText == v {
+				cursorDirty = true
+			}
 		case driver.ItemInput:
 			w.configure(v, it.Input)
+			focusSingles = append(focusSingles, v)
 		case driver.ItemInputValue:
 			w.setValue(v, it.Value, it.Count)
 		case driver.ItemSelection:
@@ -1524,10 +1584,22 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 			selections[v] = true
 		case driver.ItemEvents:
+			oldStop := v.focusStopSelf()
+			oldHover := hover.Follows(v.events)
 			w.setEvents(v, it.Events)
 			w.accessChanged(v)
+			if v.focusStopSelf() != oldStop {
+				focusSingles = append(focusSingles, v)
+			}
+			if hover.Follows(v.events) != oldHover {
+				pointerTargetsDirty = true
+			}
+			inputRegionDirty = true
 		case driver.ItemViewProps:
 			if it.ViewProps != nil {
+				oldStop := v.focusStopSelf()
+				oldPE := v.props.PointerEvents
+				oldDrag := v.props.WindowDrag
 				if v.props.LabelledBy != it.ViewProps.LabelledBy {
 					labels = append(labels, v)
 				}
@@ -1536,6 +1608,15 @@ func (w *window) apply(b *driver.MountBatch) {
 					w.setDropOver(nil)
 				}
 				w.accessChanged(v)
+				if v.focusStopSelf() != oldStop {
+					focusSingles = append(focusSingles, v)
+				}
+				if v.props.PointerEvents != oldPE {
+					pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
+				}
+				if v.props.WindowDrag != oldDrag {
+					inputRegionDirty = true
+				}
 			}
 		case driver.ItemScrollConfig:
 			oldCfg := v.scroll
@@ -1621,8 +1702,10 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemScrollBy:
 			v.applied++
 			w.scrollBy(v, it.Point)
+			pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
 		case driver.ItemStickyCells:
 			w.setSticky(v, it.Sticky)
+			pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
 		case driver.ItemScrollTo:
 			if v.kind == driver.KindInput {
 				w.scrollInputTo(v, it.Point)
@@ -1636,14 +1719,20 @@ func (w *window) apply(b *driver.MountBatch) {
 			} else {
 				w.scrollTo(v, it.Point)
 			}
+			pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
 		case driver.ItemZoomTo:
 			w.zoomTo(v, it.Zoom, it.Animated)
+			pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
 		}
 	}
 	oldRoot := w.view(w.root)
 	w.setRoot(b.Root)
-	if oldRoot != nil && oldRoot != w.view(w.root) {
-		removed = append(removed, oldRoot)
+	if oldRoot != w.view(w.root) {
+		if oldRoot != nil {
+			removed = append(removed, oldRoot)
+		}
+		focusTreeDirty = true
+		pointerTargetsDirty, cursorDirty, inputRegionDirty = true, true, true
 	}
 	for _, v := range labels {
 		w.updateLabelRelation(v)
@@ -1665,28 +1754,43 @@ func (w *window) apply(b *driver.MountBatch) {
 			w.load(v, &v.source, true)
 		}
 	}
-	w.coverFocus()
-	w.syncFocusable(removed)
-	for _, f := range focus {
-		switch {
-		case f.v == nil:
-			if w.focusedView() != nil {
-				w.focusEntry(nil)
-			}
-		case f.v.deleted:
-		case f.focus:
-			w.focusCommand(f.v, selections[f.v])
-		default:
-			if w.focusedView() == f.v {
-				w.focusEntry(nil)
+	if focusTreeDirty || len(focusSingles) > 0 || len(focusSubtrees) > 0 || len(removed) > 0 || len(focus) > 0 {
+		if focusTreeDirty {
+			w.invalidateFocusScope()
+			w.coverFocus()
+			w.syncFocusable(removed)
+		} else {
+			w.coverFocus()
+			w.syncFocusableIncremental(removed, focusSingles, focusSubtrees)
+		}
+		for _, f := range focus {
+			switch {
+			case f.v == nil:
+				if w.focusedView() != nil {
+					w.focusEntry(nil)
+				}
+			case f.v.deleted:
+			case f.focus:
+				w.focusCommand(f.v, selections[f.v])
+			default:
+				if w.focusedView() == f.v {
+					w.focusEntry(nil)
+				}
 			}
 		}
+		w.checkFocus()
 	}
-	w.checkFocus()
 	// Views that moved, appeared or went under a still pointer.
-	w.hoverViews()
-	w.updatePointerCursor()
+	if pointerTargetsDirty {
+		w.hoverViews()
+	}
+	if cursorDirty {
+		w.updatePointerCursor()
+	}
 	w.refreshSelection()
+	if inputRegionDirty && w.input.mode != driver.WindowPointerAuto && w.surface != 0 {
+		gtkWidgetQueueDraw(w.surface)
+	}
 	if w.showFirst.consume(w.closing) {
 		w.presentFirst()
 	}
@@ -1715,12 +1819,17 @@ func (w *window) create(id driver.NodeID, kind driver.ViewKind) {
 	v := &view{win: w, id: id, kind: kind, style: driver.DefaultViewStyle, born: w.batch}
 	v.widget = w.newViewWidget(v)
 	w.views[id] = v
+	if kind == driver.KindModal {
+		w.modalCount++
+	}
 }
 
 // setRoot makes the view id the surface's child.
 func (w *window) setRoot(id driver.NodeID) {
-	if old := w.view(w.root); old != nil && w.root != id && old.widget != 0 && gtkWidgetGetParent(old.widget) == w.surface {
+	changed := w.root != id
+	if old := w.view(w.root); old != nil && changed && old.widget != 0 && gtkWidgetGetParent(old.widget) == w.surface {
 		w.unparentWidget(old.widget)
+		old.allocated = false
 	}
 	w.root = id
 	if root := w.view(id); root != nil && root.widget != 0 && gtkWidgetGetParent(root.widget) != w.surface {
@@ -1729,13 +1838,19 @@ func (w *window) setRoot(id driver.NodeID) {
 		}
 		gtkWidgetSetParent(root.widget, w.surface)
 		w.queueAllocate(w.surface)
+		changed = true
 	}
-	gtkWidgetQueueDraw(w.surface)
+	if changed {
+		gtkWidgetQueueDraw(w.surface)
+	}
 }
 
 // delete drops v and its subtree. The engine deletes the children too,
 // so they are detached but their own items release what they hold.
 func (w *window) delete(v *view) {
+	if !v.deleted && v.kind == driver.KindModal {
+		w.modalCount--
+	}
 	if sh := shaders.Load(); sh != nil {
 		sh.release(w, v)
 	}

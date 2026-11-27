@@ -95,6 +95,7 @@ var (
 	cbTick                  uintptr
 	cbTickWatch             uintptr
 	cbYield                 uintptr
+	cbRevealLayout          uintptr
 
 	cbNotificationAction    uintptr
 	cbNotificationClosed    uintptr
@@ -171,6 +172,7 @@ func init() {
 	cbTick = newCallback(tickCallback)
 	cbTickWatch = newCallback(tickWatchCallback)
 	cbYield = newCallback(yieldCallback)
+	cbRevealLayout = newCallback(revealLayoutCallback)
 	cbPreviewSelection = newCallback(previewSelectionCallback)
 	cbPreviewProperties = newCallback(previewPropertiesCallback)
 	cbPreviewOwner = newCallback(previewOwnerCallback)

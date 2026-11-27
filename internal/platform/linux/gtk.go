@@ -280,81 +280,87 @@ var (
 	gActionMapRemoveAction     func(uintptr, *byte)
 
 	// Pango.
-	pangoCairoFontMapNew           func() uintptr
-	pangoFontMapCreateContext      func(uintptr) uintptr
-	pangoFontMapUnref              func(uintptr)
-	pangoLayoutNew                 func(uintptr) uintptr
-	pangoLayoutSetAutoDir          func(uintptr, bool)
-	pangoLayoutGetContext          func(uintptr) uintptr
-	pangoContextSetBaseDir         func(uintptr, int32)
-	pangoLayoutSetText             func(uintptr, *byte, int32)
-	pangoLayoutGetText             func(uintptr) uintptr
-	pangoLayoutSetWidth            func(uintptr, int32)
-	pangoLayoutSetHeight           func(uintptr, int32)
-	pangoLayoutSetWrap             func(uintptr, int32)
-	pangoLayoutSetEllipsize        func(uintptr, int32)
-	pangoLayoutSetAlignment        func(uintptr, int32)
-	pangoLayoutSetJustify          func(uintptr, bool)
-	pangoLayoutSetSpacing          func(uintptr, int32)
-	pangoLayoutSetFontDescription  func(uintptr, uintptr)
-	pangoLayoutSetAttributes       func(uintptr, uintptr)
-	pangoLayoutContextChanged      func(uintptr)
-	pangoLayoutGetSize             func(uintptr, *int32, *int32)
-	pangoLayoutGetLineCount        func(uintptr) int32
-	pangoLayoutGetBaseline         func(uintptr) int32
-	pangoLayoutXyToIndex           func(uintptr, int32, int32, *int32, *int32) int32
-	pangoLayoutIndexToPos          func(uintptr, int32, *pangoRectangle)
-	pangoLayoutIterNextCluster     func(uintptr) int32
-	pangoLayoutIterGetIndex        func(uintptr) int32
-	pangoLayoutIterGetClusterExt   func(uintptr, *pangoRectangle, *pangoRectangle)
-	pangoFontDescriptionFromString func(*byte) uintptr
-	pangoFontDescriptionNew        func() uintptr
-	pangoFontDescriptionFree       func(uintptr)
-	pangoFontDescriptionSetFamily  func(uintptr, *byte)
-	pangoFontDescriptionGetFamily  func(uintptr) uintptr
-	pangoFontDescriptionSetWeight  func(uintptr, int32)
-	pangoFontDescriptionSetStyle   func(uintptr, int32)
-	pangoAttrListNew               func() uintptr
-	pangoAttrListInsert            func(uintptr, uintptr)
-	pangoAttrListUnref             func(uintptr)
-	pangoAttrFamilyNew             func(*byte) uintptr
-	pangoLanguageFromString        func(*byte) uintptr
-	pangoAttrLanguageNew           func(uintptr) uintptr
-	pangoAttrAllowBreaksNew        func(int32) uintptr
-	pangoAttrWeightNew             func(int32) uintptr
-	pangoAttrStyleNew              func(int32) uintptr
-	pangoAttrForegroundNew         func(uint16, uint16, uint16) uintptr
-	pangoAttrForegroundAlphaNew    func(uint16) uintptr
-	pangoAttrLetterSpacingNew      func(int32) uintptr
-	pangoAttrLineHeightNew         func(int32) uintptr
-	pangoAttrLineHeightAbsoluteNew func(int32) uintptr
-	pangoAttrUnderlineNew          func(int32) uintptr
-	pangoAttrStrikethroughNew      func(int32) uintptr
-	pangoAttrUnderlineColorNew     func(uint16, uint16, uint16) uintptr
-	pangoAttrStrikethroughColorNew func(uint16, uint16, uint16) uintptr
-	pangoAttrShapeNew              func(*pangoRectangle, *pangoRectangle) uintptr
-	pangoAttrFontFeaturesNew       func(*byte) uintptr
-	pangoContextGetMetrics         func(context, desc, language uintptr) uintptr
-	pangoFontMetricsUnref          func(uintptr)
-	pangoFontMetricsUnderlinePos   func(uintptr) int32
-	pangoFontMetricsUnderlineThick func(uintptr) int32
-	pangoFontMetricsStrikePos      func(uintptr) int32
-	pangoFontMetricsStrikeThick    func(uintptr) int32
-	pangoLayoutGetExtents          func(uintptr, *pangoRectangle, *pangoRectangle)
-	pangoLayoutGetIter             func(uintptr) uintptr
-	pangoLayoutIterFree            func(uintptr)
-	pangoLayoutIterNextLine        func(uintptr) int32
-	pangoLayoutIterNextRun         func(uintptr) int32
-	pangoLayoutIterGetLine         func(uintptr) uintptr
-	pangoLayoutIterGetRun          func(uintptr) uintptr
-	pangoLayoutIterGetBaseline     func(uintptr) int32
-	pangoLayoutIterGetRunExtents   func(uintptr, *pangoRectangle, *pangoRectangle)
-	pangoLayoutIterGetLineExtents  func(uintptr, *pangoRectangle, *pangoRectangle)
-	pangoLayoutLineGetXRanges      func(uintptr, int32, int32, *uintptr, *int32)
-	pangoCairoCreateLayout         func(uintptr) uintptr
-	pangoCairoShowLayout           func(uintptr, uintptr)
-	pangoCairoShowGlyphItem        func(uintptr, uintptr, uintptr)
-	pangoCairoUpdateLayout         func(uintptr, uintptr)
+	pangoCairoFontMapNew              func() uintptr
+	pangoFontMapCreateContext         func(uintptr) uintptr
+	pangoFontMapLoadFont              func(uintptr, uintptr, uintptr) uintptr
+	pangoFontMapUnref                 func(uintptr)
+	pangoFontDescribeWithAbsoluteSize func(uintptr) uintptr
+	pangoFontDescriptionToString      func(uintptr) uintptr
+	pangoGlyphStringNew               func() uintptr
+	pangoGlyphStringSetSize           func(uintptr, int32)
+	pangoGlyphStringFree              func(uintptr)
+	pangoLayoutNew                    func(uintptr) uintptr
+	pangoLayoutSetAutoDir             func(uintptr, bool)
+	pangoLayoutGetContext             func(uintptr) uintptr
+	pangoContextSetBaseDir            func(uintptr, int32)
+	pangoLayoutSetText                func(uintptr, *byte, int32)
+	pangoLayoutGetText                func(uintptr) uintptr
+	pangoLayoutSetWidth               func(uintptr, int32)
+	pangoLayoutSetHeight              func(uintptr, int32)
+	pangoLayoutSetWrap                func(uintptr, int32)
+	pangoLayoutSetEllipsize           func(uintptr, int32)
+	pangoLayoutSetAlignment           func(uintptr, int32)
+	pangoLayoutSetJustify             func(uintptr, bool)
+	pangoLayoutSetSpacing             func(uintptr, int32)
+	pangoLayoutSetFontDescription     func(uintptr, uintptr)
+	pangoLayoutSetAttributes          func(uintptr, uintptr)
+	pangoLayoutContextChanged         func(uintptr)
+	pangoLayoutGetSize                func(uintptr, *int32, *int32)
+	pangoLayoutGetLineCount           func(uintptr) int32
+	pangoLayoutGetBaseline            func(uintptr) int32
+	pangoLayoutXyToIndex              func(uintptr, int32, int32, *int32, *int32) int32
+	pangoLayoutIndexToPos             func(uintptr, int32, *pangoRectangle)
+	pangoLayoutIterNextCluster        func(uintptr) int32
+	pangoLayoutIterGetIndex           func(uintptr) int32
+	pangoLayoutIterGetClusterExt      func(uintptr, *pangoRectangle, *pangoRectangle)
+	pangoFontDescriptionFromString    func(*byte) uintptr
+	pangoFontDescriptionNew           func() uintptr
+	pangoFontDescriptionFree          func(uintptr)
+	pangoFontDescriptionSetFamily     func(uintptr, *byte)
+	pangoFontDescriptionGetFamily     func(uintptr) uintptr
+	pangoFontDescriptionSetWeight     func(uintptr, int32)
+	pangoFontDescriptionSetStyle      func(uintptr, int32)
+	pangoAttrListNew                  func() uintptr
+	pangoAttrListInsert               func(uintptr, uintptr)
+	pangoAttrListUnref                func(uintptr)
+	pangoAttrFamilyNew                func(*byte) uintptr
+	pangoLanguageFromString           func(*byte) uintptr
+	pangoAttrLanguageNew              func(uintptr) uintptr
+	pangoAttrAllowBreaksNew           func(int32) uintptr
+	pangoAttrWeightNew                func(int32) uintptr
+	pangoAttrStyleNew                 func(int32) uintptr
+	pangoAttrForegroundNew            func(uint16, uint16, uint16) uintptr
+	pangoAttrForegroundAlphaNew       func(uint16) uintptr
+	pangoAttrLetterSpacingNew         func(int32) uintptr
+	pangoAttrLineHeightNew            func(int32) uintptr
+	pangoAttrLineHeightAbsoluteNew    func(int32) uintptr
+	pangoAttrUnderlineNew             func(int32) uintptr
+	pangoAttrStrikethroughNew         func(int32) uintptr
+	pangoAttrUnderlineColorNew        func(uint16, uint16, uint16) uintptr
+	pangoAttrStrikethroughColorNew    func(uint16, uint16, uint16) uintptr
+	pangoAttrShapeNew                 func(*pangoRectangle, *pangoRectangle) uintptr
+	pangoAttrFontFeaturesNew          func(*byte) uintptr
+	pangoContextGetMetrics            func(context, desc, language uintptr) uintptr
+	pangoFontMetricsUnref             func(uintptr)
+	pangoFontMetricsUnderlinePos      func(uintptr) int32
+	pangoFontMetricsUnderlineThick    func(uintptr) int32
+	pangoFontMetricsStrikePos         func(uintptr) int32
+	pangoFontMetricsStrikeThick       func(uintptr) int32
+	pangoLayoutGetExtents             func(uintptr, *pangoRectangle, *pangoRectangle)
+	pangoLayoutGetIter                func(uintptr) uintptr
+	pangoLayoutIterFree               func(uintptr)
+	pangoLayoutIterNextLine           func(uintptr) int32
+	pangoLayoutIterNextRun            func(uintptr) int32
+	pangoLayoutIterGetLine            func(uintptr) uintptr
+	pangoLayoutIterGetRun             func(uintptr) uintptr
+	pangoLayoutIterGetBaseline        func(uintptr) int32
+	pangoLayoutIterGetRunExtents      func(uintptr, *pangoRectangle, *pangoRectangle)
+	pangoLayoutIterGetLineExtents     func(uintptr, *pangoRectangle, *pangoRectangle)
+	pangoLayoutLineGetXRanges         func(uintptr, int32, int32, *uintptr, *int32)
+	pangoCairoCreateLayout            func(uintptr) uintptr
+	pangoCairoShowLayout              func(uintptr, uintptr)
+	pangoCairoShowGlyphItem           func(uintptr, uintptr, uintptr)
+	pangoCairoUpdateLayout            func(uintptr, uintptr)
 
 	// Cairo.
 	cairoImageSurfaceCreate    func(int32, int32, int32) uintptr
@@ -491,22 +497,22 @@ func bind() {
 	purego.RegisterLibFunc(&gMainContextIteration, glibLib, "g_main_context_iteration")
 	purego.RegisterLibFunc(&gMainContextWakeup, glibLib, "g_main_context_wakeup")
 	purego.RegisterLibFunc(&gTimeoutAdd, glibLib, "g_timeout_add")
-	purego.RegisterLibFunc(&gGetMonotonicTime, glibLib, "g_get_monotonic_time")
+	bindSyscall(&gGetMonotonicTime, glibLib, "g_get_monotonic_time")
 	purego.RegisterLibFunc(&gSourceRemove, glibLib, "g_source_remove")
 	purego.RegisterLibFunc(&gIdleAdd, glibLib, "g_idle_add")
-	purego.RegisterLibFunc(&gFree, glibLib, "g_free")
+	bindSyscall(&gFree, glibLib, "g_free")
 	purego.RegisterLibFunc(&gErrorFree, glibLib, "g_error_free")
 	purego.RegisterLibFunc(&gSetPrgname, glibLib, "g_set_prgname")
 	purego.RegisterLibFunc(&gStrfreev, glibLib, "g_strfreev")
 	purego.RegisterLibFunc(&gVariantNewString, glibLib, "g_variant_new_string")
 	purego.RegisterLibFunc(&gVariantNewBoolean, glibLib, "g_variant_new_boolean")
 	purego.RegisterLibFunc(&gVariantUnref, glibLib, "g_variant_unref")
-	purego.RegisterLibFunc(&gObjectRef, gobjectLib, "g_object_ref")
-	purego.RegisterLibFunc(&gObjectUnref, gobjectLib, "g_object_unref")
+	bindSyscall(&gObjectRef, gobjectLib, "g_object_ref")
+	bindSyscall(&gObjectUnref, gobjectLib, "g_object_unref")
 	purego.RegisterLibFunc(&gObjectGetData, gobjectLib, "g_object_get_data")
 	purego.RegisterLibFunc(&gObjectSetData, gobjectLib, "g_object_set_data")
 	purego.RegisterLibFunc(&gTypeIsA, gobjectLib, "g_type_check_instance_is_a")
-	purego.RegisterLibFunc(&gObjectRefSink, gobjectLib, "g_object_ref_sink")
+	bindSyscall(&gObjectRefSink, gobjectLib, "g_object_ref_sink")
 	purego.RegisterLibFunc(&gSignalConnectData, gobjectLib, "g_signal_connect_data")
 	purego.RegisterLibFunc(&gSignalConnectObj, gobjectLib, "g_signal_connect_object")
 	purego.RegisterLibFunc(&gSignalEmitByName, gobjectLib, "g_signal_emit_by_name")
@@ -544,21 +550,21 @@ func bind() {
 	purego.RegisterLibFunc(&gtkWidgetSetVisible, gtkLib, "gtk_widget_set_visible")
 	purego.RegisterLibFunc(&gtkWidgetGetVisible, gtkLib, "gtk_widget_get_visible")
 	purego.RegisterLibFunc(&gtkWidgetAddController, gtkLib, "gtk_widget_add_controller")
-	purego.RegisterLibFunc(&gtkWidgetQueueDraw, gtkLib, "gtk_widget_queue_draw")
+	bindSyscall(&gtkWidgetQueueDraw, gtkLib, "gtk_widget_queue_draw")
 	purego.RegisterLibFunc(&gtkWidgetAddTickCallback, gtkLib, "gtk_widget_add_tick_callback")
 	purego.RegisterLibFunc(&gtkWidgetRemoveTickCallback, gtkLib, "gtk_widget_remove_tick_callback")
-	purego.RegisterLibFunc(&gtkWidgetQueueAllocate, gtkLib, "gtk_widget_queue_allocate")
-	purego.RegisterLibFunc(&gtkWidgetGetMapped, gtkLib, "gtk_widget_get_mapped")
+	bindSyscall(&gtkWidgetQueueAllocate, gtkLib, "gtk_widget_queue_allocate")
+	bindSyscall(&gtkWidgetGetMapped, gtkLib, "gtk_widget_get_mapped")
 	purego.RegisterLibFunc(&gtkWidgetGrabFocus, gtkLib, "gtk_widget_grab_focus")
-	purego.RegisterLibFunc(&gtkWidgetGetRoot, gtkLib, "gtk_widget_get_root")
-	purego.RegisterLibFunc(&gtkWidgetSetFocusable, gtkLib, "gtk_widget_set_focusable")
-	purego.RegisterLibFunc(&gtkWidgetGetFocusable, gtkLib, "gtk_widget_get_focusable")
-	purego.RegisterLibFunc(&gtkWidgetGetWidth, gtkLib, "gtk_widget_get_width")
-	purego.RegisterLibFunc(&gtkWidgetGetHeight, gtkLib, "gtk_widget_get_height")
-	purego.RegisterLibFunc(&gtkWidgetGetNative, gtkLib, "gtk_widget_get_native")
-	purego.RegisterLibFunc(&gtkWidgetGetScaleFactor, gtkLib, "gtk_widget_get_scale_factor")
+	bindSyscall(&gtkWidgetGetRoot, gtkLib, "gtk_widget_get_root")
+	bindSyscall(&gtkWidgetSetFocusable, gtkLib, "gtk_widget_set_focusable")
+	bindSyscall(&gtkWidgetGetFocusable, gtkLib, "gtk_widget_get_focusable")
+	bindSyscall(&gtkWidgetGetWidth, gtkLib, "gtk_widget_get_width")
+	bindSyscall(&gtkWidgetGetHeight, gtkLib, "gtk_widget_get_height")
+	bindSyscall(&gtkWidgetGetNative, gtkLib, "gtk_widget_get_native")
+	bindSyscall(&gtkWidgetGetScaleFactor, gtkLib, "gtk_widget_get_scale_factor")
 	purego.RegisterLibFunc(&gtkWidgetGetStyleContext, gtkLib, "gtk_widget_get_style_context")
-	purego.RegisterLibFunc(&gtkWidgetGetParent, gtkLib, "gtk_widget_get_parent")
+	bindSyscall(&gtkWidgetGetParent, gtkLib, "gtk_widget_get_parent")
 	purego.RegisterLibFunc(&gtkWidgetHasFocus, gtkLib, "gtk_widget_has_focus")
 	purego.RegisterLibFunc(&gtkWidgetActivateAction, gtkLib, "gtk_widget_activate_action")
 	purego.RegisterLibFunc(&gtkWidgetGetDefaultDirection, gtkLib, "gtk_widget_get_default_direction")
@@ -627,7 +633,7 @@ func bind() {
 	purego.RegisterLibFunc(&gtkGestureGetDevice, gtkLib, "gtk_gesture_get_device")
 
 	// GDK.
-	purego.RegisterLibFunc(&gdkFrameClockGetFrameTime, gtkLib, "gdk_frame_clock_get_frame_time")
+	bindSyscall(&gdkFrameClockGetFrameTime, gtkLib, "gdk_frame_clock_get_frame_time")
 	purego.RegisterLibFunc(&gdkDisplayGetDefault, gtkLib, "gdk_display_get_default")
 	purego.RegisterLibFunc(&gdkDisplayGetMonitors, gtkLib, "gdk_display_get_monitors")
 	purego.RegisterLibFunc(&gdkDisplayGetMonitorAtSurface, gtkLib, "gdk_display_get_monitor_at_surface")
@@ -690,92 +696,98 @@ func bind() {
 	if ft2, err := purego.Dlopen("libpangoft2-1.0.so.0", purego.RTLD_NOW|purego.RTLD_GLOBAL); err == nil {
 		purego.RegisterLibFunc(&pangoFcFontMapConfigChanged, ft2, "pango_fc_font_map_config_changed")
 	}
-	purego.RegisterLibFunc(&pangoFontMapCreateContext, pangoLib, "pango_font_map_create_context")
-	purego.RegisterLibFunc(&pangoFontMapUnref, pangoLib, "g_object_unref") // PangoFontMap is a GObject
-	purego.RegisterLibFunc(&pangoLayoutNew, pangoLib, "pango_layout_new")
-	purego.RegisterLibFunc(&pangoLayoutSetAutoDir, pangoLib, "pango_layout_set_auto_dir")
-	purego.RegisterLibFunc(&pangoLayoutGetContext, pangoLib, "pango_layout_get_context")
-	purego.RegisterLibFunc(&pangoContextSetBaseDir, pangoLib, "pango_context_set_base_dir")
-	purego.RegisterLibFunc(&pangoLayoutSetText, pangoLib, "pango_layout_set_text")
-	purego.RegisterLibFunc(&pangoLayoutGetText, pangoLib, "pango_layout_get_text")
-	purego.RegisterLibFunc(&pangoLayoutSetWidth, pangoLib, "pango_layout_set_width")
-	purego.RegisterLibFunc(&pangoLayoutSetHeight, pangoLib, "pango_layout_set_height")
-	purego.RegisterLibFunc(&pangoLayoutSetWrap, pangoLib, "pango_layout_set_wrap")
-	purego.RegisterLibFunc(&pangoLayoutSetEllipsize, pangoLib, "pango_layout_set_ellipsize")
-	purego.RegisterLibFunc(&pangoLayoutSetAlignment, pangoLib, "pango_layout_set_alignment")
-	purego.RegisterLibFunc(&pangoLayoutSetJustify, pangoLib, "pango_layout_set_justify")
-	purego.RegisterLibFunc(&pangoLayoutSetSpacing, pangoLib, "pango_layout_set_spacing")
-	purego.RegisterLibFunc(&pangoLayoutSetFontDescription, pangoLib, "pango_layout_set_font_description")
-	purego.RegisterLibFunc(&pangoLayoutSetAttributes, pangoLib, "pango_layout_set_attributes")
-	purego.RegisterLibFunc(&pangoLayoutContextChanged, pangoLib, "pango_layout_context_changed")
-	purego.RegisterLibFunc(&pangoLayoutGetSize, pangoLib, "pango_layout_get_size")
-	purego.RegisterLibFunc(&pangoLayoutGetLineCount, pangoLib, "pango_layout_get_line_count")
-	purego.RegisterLibFunc(&pangoLayoutGetBaseline, pangoLib, "pango_layout_get_baseline")
+	bindSyscall(&pangoFontMapCreateContext, pangoLib, "pango_font_map_create_context")
+	bindSyscall(&pangoFontMapLoadFont, pangoLib, "pango_font_map_load_font")
+	bindSyscall(&pangoFontMapUnref, pangoLib, "g_object_unref") // PangoFontMap is a GObject
+	bindSyscall(&pangoFontDescribeWithAbsoluteSize, pangoLib, "pango_font_describe_with_absolute_size")
+	bindSyscall(&pangoFontDescriptionToString, pangoLib, "pango_font_description_to_string")
+	bindSyscall(&pangoGlyphStringNew, pangoLib, "pango_glyph_string_new")
+	bindSyscall(&pangoGlyphStringSetSize, pangoLib, "pango_glyph_string_set_size")
+	bindSyscall(&pangoGlyphStringFree, pangoLib, "pango_glyph_string_free")
+	bindSyscall(&pangoLayoutNew, pangoLib, "pango_layout_new")
+	bindSyscall(&pangoLayoutSetAutoDir, pangoLib, "pango_layout_set_auto_dir")
+	bindSyscall(&pangoLayoutGetContext, pangoLib, "pango_layout_get_context")
+	bindSyscall(&pangoContextSetBaseDir, pangoLib, "pango_context_set_base_dir")
+	bindSyscall(&pangoLayoutSetText, pangoLib, "pango_layout_set_text")
+	bindSyscall(&pangoLayoutGetText, pangoLib, "pango_layout_get_text")
+	bindSyscall(&pangoLayoutSetWidth, pangoLib, "pango_layout_set_width")
+	bindSyscall(&pangoLayoutSetHeight, pangoLib, "pango_layout_set_height")
+	bindSyscall(&pangoLayoutSetWrap, pangoLib, "pango_layout_set_wrap")
+	bindSyscall(&pangoLayoutSetEllipsize, pangoLib, "pango_layout_set_ellipsize")
+	bindSyscall(&pangoLayoutSetAlignment, pangoLib, "pango_layout_set_alignment")
+	bindSyscall(&pangoLayoutSetJustify, pangoLib, "pango_layout_set_justify")
+	bindSyscall(&pangoLayoutSetSpacing, pangoLib, "pango_layout_set_spacing")
+	bindSyscall(&pangoLayoutSetFontDescription, pangoLib, "pango_layout_set_font_description")
+	bindSyscall(&pangoLayoutSetAttributes, pangoLib, "pango_layout_set_attributes")
+	bindSyscall(&pangoLayoutContextChanged, pangoLib, "pango_layout_context_changed")
+	bindSyscall(&pangoLayoutGetSize, pangoLib, "pango_layout_get_size")
+	bindSyscall(&pangoLayoutGetLineCount, pangoLib, "pango_layout_get_line_count")
+	bindSyscall(&pangoLayoutGetBaseline, pangoLib, "pango_layout_get_baseline")
 	purego.RegisterLibFunc(&pangoLayoutXyToIndex, pangoLib, "pango_layout_xy_to_index")
 	purego.RegisterLibFunc(&pangoLayoutIndexToPos, pangoLib, "pango_layout_index_to_pos")
-	purego.RegisterLibFunc(&pangoLayoutIterNextCluster, pangoLib, "pango_layout_iter_next_cluster")
-	purego.RegisterLibFunc(&pangoLayoutIterGetIndex, pangoLib, "pango_layout_iter_get_index")
-	purego.RegisterLibFunc(&pangoLayoutIterGetClusterExt, pangoLib, "pango_layout_iter_get_cluster_extents")
-	purego.RegisterLibFunc(&pangoFontDescriptionFromString, pangoLib, "pango_font_description_from_string")
-	purego.RegisterLibFunc(&pangoFontDescriptionGetFamily, pangoLib, "pango_font_description_get_family")
-	purego.RegisterLibFunc(&pangoFontDescriptionNew, pangoLib, "pango_font_description_new")
-	purego.RegisterLibFunc(&pangoFontDescriptionFree, pangoLib, "pango_font_description_free")
+	bindSyscall(&pangoLayoutIterNextCluster, pangoLib, "pango_layout_iter_next_cluster")
+	bindSyscall(&pangoLayoutIterGetIndex, pangoLib, "pango_layout_iter_get_index")
+	bindSyscall(&pangoLayoutIterGetClusterExt, pangoLib, "pango_layout_iter_get_cluster_extents")
+	bindSyscall(&pangoFontDescriptionFromString, pangoLib, "pango_font_description_from_string")
+	bindSyscall(&pangoFontDescriptionGetFamily, pangoLib, "pango_font_description_get_family")
+	bindSyscall(&pangoFontDescriptionNew, pangoLib, "pango_font_description_new")
+	bindSyscall(&pangoFontDescriptionFree, pangoLib, "pango_font_description_free")
 	purego.RegisterLibFunc(&pangoFontDescriptionSetFamily, pangoLib, "pango_font_description_set_family")
 	purego.RegisterLibFunc(&pangoFontDescriptionSetAbsoluteSize, pangoLib, "pango_font_description_set_absolute_size")
-	purego.RegisterLibFunc(&pangoFontDescriptionSetWeight, pangoLib, "pango_font_description_set_weight")
-	purego.RegisterLibFunc(&pangoFontDescriptionSetStyle, pangoLib, "pango_font_description_set_style")
-	purego.RegisterLibFunc(&pangoAttrListNew, pangoLib, "pango_attr_list_new")
-	purego.RegisterLibFunc(&pangoAttrListInsert, pangoLib, "pango_attr_list_insert")
-	purego.RegisterLibFunc(&pangoAttrListUnref, pangoLib, "pango_attr_list_unref")
-	purego.RegisterLibFunc(&pangoAttrFamilyNew, pangoLib, "pango_attr_family_new")
-	purego.RegisterLibFunc(&pangoLanguageFromString, pangoLib, "pango_language_from_string")
-	purego.RegisterLibFunc(&pangoAttrLanguageNew, pangoLib, "pango_attr_language_new")
-	purego.RegisterLibFunc(&pangoAttrAllowBreaksNew, pangoLib, "pango_attr_allow_breaks_new")
-	purego.RegisterLibFunc(&pangoAttrSizeNewAbsolute, pangoLib, "pango_attr_size_new_absolute")
-	purego.RegisterLibFunc(&pangoAttrWeightNew, pangoLib, "pango_attr_weight_new")
-	purego.RegisterLibFunc(&pangoAttrStyleNew, pangoLib, "pango_attr_style_new")
-	purego.RegisterLibFunc(&pangoAttrForegroundNew, pangoLib, "pango_attr_foreground_new")
+	bindSyscall(&pangoFontDescriptionSetWeight, pangoLib, "pango_font_description_set_weight")
+	bindSyscall(&pangoFontDescriptionSetStyle, pangoLib, "pango_font_description_set_style")
+	bindSyscall(&pangoAttrListNew, pangoLib, "pango_attr_list_new")
+	bindSyscall(&pangoAttrListInsert, pangoLib, "pango_attr_list_insert")
+	bindSyscall(&pangoAttrListUnref, pangoLib, "pango_attr_list_unref")
+	bindSyscall(&pangoAttrFamilyNew, pangoLib, "pango_attr_family_new")
+	bindSyscall(&pangoLanguageFromString, pangoLib, "pango_language_from_string")
+	bindSyscall(&pangoAttrLanguageNew, pangoLib, "pango_attr_language_new")
+	bindSyscall(&pangoAttrAllowBreaksNew, pangoLib, "pango_attr_allow_breaks_new")
+	bindSyscall(&pangoAttrSizeNewAbsolute, pangoLib, "pango_attr_size_new_absolute")
+	bindSyscall(&pangoAttrWeightNew, pangoLib, "pango_attr_weight_new")
+	bindSyscall(&pangoAttrStyleNew, pangoLib, "pango_attr_style_new")
+	bindSyscall(&pangoAttrForegroundNew, pangoLib, "pango_attr_foreground_new")
 	purego.RegisterLibFunc(&pangoAttrForegroundAlphaNew, pangoLib, "pango_attr_foreground_alpha_new")
-	purego.RegisterLibFunc(&pangoAttrLetterSpacingNew, pangoLib, "pango_attr_letter_spacing_new")
-	purego.RegisterLibFunc(&pangoAttrLineHeightNew, pangoLib, "pango_attr_line_height_new")
-	purego.RegisterLibFunc(&pangoAttrLineHeightAbsoluteNew, pangoLib, "pango_attr_line_height_new_absolute")
-	purego.RegisterLibFunc(&pangoAttrUnderlineNew, pangoLib, "pango_attr_underline_new")
-	purego.RegisterLibFunc(&pangoAttrStrikethroughNew, pangoLib, "pango_attr_strikethrough_new")
-	purego.RegisterLibFunc(&pangoAttrUnderlineColorNew, pangoLib, "pango_attr_underline_color_new")
-	purego.RegisterLibFunc(&pangoAttrStrikethroughColorNew, pangoLib, "pango_attr_strikethrough_color_new")
+	bindSyscall(&pangoAttrLetterSpacingNew, pangoLib, "pango_attr_letter_spacing_new")
+	bindSyscall(&pangoAttrLineHeightNew, pangoLib, "pango_attr_line_height_new")
+	bindSyscall(&pangoAttrLineHeightAbsoluteNew, pangoLib, "pango_attr_line_height_new_absolute")
+	bindSyscall(&pangoAttrUnderlineNew, pangoLib, "pango_attr_underline_new")
+	bindSyscall(&pangoAttrStrikethroughNew, pangoLib, "pango_attr_strikethrough_new")
+	bindSyscall(&pangoAttrUnderlineColorNew, pangoLib, "pango_attr_underline_color_new")
+	bindSyscall(&pangoAttrStrikethroughColorNew, pangoLib, "pango_attr_strikethrough_color_new")
 	purego.RegisterLibFunc(&pangoAttrShapeNew, pangoLib, "pango_attr_shape_new")
-	purego.RegisterLibFunc(&pangoAttrFontFeaturesNew, pangoLib, "pango_attr_font_features_new")
-	purego.RegisterLibFunc(&pangoContextGetMetrics, pangoLib, "pango_context_get_metrics")
-	purego.RegisterLibFunc(&pangoFontMetricsUnref, pangoLib, "pango_font_metrics_unref")
-	purego.RegisterLibFunc(&pangoFontMetricsUnderlinePos, pangoLib, "pango_font_metrics_get_underline_position")
-	purego.RegisterLibFunc(&pangoFontMetricsUnderlineThick, pangoLib, "pango_font_metrics_get_underline_thickness")
-	purego.RegisterLibFunc(&pangoFontMetricsStrikePos, pangoLib, "pango_font_metrics_get_strikethrough_position")
-	purego.RegisterLibFunc(&pangoFontMetricsStrikeThick, pangoLib, "pango_font_metrics_get_strikethrough_thickness")
-	purego.RegisterLibFunc(&pangoLayoutGetExtents, pangoLib, "pango_layout_get_extents")
-	purego.RegisterLibFunc(&pangoLayoutGetIter, pangoLib, "pango_layout_get_iter")
-	purego.RegisterLibFunc(&pangoLayoutIterFree, pangoLib, "pango_layout_iter_free")
-	purego.RegisterLibFunc(&pangoLayoutIterNextLine, pangoLib, "pango_layout_iter_next_line")
-	purego.RegisterLibFunc(&pangoLayoutIterNextRun, pangoLib, "pango_layout_iter_next_run")
-	purego.RegisterLibFunc(&pangoLayoutIterGetLine, pangoLib, "pango_layout_iter_get_line_readonly")
-	purego.RegisterLibFunc(&pangoLayoutIterGetRun, pangoLib, "pango_layout_iter_get_run_readonly")
-	purego.RegisterLibFunc(&pangoLayoutIterGetBaseline, pangoLib, "pango_layout_iter_get_baseline")
-	purego.RegisterLibFunc(&pangoLayoutIterGetRunExtents, pangoLib, "pango_layout_iter_get_run_extents")
-	purego.RegisterLibFunc(&pangoLayoutIterGetLineExtents, pangoLib, "pango_layout_iter_get_line_extents")
+	bindSyscall(&pangoAttrFontFeaturesNew, pangoLib, "pango_attr_font_features_new")
+	bindSyscall(&pangoContextGetMetrics, pangoLib, "pango_context_get_metrics")
+	bindSyscall(&pangoFontMetricsUnref, pangoLib, "pango_font_metrics_unref")
+	bindSyscall(&pangoFontMetricsUnderlinePos, pangoLib, "pango_font_metrics_get_underline_position")
+	bindSyscall(&pangoFontMetricsUnderlineThick, pangoLib, "pango_font_metrics_get_underline_thickness")
+	bindSyscall(&pangoFontMetricsStrikePos, pangoLib, "pango_font_metrics_get_strikethrough_position")
+	bindSyscall(&pangoFontMetricsStrikeThick, pangoLib, "pango_font_metrics_get_strikethrough_thickness")
+	bindSyscall(&pangoLayoutGetExtents, pangoLib, "pango_layout_get_extents")
+	bindSyscall(&pangoLayoutGetIter, pangoLib, "pango_layout_get_iter")
+	bindSyscall(&pangoLayoutIterFree, pangoLib, "pango_layout_iter_free")
+	bindSyscall(&pangoLayoutIterNextLine, pangoLib, "pango_layout_iter_next_line")
+	bindSyscall(&pangoLayoutIterNextRun, pangoLib, "pango_layout_iter_next_run")
+	bindSyscall(&pangoLayoutIterGetLine, pangoLib, "pango_layout_iter_get_line_readonly")
+	bindSyscall(&pangoLayoutIterGetRun, pangoLib, "pango_layout_iter_get_run_readonly")
+	bindSyscall(&pangoLayoutIterGetBaseline, pangoLib, "pango_layout_iter_get_baseline")
+	bindSyscall(&pangoLayoutIterGetRunExtents, pangoLib, "pango_layout_iter_get_run_extents")
+	bindSyscall(&pangoLayoutIterGetLineExtents, pangoLib, "pango_layout_iter_get_line_extents")
 	purego.RegisterLibFunc(&pangoLayoutLineGetXRanges, pangoLib, "pango_layout_line_get_x_ranges")
-	purego.RegisterLibFunc(&pangoCairoCreateLayout, pangocairoLib, "pango_cairo_create_layout")
-	purego.RegisterLibFunc(&pangoCairoShowLayout, pangocairoLib, "pango_cairo_show_layout")
-	purego.RegisterLibFunc(&pangoCairoShowGlyphItem, pangocairoLib, "pango_cairo_show_glyph_item")
-	purego.RegisterLibFunc(&pangoCairoUpdateLayout, pangocairoLib, "pango_cairo_update_layout")
+	bindSyscall(&pangoCairoCreateLayout, pangocairoLib, "pango_cairo_create_layout")
+	bindSyscall(&pangoCairoShowLayout, pangocairoLib, "pango_cairo_show_layout")
+	bindSyscall(&pangoCairoShowGlyphItem, pangocairoLib, "pango_cairo_show_glyph_item")
+	bindSyscall(&pangoCairoUpdateLayout, pangocairoLib, "pango_cairo_update_layout")
 
 	// Cairo.
 	purego.RegisterLibFunc(&cairoImageSurfaceCreate, cairoLib, "cairo_image_surface_create")
-	purego.RegisterLibFunc(&cairoCreate, cairoLib, "cairo_create")
-	purego.RegisterLibFunc(&cairoDestroy, cairoLib, "cairo_destroy")
-	purego.RegisterLibFunc(&cairoSurfaceDestroy, cairoLib, "cairo_surface_destroy")
-	purego.RegisterLibFunc(&cairoSurfaceFlush, cairoLib, "cairo_surface_flush")
-	purego.RegisterLibFunc(&cairoSurfaceMarkDirty, cairoLib, "cairo_surface_mark_dirty")
-	purego.RegisterLibFunc(&cairoImageSurfaceGetData, cairoLib, "cairo_image_surface_get_data")
-	purego.RegisterLibFunc(&cairoImageSurfaceGetStride, cairoLib, "cairo_image_surface_get_stride")
+	bindSyscall(&cairoCreate, cairoLib, "cairo_create")
+	bindSyscall(&cairoDestroy, cairoLib, "cairo_destroy")
+	bindSyscall(&cairoSurfaceDestroy, cairoLib, "cairo_surface_destroy")
+	bindSyscall(&cairoSurfaceFlush, cairoLib, "cairo_surface_flush")
+	bindSyscall(&cairoSurfaceMarkDirty, cairoLib, "cairo_surface_mark_dirty")
+	bindSyscall(&cairoImageSurfaceGetData, cairoLib, "cairo_image_surface_get_data")
+	bindSyscall(&cairoImageSurfaceGetStride, cairoLib, "cairo_image_surface_get_stride")
 	purego.RegisterLibFunc(&cairoSetSourceRGBA, cairoLib, "cairo_set_source_rgba")
 	purego.RegisterLibFunc(&cairoPaint, cairoLib, "cairo_paint")
 	purego.RegisterLibFunc(&cairoPaintWithAlpha, cairoLib, "cairo_paint_with_alpha")

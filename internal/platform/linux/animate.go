@@ -48,20 +48,27 @@ func (v *view) shownStyle() *driver.ViewStyle {
 // setStyle applies v's new style, animating to it when it has a
 // transition.
 func (w *window) setStyle(v *view, s *driver.ViewStyle) {
-	from := *w.styleOf(v)
 	// The first style shows at once, unless the view was created by an
 	// earlier batch: then it changes from the default style.
 	styled := v.styled || v.born != w.batch
+	t := s.Transition
+	canTransition := styled && t.Duration > 0 && !w.motionReduced()
+	var from driver.ViewStyle
+	if canTransition {
+		from = *w.styleOf(v)
+	}
 	if s.Animation != v.style.Animation || !styled {
 		v.keyframeStart = time.Now()
 		if s.Animation.Keyframes != 0 {
 			w.animate(v)
 		}
 	}
+	cursorChanged := !v.cursorSet || v.style.Cursor != s.Cursor || v.style.CursorImage != s.CursorImage
 	v.style, v.styled, v.transition = *s, true, nil
-	w.setCursor(v)
-	t := s.Transition
-	if !styled || t.Duration <= 0 || w.motionReduced() {
+	if cursorChanged {
+		w.setCursor(v)
+	}
+	if !canTransition {
 		return
 	}
 	props := t.Properties
@@ -152,12 +159,21 @@ func (w *window) showAnimated() {
 		if v == nil {
 			return
 		}
+		var prev driver.AnimatedValues
+		if v.animated != nil {
+			prev = *v.animated
+		}
 		if vals.Set == 0 {
 			v.animated = nil
 		} else {
-			v.animated = &vals
+			copy := vals
+			v.animated = &copy
 		}
-		w.moved(v)
+		inv, scaleChanged := classifyAnimatedInvalidation(prev, vals, v.style.BackfaceHidden)
+		w.invalidate(v, inv)
+		if scaleChanged {
+			w.redrawCanvasesUnder(v)
+		}
 	})
 	if ch := canvases.Load(); ch != nil {
 		ch.changedCanvases(w)
@@ -222,12 +238,22 @@ func (w *window) step(v *view, now time.Time) bool {
 			return true
 		}
 		elapsed := now.Sub(t.start)
-		w.moved(v)
+		prev := t.shown
 		if elapsed >= t.duration {
 			v.transition = nil
+			inv, allocSelf := classifyStyleInvalidation(&prev, &t.to, false, false)
+			w.invalidate(v, inv)
+			if allocSelf && v.widget != 0 {
+				w.queueAllocate(v.widget)
+			}
 		} else {
 			p := t.curve.At(float64(elapsed) / float64(t.duration))
 			t.shown = driver.MixStyles(t.from, t.to, p, t.props)
+			inv, allocSelf := classifyStyleInvalidation(&prev, &t.shown, false, false)
+			w.invalidate(v, inv)
+			if allocSelf && v.widget != 0 {
+				w.queueAllocate(v.widget)
+			}
 			keep = true
 		}
 	}

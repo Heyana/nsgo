@@ -21,7 +21,19 @@ func (v *view) focusStopSelf() bool {
 	return viewCanFocusStop(v.kind, &v.props, v.events, v.input.Disabled)
 }
 
-func (w *window) focusScope() *view { return activeFocusScope(w.view(w.root)) }
+func (w *window) focusScope() *view {
+	if w.focusScopeValid {
+		return w.focusScopeCache
+	}
+	w.focusScopeCache = activeFocusScope(w.view(w.root))
+	w.focusScopeValid = true
+	return w.focusScopeCache
+}
+
+func (w *window) invalidateFocusScope() {
+	w.focusScopeValid = false
+	w.focusScopeCache = nil
+}
 
 // focusableView reports whether v is a keyboard stop: an enabled field or a stop view that shows within the newest modal.
 func (w *window) focusableView(v *view) bool { return w.focusableIn(v, w.focusScope()) }
@@ -109,10 +121,82 @@ func (w *window) syncFocusable(detached []*view) {
 			w.clearFocusableSubtree(v)
 		}
 	}
-	syncFocusTree(w.view(w.root), func(v *view, viewFocus, editorFocus bool) {
+	root := w.view(w.root)
+	scope := activeFocusScope(root)
+	w.focusScopeCache = scope
+	w.focusScopeValid = true
+	if root == nil {
+		return
+	}
+	syncFocusSubtree(root, scope, false, false, func(v *view, viewFocus, editorFocus bool) {
 		w.setViewFocusable(v, viewFocus)
 		w.setEditorFocusable(v, editorFocus)
 	})
+}
+
+// syncFocusableIncremental updates GTK's focusable flag only for views (and
+// subtrees) touched by a batch that did not change the active modal focus
+// scope, avoiding a full-tree walk on every tick or row-binding scroll batch.
+func (w *window) syncFocusableIncremental(detached, singles, subtrees []*view) {
+	for _, v := range detached {
+		if v != nil && !v.deleted && !w.inRootTree(v) {
+			w.clearFocusableSubtree(v)
+		}
+	}
+	root := w.view(w.root)
+	if root == nil {
+		return
+	}
+	scope := w.focusScope()
+	ancestorState := func(v *view) (inRoot, insideScope, parentHidden bool) {
+		for p := v.parent; p != nil; p = p.parent {
+			if p.deleted {
+				return false, false, false
+			}
+			if p.style.Hidden {
+				parentHidden = true
+			}
+			if p == scope {
+				insideScope = true
+			}
+			if p == root {
+				inRoot = true
+				break
+			}
+		}
+		if v == root {
+			inRoot = true
+		}
+		return inRoot, insideScope, parentHidden
+	}
+	set := func(v *view, viewFocus, editorFocus bool) {
+		w.setViewFocusable(v, viewFocus)
+		w.setEditorFocusable(v, editorFocus)
+	}
+	for _, v := range singles {
+		if v == nil || v.deleted {
+			continue
+		}
+		inRoot, inside, hidden := ancestorState(v)
+		if !inRoot {
+			set(v, false, false)
+			continue
+		}
+		stop := !hidden && !v.style.Hidden && (inside || v == scope) && v.focusStopSelf()
+		viewFocus, editorFocus := widgetFocusableTargets(v.kind, stop)
+		set(v, viewFocus, editorFocus)
+	}
+	for _, v := range subtrees {
+		if v == nil || v.deleted {
+			continue
+		}
+		inRoot, inside, hidden := ancestorState(v)
+		if !inRoot {
+			w.clearFocusableSubtree(v)
+			continue
+		}
+		syncFocusSubtree(v, scope, inside, hidden, set)
+	}
 }
 
 func (w *window) focusedView() *view {
@@ -201,6 +285,9 @@ func (w *window) coverFocus() {
 // checkFocus runs after each batch's focus requests. Covered views that went, hid or stopped being stops are forgotten; one a closed modal uncovered gets the focus back if nothing has it by then, else it is forgotten too. The newest is checked first, so modals closing one after another each give back what they covered.
 func (w *window) checkFocus() {
 	w.coverFocus()
+	if len(w.covered) == 0 {
+		return
+	}
 	w.covered = slices.DeleteFunc(w.covered, func(v *view) bool { return !w.keyboardStop(v) })
 	scope := w.focusScope()
 	for n := len(w.covered); n > 0 && w.focusableIn(w.covered[n-1], scope); n-- {

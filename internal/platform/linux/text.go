@@ -80,9 +80,63 @@ type textLayout struct {
 	// carets hit-tests the lines, read when first asked.
 	carets driver.LazyCarets
 
-	// The main thread's PangoLayout, made when first drawn and freed by
-	// Release.
+	// The main thread's PangoLayout, made lazily for hit-testing, Cairo
+	// drawing or fallback rendering, and freed by Release.
 	layout uintptr
+
+	// Shaped glyph runs extracted on the engine thread so the main thread
+	// builds GskTextNode directly without re-shaping with Pango/HarfBuzz.
+	runs      []shapedRun
+	runsBuilt bool
+
+	// The main thread's cached GskRenderNode for snapshot, built once at
+	// (nodeX, nodeY) and freed by Release.
+	node      uintptr
+	nodeReady bool
+	nodeX     driver.Points
+	nodeY     driver.Points
+}
+
+// pangoGlyphGeometry, pangoGlyphInfo, pangoGlyphString and pangoGlyphItem
+// match their public structs in <pango/pango-glyph.h> and
+// <pango/pango-glyph-item.h>.
+type pangoGlyphGeometry struct {
+	_       structs.HostLayout
+	width   int32
+	xOffset int32
+	yOffset int32
+}
+
+type pangoGlyphInfo struct {
+	_        structs.HostLayout
+	glyph    uint32
+	geometry pangoGlyphGeometry
+	attr     uint32
+}
+
+type pangoGlyphString struct {
+	_           structs.HostLayout
+	numGlyphs   int32
+	glyphs      *pangoGlyphInfo
+	logClusters *int32
+	space       int32
+}
+
+type pangoGlyphItem struct {
+	_      structs.HostLayout
+	item   *pangoItem
+	glyphs *pangoGlyphString
+}
+
+// shapedRun is one shaped Pango glyph run ready to become a GskTextNode on the
+// main thread.
+type shapedRun struct {
+	fontDesc string
+	x        float32
+	baseline float32
+	endUnits int32 // pen x after the last glyph in Pango units, for coalescing adjacent runs
+	color    driver.Color
+	glyphs   []pangoGlyphInfo
 }
 
 // attachmentBox is an attachment's box in the content box, unless a line
@@ -198,6 +252,12 @@ func newTextContext(rtl bool) uintptr {
 
 // releaseTextContexts drops both threads' contexts once their users have stopped, or before they prepare text again with new fonts.
 func (w *window) releaseTextContexts() {
+	for font := range w.fontDescs {
+		if font != 0 {
+			gObjectUnref(font)
+		}
+	}
+	clear(w.fontDescs)
 	for i, context := range w.measureMap {
 		if context != 0 {
 			gObjectUnref(context)
@@ -212,6 +272,36 @@ func (w *window) releaseTextContexts() {
 		}
 	}
 	w.hitMu.Unlock()
+}
+
+// fontDescriptionString returns font's absolute-size Pango description string
+// on the engine thread, retaining a bounded map of PangoFont refs so repeated
+// runs in the same font pay one map lookup instead of allocating C strings.
+func (w *window) fontDescriptionString(font uintptr) string {
+	if s, ok := w.fontDescs[font]; ok {
+		return s
+	}
+	desc := pangoFontDescribeWithAbsoluteSize(font)
+	if desc == 0 {
+		return ""
+	}
+	cs := pangoFontDescriptionToString(desc)
+	s := goString(cs)
+	gFree(cs)
+	pangoFontDescriptionFree(desc)
+	if w.fontDescs == nil {
+		w.fontDescs = map[uintptr]string{}
+	} else if len(w.fontDescs) >= maxFontMetrics {
+		for f := range w.fontDescs {
+			if f != 0 {
+				gObjectUnref(f)
+			}
+		}
+		clear(w.fontDescs)
+	}
+	gObjectRef(font)
+	w.fontDescs[font] = s
+	return s
 }
 
 // textDirection is the PangoDirection of a base direction.
@@ -269,7 +359,7 @@ func applyLayout(l uintptr, s *textSource, width driver.Points, drawn bool) {
 	attrs := textAttributes(text, s)
 	pangoLayoutSetAttributes(l, attrs)
 	pangoAttrListUnref(attrs)
-	pangoLayoutSetText(l, cstr(text), int32(len(text)))
+	pangoLayoutSetTextStr(l, text)
 	pangoLayoutSetWidth(l, s.pangoWidth(width, drawn))
 	// The text's own base direction, not its first letter's; start and
 	// end follow it.
@@ -563,9 +653,115 @@ func (p *preparedText) Layout(size driver.Size) driver.TextLayout {
 	p.placeDecorations(l)
 	p.placeAttachments(l)
 	p.placeLines(l)
+	p.placeRuns(l)
 	w := p.w
 	l.carets.Set(func() driver.CaretLayout { return l.caretLines(w) })
 	return l
+}
+
+// pangoDecorated reports whether Pango itself draws any underline or
+// strikethrough on s (rather than placeDecorations).
+func (s *textSource) pangoDecorated() bool {
+	has := func(st driver.TextStyle) bool {
+		return st.Decoration&driver.TextDecorationUnderline != 0 && !drawsUnderline(st) ||
+			st.Decoration&driver.TextDecorationLineThrough != 0 && !drawsStrike(st)
+	}
+	if has(s.style) {
+		return true
+	}
+	for _, sp := range s.spans {
+		if has(sp.Style) {
+			return true
+		}
+	}
+	return false
+}
+
+// placeRuns extracts the already-shaped glyph runs from p.layout on the engine
+// thread so the main thread builds GskTextNode directly without re-shaping.
+func (p *preparedText) placeRuns(l *textLayout) {
+	if p.text == "" || p.hasHidden() || p.pangoDecorated() || (p.maxLines > 0 && p.ellipsize == driver.EllipsizeClip) {
+		return
+	}
+	const (
+		pangoAnalysisFlagIsEllipsis = 1 << 1
+		pangoGlyphVisAttrMask       = 0b11
+	)
+	iter := pangoLayoutGetIter(p.layout)
+	defer pangoLayoutIterFree(iter)
+	for more := true; more; more = pangoLayoutIterNextRun(iter) != 0 {
+		run := pangoLayoutIterGetRun(iter)
+		if run == 0 {
+			continue
+		}
+		gi := (*pangoGlyphItem)(cPointer(run))
+		if gi.item == nil || gi.glyphs == nil || gi.glyphs.numGlyphs <= 0 || gi.glyphs.glyphs == nil {
+			continue
+		}
+		offset, length := int(gi.item.offset), int(gi.item.length)
+		ellipsis := gi.item.analysis.flags&pangoAnalysisFlagIsEllipsis != 0
+		if !ellipsis && p.isAttachment(offset, length) {
+			continue
+		}
+		font := gi.item.analysis.font
+		if font == 0 {
+			continue
+		}
+		desc := p.w.fontDescriptionString(font)
+		if desc == "" {
+			l.runs = nil
+			return
+		}
+		var logical pangoRectangle
+		pangoLayoutIterGetRunExtents(iter, nil, &logical)
+		baseline := pangoLayoutIterGetBaseline(iter)
+		color := p.style.Color
+		if !ellipsis && len(p.spans) > 0 {
+			color = p.styleAt(offset).Color
+		}
+		if color&0xff == 0 {
+			continue
+		}
+		n := int(gi.glyphs.numGlyphs)
+		src := unsafe.Slice(gi.glyphs.glyphs, n)
+		var widthUnits int32
+		for i := range src {
+			widthUnits += src[i].geometry.width
+		}
+		basePt := float32(fromPango(baseline))
+		// Pango splits CJK text into one run per character: coalesce
+		// contiguous runs sharing font, color and baseline into one
+		// GskTextNode.
+		if k := len(l.runs); k > 0 {
+			last := &l.runs[k-1]
+			if last.fontDesc == desc && last.color == color && last.baseline == basePt && last.endUnits == logical.X {
+				start := len(last.glyphs)
+				last.glyphs = slices.Grow(last.glyphs, n)[:start+n]
+				for i := range src {
+					g := src[i]
+					g.attr &= pangoGlyphVisAttrMask
+					last.glyphs[start+i] = g
+				}
+				last.endUnits = logical.X + widthUnits
+				continue
+			}
+		}
+		glyphs := make([]pangoGlyphInfo, n)
+		for i := range src {
+			g := src[i]
+			g.attr &= pangoGlyphVisAttrMask
+			glyphs[i] = g
+		}
+		l.runs = append(l.runs, shapedRun{
+			fontDesc: desc,
+			x:        float32(fromPango(logical.X)),
+			baseline: basePt,
+			endUnits: logical.X + widthUnits,
+			color:    color,
+			glyphs:   glyphs,
+		})
+	}
+	l.runsBuilt = true
 }
 
 // HitTest implements driver.TextHitTester.
@@ -1080,12 +1276,137 @@ func (l *textLayout) snapshotBackgrounds(snap uintptr, x, y driver.Points, tint 
 	}
 }
 
-// snapshot appends the glyphs with their top-left at x, y to snap as GSK text nodes, which the renderer draws from its glyph cache, as NSH's backend does: a Cairo node of the text was rastered on the CPU each time its view was drawn again, most of the main thread's frame in a fast scroll of a table. The decoration lines Pango cannot draw stay Cairo's. snapshotBackgrounds paints the spans' backgrounds first.
-func (l *textLayout) snapshot(snap uintptr, x, y driver.Points) {
+// mainFonts caches main-thread PangoFont objects loaded from GTK's default
+// PangoCairoFontMap by font description string, plus one reusable
+// PangoGlyphString for building GskTextNode without per-run C allocations.
+var mainFonts struct {
+	context  uintptr
+	fontMap  uintptr
+	fonts    map[string]uintptr
+	glyphStr uintptr
+}
+
+func mainFont(desc string) uintptr {
+	if mainFonts.fonts != nil {
+		if f, ok := mainFonts.fonts[desc]; ok {
+			return f
+		}
+	}
+	if mainFonts.fontMap == 0 {
+		mainFonts.fontMap = pangoCairoFontMapGetDefault()
+		if mainFonts.fontMap == 0 {
+			return 0
+		}
+	}
+	if mainFonts.context == 0 {
+		mainFonts.context = pangoFontMapCreateContext(mainFonts.fontMap)
+		if mainFonts.context == 0 {
+			return 0
+		}
+	}
+	if mainFonts.fonts == nil {
+		mainFonts.fonts = map[string]uintptr{}
+	} else if len(mainFonts.fonts) >= maxFontMetrics {
+		for _, f := range mainFonts.fonts {
+			if f != 0 {
+				gObjectUnref(f)
+			}
+		}
+		clear(mainFonts.fonts)
+	}
+	d := pangoFontDescriptionFromString(cstr(desc))
+	if d == 0 {
+		return 0
+	}
+	f := pangoFontMapLoadFont(mainFonts.fontMap, mainFonts.context, d)
+	pangoFontDescriptionFree(d)
+	mainFonts.fonts[desc] = f
+	return f
+}
+
+func clearMainFonts() {
+	for _, f := range mainFonts.fonts {
+		if f != 0 {
+			gObjectUnref(f)
+		}
+	}
+	clear(mainFonts.fonts)
+	if mainFonts.context != 0 {
+		gObjectUnref(mainFonts.context)
+		mainFonts.context = 0
+	}
+}
+
+func fillScratchGlyphString(glyphs []pangoGlyphInfo) uintptr {
+	if mainFonts.glyphStr == 0 {
+		mainFonts.glyphStr = pangoGlyphStringNew()
+	}
+	pangoGlyphStringSetSize(mainFonts.glyphStr, int32(len(glyphs)))
+	gs := (*pangoGlyphString)(cPointer(mainFonts.glyphStr))
+	copy(unsafe.Slice(gs.glyphs, len(glyphs)), glyphs)
+	return mainFonts.glyphStr
+}
+
+// buildDirectNode constructs a cached GskRenderNode directly from the engine
+// thread's shaped glyph runs via gsk_text_node_new, avoiding Pango/HarfBuzz
+// re-shaping on the GTK main thread.
+func (l *textLayout) buildDirectNode(x, y driver.Points) (uintptr, bool) {
+	if !l.runsBuilt {
+		return 0, false
+	}
+	if len(l.runs) == 0 && len(l.over) == 0 {
+		return 0, true
+	}
+	fx, fy := float32(x), float32(y)
+	if len(l.runs) == 1 && len(l.over) == 0 {
+		run := &l.runs[0]
+		font := mainFont(run.fontDesc)
+		if font == 0 {
+			return 0, false
+		}
+		gs := fillScratchGlyphString(run.glyphs)
+		c := rgba(run.color)
+		pt := graphenePoint{fx + run.x, fy + run.baseline}
+		return gskTextNodeNew(font, gs, &c, &pt), true
+	}
+	snap := gtkSnapshotNew()
+	for i := range l.runs {
+		run := &l.runs[i]
+		font := mainFont(run.fontDesc)
+		if font == 0 {
+			if n := gtkSnapshotFreeToNode(snap); n != 0 {
+				gskRenderNodeUnref(n)
+			}
+			return 0, false
+		}
+		gs := fillScratchGlyphString(run.glyphs)
+		c := rgba(run.color)
+		pt := graphenePoint{fx + run.x, fy + run.baseline}
+		if n := gskTextNodeNew(font, gs, &c, &pt); n != 0 {
+			gtkSnapshotAppendNode(snap, n)
+			gskRenderNodeUnref(n)
+		}
+	}
+	if bounds, ok := l.decorationBounds(x, y); ok {
+		cr := gtkSnapshotAppendCairo(snap, &bounds)
+		for _, d := range l.over {
+			d.draw(cr, float64(x), float64(y))
+		}
+		cairoDestroy(cr)
+	}
+	return gtkSnapshotFreeToNode(snap), true
+}
+
+// buildLayoutNode builds a cached GskRenderNode via a main-thread PangoLayout
+// for cases the direct shaped-run path leaves to Pango (clipped ellipsis,
+// hidden spans, Pango-drawn decorations, or missing font fallback).
+func (l *textLayout) buildLayoutNode(x, y driver.Points) uintptr {
 	l.ensure(scratchCairo())
+	snap := gtkSnapshotNew()
 	clip := l.maxLines > 0 && l.ellipsize == driver.EllipsizeClip
 	if clip {
-		gtkSnapshotPushClip(snap, &grapheneRect{float32(x), float32(y), float32(l.width), float32(l.height)})
+		box := grapheneRect{float32(x), float32(y), float32(l.width), float32(l.height)}
+		gtkSnapshotPushClip(snap, &box)
 	}
 	if l.hasHidden() {
 		// Draw visible runs and decorations through Cairo, skipping hidden runs so their glyphs, color emoji and shadow are never drawn.
@@ -1097,12 +1418,17 @@ func (l *textLayout) snapshot(snap uintptr, x, y driver.Points) {
 		}
 		cairoDestroy(cr)
 	} else {
-		gtkSnapshotSave(snap)
-		gtkSnapshotTranslate(snap, &graphenePoint{float32(x), float32(y)})
+		if x != 0 || y != 0 {
+			gtkSnapshotSave(snap)
+			pt := graphenePoint{float32(x), float32(y)}
+			gtkSnapshotTranslate(snap, &pt)
+		}
 		// Every span sets its color; this is what none would.
 		black := gdkRGBA{a: 1}
 		gtkSnapshotAppendLayout(snap, l.layout, &black)
-		gtkSnapshotRestore(snap)
+		if x != 0 || y != 0 {
+			gtkSnapshotRestore(snap)
+		}
 		if bounds, ok := l.decorationBounds(x, y); ok {
 			cr := gtkSnapshotAppendCairo(snap, &bounds)
 			for _, d := range l.over {
@@ -1113,6 +1439,29 @@ func (l *textLayout) snapshot(snap uintptr, x, y driver.Points) {
 	}
 	if clip {
 		gtkSnapshotPop(snap)
+	}
+	return gtkSnapshotFreeToNode(snap)
+}
+
+// snapshot appends the glyphs with their top-left at x, y to snap from l's
+// cached GskRenderNode: direct GskTextNodes built from the engine thread's
+// shaped runs on the common path (avoiding main-thread Pango re-shaping), or a
+// cached PangoLayout node for clipped ellipsis, hidden spans and Pango-drawn
+// decorations. snapshotBackgrounds paints the spans' backgrounds first.
+func (l *textLayout) snapshot(snap uintptr, x, y driver.Points) {
+	if !l.nodeReady || l.nodeX != x || l.nodeY != y {
+		if l.node != 0 {
+			gskRenderNodeUnref(l.node)
+			l.node = 0
+		}
+		node, ok := l.buildDirectNode(x, y)
+		if !ok {
+			node = l.buildLayoutNode(x, y)
+		}
+		l.node, l.nodeReady, l.nodeX, l.nodeY = node, true, x, y
+	}
+	if l.node != 0 {
+		gtkSnapshotAppendNode(snap, l.node)
 	}
 }
 
@@ -1199,8 +1548,11 @@ func (l *textLayout) drawRuns(cr uintptr, x, y driver.Points) {
 // indexAt returns the byte offset of the character nearest x, y, in the
 // text's points.
 func (l *textLayout) indexAt(x, y driver.Points) int {
-	if l.layout == 0 {
+	if l.text == "" {
 		return 0
+	}
+	if l.layout == 0 {
+		l.ensure(scratchCairo())
 	}
 	var index, trailing int32
 	pangoLayoutXyToIndex(l.layout, int32(x*pangoScale), int32(y*pangoScale), &index, &trailing)
@@ -1227,6 +1579,11 @@ func (l *textLayout) Height() driver.Points { return l.height }
 
 // Release implements core.TextLayout on the main thread.
 func (l *textLayout) Release() {
+	if l.node != 0 {
+		gskRenderNodeUnref(l.node)
+		l.node = 0
+	}
+	l.nodeReady = false
 	if l.layout != 0 {
 		gObjectUnref(l.layout)
 		l.layout = 0
