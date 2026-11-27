@@ -143,7 +143,7 @@ func (s *surface) appear(v *view, lb *layoutBatch) {
 func contentAt(v *view) driver.Point {
 	var at driver.Point
 	for p := v; p != nil; p = p.parent {
-		o := p.shownFrame().Origin
+		o := p.placedFrame().Origin
 		at.X += o.X - p.offset.X
 		at.Y += o.Y - p.offset.Y
 	}
@@ -158,7 +158,7 @@ func (s *surface) match(v, old *view, lb *layoutBatch) {
 		return
 	}
 	was, in := contentAt(old.parent), contentAt(v.parent)
-	o := old.shownFrame()
+	o := old.placedFrame()
 	from := driver.Bounds{Origin: driver.Point{X: was.X + o.Origin.X - in.X, Y: was.Y + o.Origin.Y - in.Y}, Size: o.Size}
 	old.style.Hidden = true
 	s.touched(old)

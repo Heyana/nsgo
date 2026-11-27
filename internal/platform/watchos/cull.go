@@ -23,7 +23,7 @@ func (s *surface) cull() {
 // cullIn walks v, its parent's content at origin on the surface; reach,
 // when bounded, is the surface rectangle its views must touch to be made.
 func (s *surface) cullIn(v *view, origin driver.Point, reach driver.Bounds, bounded bool) {
-	f := v.shownFrame()
+	f := v.placedFrame()
 	at := driver.Point{X: origin.X + f.Origin.X, Y: origin.Y + f.Origin.Y}
 	if bounded {
 		area := driver.Bounds{Origin: at, Size: f.Size}

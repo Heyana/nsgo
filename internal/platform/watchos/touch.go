@@ -336,7 +336,7 @@ func hit(v *view, p driver.Point, match func(*view) bool) *view {
 	if v.style.Hidden || v.deleted {
 		return nil
 	}
-	f := v.shownFrame()
+	f := v.placedFrame()
 	local, mapped := driver.IntoView(f, v.pointerMatrix(), p)
 	if !mapped {
 		return nil
@@ -349,10 +349,16 @@ func hit(v *view, p driver.Point, match func(*view) bool) *view {
 	if children {
 		local.X += v.offset.X
 		local.Y += v.offset.Y
-		for i := len(v.children) - 1; i >= 0; i-- {
-			if h := hit(v.children[i], local, match); h != nil {
-				return h
+		var found *view
+		hitChildOrder(v.children, func(c *view) bool { return c.s.sticky.isSticky(c.id) }, func(c *view) bool {
+			if h := hit(c, local, match); h != nil {
+				found = h
+				return true
 			}
+			return false
+		})
+		if found != nil {
+			return found
 		}
 	}
 	if self && match(v) {
@@ -364,9 +370,9 @@ func hit(v *view, p driver.Point, match func(*view) bool) *view {
 // surfaceBounds is where v is on the surface, and whether it is in the
 // root's tree.
 func (s *surface) surfaceBounds(v *view) (driver.Bounds, bool) {
-	b, top := v.shownFrame(), v
+	b, top := v.placedFrame(), v
 	for p := v.parent; p != nil; p = p.parent {
-		f := p.shownFrame()
+		f := p.placedFrame()
 		b.Origin.X += f.Origin.X - p.offset.X
 		b.Origin.Y += f.Origin.Y - p.offset.Y
 		top = p
@@ -381,7 +387,7 @@ func (s *surface) local(v *view, at driver.Point) driver.Point {
 		at.X += parent.offset.X
 		at.Y += parent.offset.Y
 	}
-	local, _ := driver.IntoView(v.shownFrame(), v.pointerMatrix(), at)
+	local, _ := driver.IntoView(v.placedFrame(), v.pointerMatrix(), at)
 	return local
 }
 

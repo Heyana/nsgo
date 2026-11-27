@@ -158,6 +158,7 @@ type surface struct {
 	touch   touchState
 	fingers responderTouches
 	blocked []*view // the scroll views a touch responder locked (ItemBlockNative)
+	sticky  stickyTracker
 }
 
 func init() {
@@ -440,6 +441,14 @@ func (s *surface) applyAnimated() {
 			s.redraw[vw] = true
 		}
 	})
+	if s.sticky.repinBound(func(id driver.NodeID) (driver.Point, bool, bool) {
+		if vw := s.view(id); vw != nil && !vw.deleted {
+			return vw.offset, vw.scroll.Horizontal, true
+		}
+		return driver.Point{}, false, false
+	}, s.animator, &s.w) {
+		s.recull = true
+	}
 }
 
 func (s *surface) view(id driver.NodeID) *view {
@@ -662,8 +671,12 @@ func (s *surface) apply(b *driver.MountBatch) {
 				s.w.op(opBlur, v.id)
 			}
 		case driver.ItemScrollConfig:
+			axisChanged := v.scroll.Horizontal != it.Scroll.Horizontal
 			v.scroll = *it.Scroll
 			s.sendScroll(v)
+			if axisChanged && s.sticky.pin(v.id, v.offset, v.scroll.Horizontal, s.animator) {
+				s.recull = true
+			}
 		case driver.ItemScrollContent:
 			v.content = it.Size
 			s.sendScroll(v)
@@ -681,6 +694,10 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.w.op(opScrollTo, v.id)
 			s.w.f64(float64(to.X), float64(to.Y))
 			s.w.flag(false)
+		case driver.ItemStickyCells:
+			if s.sticky.set(v.id, it.Sticky, v.offset, v.scroll.Horizontal, s.animator, &s.w) {
+				s.recull = true
+			}
 		}
 	}
 	if b.Root != s.root {
@@ -761,6 +778,9 @@ func (s *surface) delete(v *view) {
 		s.focused = nil
 	}
 	s.inputGate.forgetScroll(uint32(v.id))
+	if s.sticky.delete(v.id) {
+		s.recull = true
+	}
 	s.w.op(opDelete, v.id)
 }
 
@@ -782,6 +802,12 @@ func (v *view) shownFrame() driver.Bounds {
 		return v.moving.move.Shown()
 	}
 	return v.frame
+}
+
+// placedFrame is v.shownFrame shifted by any sticky offset its scroll view
+// applies, where v shows and receives touches on the surface.
+func (v *view) placedFrame() driver.Bounds {
+	return placedBounds(v.shownFrame(), v.s.sticky.shift(v.id))
 }
 
 // shownStyle is the style v shows now: mid transition or its own, with
@@ -972,8 +998,10 @@ func hostScroll(id uint32, x, y float64, phase uint8) {
 	if phase == phaseOffset {
 		v.offset = driver.Point{X: driver.Points(x), Y: driver.Points(y)}
 		if s.animator.Scroll(v.id, v.offset) {
+			s.applyAnimated()
 			s.tick(true)
 		}
+		s.sticky.pin(v.id, v.offset, v.scroll.Horizontal, s.animator)
 		s.recull = true
 		v.scrollEvent(driver.EventScroll)
 		s.flush()

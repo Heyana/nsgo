@@ -23,7 +23,7 @@ func (s *surface) reportGeometry() {
 		if v == nil || v.deleted {
 			continue
 		}
-		g := driver.ViewGeometry{Frame: v.shownFrame(), Matrix: v.pointerMatrix(), Offset: v.offset}
+		g := driver.ViewGeometry{Frame: v.placedFrame(), Matrix: v.pointerMatrix(), Offset: v.offset}
 		if v.parent != nil {
 			g.Parent = v.parent.id
 		}

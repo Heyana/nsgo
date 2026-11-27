@@ -431,6 +431,20 @@ enum Kind: UInt8 {
 	case view = 1, text, input, scroll, image, modal, canvas
 }
 
+/// StickyCell is one sticky view's effective main-axis travel in its scroll
+/// view (opStickyCells), matching driver.StickyCell.StickyShift.
+struct StickyCell: Equatable {
+	let cell: UInt32
+	let start: Double
+	let end: Double
+
+	func shift(at offset: Double) -> Double {
+		let travel = end - start
+		if travel.isNaN { return 0 }
+		return min(max(offset - start, min(travel, 0)), max(travel, 0))
+	}
+}
+
 /// Node is one view the engine mounted.
 @Observable final class Node: Identifiable {
 	let id: UInt32
@@ -466,6 +480,13 @@ enum Kind: UInt8 {
 	var position = ScrollPosition()
 	/// offset is where the scroll view last reported it was, from where its content rests.
 	@ObservationIgnored var offset = CGPoint.zero
+	/// stickyCells are the sticky views pinned within this scroll view.
+	@ObservationIgnored var stickyCells: [StickyCell] = []
+
+	// Sticky placement on a pinned cell (opStickyCells).
+	var sticky = false
+	var stickyShift = CGPoint.zero
+	@ObservationIgnored weak var stickyOwner: Node?
 
 	// A text field's.
 	var text = ""
@@ -531,7 +552,7 @@ struct Alert: Identifiable {
 	/// The ops Go writes, as watchos.go's op constants number them.
 	enum Op: UInt8 {
 		case create = 1, insert, remove, delete, frame, look, ink, redraw, scroll, scrollTo, input, focus, blur,
-			alert, root, lock, dismiss, cull, access, authSession, permission
+			alert, root, lock, dismiss, cull, access, authSession, permission, stickyCells
 	}
 
 	func apply(_ r: Reader) {
@@ -557,7 +578,10 @@ struct Alert: Identifiable {
 				if let n = nodes[r.u32()] { detach(n) }
 			case .delete:
 				let id = r.u32()
-				if let n = nodes.removeValue(forKey: id) { detach(n) }
+				if let n = nodes.removeValue(forKey: id) {
+					clearSticky(n)
+					detach(n)
+				}
 			case .frame:
 				let id = r.u32(), f = r.rect()
 				if let n = nodes[id], n.frame != f { n.frame = f }
@@ -586,17 +610,22 @@ struct Alert: Identifiable {
 				let id = r.u32(), horizontal = r.u8() != 0, indicator = r.u8() != 0
 				let content = CGSize(width: r.f64(), height: r.f64())
 				guard let n = nodes[id] else { continue }
-				if n.horizontal != horizontal { n.horizontal = horizontal }
+				let axisChanged = n.horizontal != horizontal
+				if axisChanged { n.horizontal = horizontal }
 				if n.indicator != indicator { n.indicator = indicator }
 				if n.content != content { n.content = content }
+				if axisChanged && !n.stickyCells.isEmpty { pinSticky(n) }
 			case .scrollTo:
 				let id = r.u32(), x = r.f64(), y = r.f64(), animated = r.u8() != 0
 				guard let n = nodes[id] else { continue }
+				let pt = CGPoint(x: x, y: y)
 				// ScrollPosition measures a point from where the content rests, as Go does.
 				if animated {
-					withAnimation { n.position.scrollTo(point: CGPoint(x: x, y: y)) }
+					withAnimation { n.position.scrollTo(point: pt) }
 				} else {
-					n.position.scrollTo(point: CGPoint(x: x, y: y))
+					n.position.scrollTo(point: pt)
+					n.offset = pt
+					if !n.stickyCells.isEmpty { pinSticky(n) }
 				}
 			case .input:
 				let id = r.u32(), placeholder = r.string(), secure = r.u8() != 0, disabled = r.u8() != 0
@@ -646,7 +675,55 @@ struct Alert: Identifiable {
 			case .permission:
 				let id = r.u32(), kind = r.u8(), ask = r.u8() != 0
 				permissions.handle(id, kind: kind, ask: ask)
+			case .stickyCells:
+				let id = r.u32()
+				let count = Int(r.u32())
+				var cells: [StickyCell] = []
+				cells.reserveCapacity(count)
+				for _ in 0..<count {
+					cells.append(StickyCell(cell: r.u32(), start: r.f64(), end: r.f64()))
+				}
+				guard let n = nodes[id] else { continue }
+				setSticky(n, cells: cells)
 			}
+		}
+	}
+
+	func setSticky(_ scroll: Node, cells: [StickyCell]) {
+		let nextIDs = Set(cells.map(\.cell))
+		for old in scroll.stickyCells where !nextIDs.contains(old.cell) {
+			if let cell = nodes[old.cell], cell.stickyOwner === scroll {
+				cell.stickyOwner = nil
+				if cell.sticky { cell.sticky = false }
+				if cell.stickyShift != .zero { cell.stickyShift = .zero }
+			}
+		}
+		scroll.stickyCells = cells
+		pinSticky(scroll)
+	}
+
+	func clearSticky(_ scroll: Node) {
+		guard !scroll.stickyCells.isEmpty else { return }
+		for old in scroll.stickyCells {
+			if let cell = nodes[old.cell], cell.stickyOwner === scroll {
+				cell.stickyOwner = nil
+				if cell.sticky { cell.sticky = false }
+				if cell.stickyShift != .zero { cell.stickyShift = .zero }
+			}
+		}
+		scroll.stickyCells = []
+	}
+
+	func pinSticky(_ scroll: Node) {
+		guard !scroll.stickyCells.isEmpty else { return }
+		let axis = scroll.horizontal ? scroll.offset.x : scroll.offset.y
+		for entry in scroll.stickyCells {
+			guard let cell = nodes[entry.cell] else { continue }
+			let d = entry.shift(at: axis)
+			let shift = scroll.horizontal ? CGPoint(x: d, y: 0) : CGPoint(x: 0, y: d)
+			cell.stickyOwner = scroll
+			if !cell.sticky { cell.sticky = true }
+			if cell.stickyShift != shift { cell.stickyShift = shift }
 		}
 	}
 
@@ -677,7 +754,8 @@ struct NodeView: View {
 			.opacity(node.hidden ? 0 : node.opacity)
 			.allowsHitTesting(!node.hidden)
 			.transformEffect(node.transform)
-			.offset(x: node.frame.minX, y: node.frame.minY)
+			.offset(x: node.frame.minX + node.stickyShift.x, y: node.frame.minY + node.stickyShift.y)
+			.zIndex(node.sticky ? 1 : 0)
 	}
 
 	@ViewBuilder var content: some View {
@@ -824,6 +902,7 @@ struct ScrollNode: View {
 		// A scroll view that starts within the top of the screen that is not safe extends up to the screen's edge and insets its content by as much, which leaves the content where Go put it: report where it is from there, as ScrollPosition measures it, so it rests at zero (#814).
 		.onScrollGeometryChange(for: CGPoint.self) { CGPoint(x: $0.contentOffset.x + $0.contentInsets.leading, y: $0.contentOffset.y + $0.contentInsets.top) } action: { _, at in
 			node.offset = at
+			Store.shared.pinSticky(node)
 			bridge?.scroll(node.id, at.x, at.y, 0)
 		}
 		.onScrollPhaseChange { _, phase in
