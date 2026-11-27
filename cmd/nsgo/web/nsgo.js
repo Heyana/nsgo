@@ -148,9 +148,12 @@ async function runApp(element, at, config, options, hostModule, report) {
     element.dataset.nsgoMount = key;
     go.env.NSGO_MOUNT = `[data-nsgo-mount="${key}"]`;
   }
-  const [instance, realm] = await Promise.all([
+  const [wasm, realm] = await Promise.all([
     options.module
-      ? Promise.resolve(options.module).then((module) => WebAssembly.instantiate(module, go.importObject))
+      ? Promise.resolve(options.module).then(async (module) => ({
+          module,
+          instance: await WebAssembly.instantiate(module, go.importObject),
+        }))
       : instantiateWasm(at(config.wasm), config.wasmSize, go.importObject, report),
     config.runtime && openRealm([config.runtime, ...(config.scripts ?? [])].map(at), config.realm && at(config.realm)),
   ]);
@@ -161,7 +164,14 @@ async function runApp(element, at, config, options, hostModule, report) {
     globalThis[name] = realm;
     go.env.NSGO_REALM = name;
   }
-  go.run(instance);
+  const wasmKey = `nsgoWasm${++apps}`;
+  globalThis[wasmKey] = {
+    module: wasm.module,
+    exec: at(config.exec),
+    worker: config.worker ? at(config.worker) : "",
+  };
+  go.env.NSGO_WASM = wasmKey;
+  go.run(wasm.instance);
   return player;
 }
 
@@ -202,12 +212,12 @@ async function instantiateWasm(url, size, imports, report) {
   }));
   const type = response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
   if (body && type === "application/wasm" && typeof WebAssembly.instantiateStreaming === "function") {
-    return (await WebAssembly.instantiateStreaming(
+    return await WebAssembly.instantiateStreaming(
       new Response(body, { headers: { "Content-Type": type } }), imports,
-    )).instance;
+    );
   }
   const bytes = await (body ? new Response(body) : response).arrayBuffer();
-  return (await WebAssembly.instantiate(bytes, imports)).instance;
+  return await WebAssembly.instantiate(bytes, imports);
 }
 
 // openRealm makes the hidden iframe an app runs in, and loads into it the

@@ -1,8 +1,6 @@
 package formula
 
 import (
-	"context"
-
 	"github.com/caelyreth/untie"
 	"github.com/caelyreth/untie/identity"
 	"github.com/caelyreth/untie/ir"
@@ -28,6 +26,44 @@ func (r *Renderer) withSystemText(l *layout, measure func(string, core.Font) cor
 	if err != nil {
 		return l
 	}
+	var measured []textMeasure
+	texts := rewriteSystemText(root, l.missing, language, func(text string, font core.Font) core.TextMetrics {
+		m := measure(text, font)
+		measured = append(measured, textMeasure{width: m.Width, ascent: m.Ascent, descent: m.Descent})
+		return m
+	})
+	engine, err := r.engine()
+	if err != nil {
+		return l
+	}
+	box, err := engine.layoutSystemText(root, l.key, l.missing, language, measured)
+	if err != nil || box == nil {
+		return l
+	}
+	out := &layout{key: l.key, description: l.description, drawn: true}
+	out.drawBox(box, texts)
+	return out
+}
+
+// replaySystemText applies pre-measured text run geometry in the worker without
+// requiring the worker file to import core.
+func replaySystemText(root *ir.Formula, missingRuns []untie.MissingFallback, language string, measured []textMeasure) {
+	idx := 0
+	rewriteSystemText(root, missingRuns, language, func(string, core.Font) core.TextMetrics {
+		if idx >= len(measured) {
+			return core.TextMetrics{}
+		}
+		m := measured[idx]
+		idx++
+		return core.TextMetrics{Width: m.width, Ascent: m.ascent, Descent: m.descent}
+	})
+}
+
+// rewriteSystemText replaces each IR text run overlapping missing with a filled
+// positioning marker sized by measure, returning the native text runs keyed by
+// their assigned marker identity. Both the main thread and the browser worker
+// run the exact same deterministic walk so marker identities match.
+func rewriteSystemText(root *ir.Formula, missingRuns []untie.MissingFallback, language string, measure func(string, core.Font) core.TextMetrics) map[identity.NodeID]systemRun {
 	texts := map[identity.NodeID]systemRun{}
 	// Parsed nodes have no assigned identities. Reserve our marker identities above any existing one so this also stays valid if the parser adds them.
 	var next identity.NodeID
@@ -52,7 +88,7 @@ func (r *Renderer) withSystemText(l *layout, measure func(string, core.Font) cor
 		}
 		if text, ok := n.(*ir.Text); ok {
 			missing := false
-			for _, need := range l.missing {
+			for _, need := range missingRuns {
 				if need.Source.Start < text.Span.End && need.Source.End > text.Span.Start {
 					missing = true
 					break
@@ -150,19 +186,5 @@ func (r *Renderer) withSystemText(l *layout, measure func(string, core.Font) cor
 	for i := range root.Tags {
 		root.Tags[i].Body = rewrite(root.Tags[i].Body, ir.VariantNormal, ir.Paint{})
 	}
-	engine, err := r.engine()
-	if err != nil {
-		return l
-	}
-	mode := untie.Inline
-	if l.key.display {
-		mode = untie.Display
-	}
-	box, err := engine.LayoutFormulaContextWithOptions(context.Background(), root, mode, l.key.style(), untie.LayoutOptions{Recovery: untie.RecoveryVisible})
-	if err != nil || box == nil {
-		return l
-	}
-	out := &layout{key: l.key, description: l.description, drawn: true}
-	out.drawBox(box, texts)
-	return out
+	return texts
 }

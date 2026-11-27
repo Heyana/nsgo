@@ -167,8 +167,10 @@ var portable = []string{"core", "internal/automation", "internal/appstartup", "i
 
 // unportable are the packages among portable's that reach the system: the
 // terminal loads libghostty-vt and runs programs, on macOS, Linux and
-// Windows, and builds elsewhere to report that it cannot.
-var unportable = []string{"base/terminal/"}
+// Windows, and builds elsewhere to report that it cannot; formula reaches
+// browser Web Workers on the web so parsing its math font stays off the page's
+// main thread.
+var unportable = []string{"base/terminal/", "base/formula/"}
 
 // layerTargets are the GOOS/GOARCH pairs the nsgo tool builds for.
 var layerTargets = [][2]string{

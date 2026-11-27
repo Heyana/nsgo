@@ -226,7 +226,6 @@ What `base/formula` still lacks ([formulas](architecture/components.md#formulas)
 | --- | --- | --- |
 | Formulas in mini programs | `miniprogram.md`, [#1442](https://github.com/nsgo-dev/nsgo/issues/1442) | A mini program typesets formulas within its 2 MB package; the measured one-formula module is 4,106,282 compressed bytes without inlining, still 3,336,609 with all font data zeroed ([package audit](architecture/miniprogram.md#the-package)). Depends on [#1505](https://github.com/nsgo-dev/nsgo/issues/1505); separate-module packaging and its runtime interface remain unimplemented |
 | Formula memory on Apple Watch | [#1443](https://github.com/nsgo-dev/nsgo/issues/1443) | Simulator rendering, executable cost, retained font heap and sampled loading peak are measured; compare process footprint and available headroom on a physical arm64 watch |
-| Loading the font on the web | `components.md` (Formulas), [#1451](https://github.com/nsgo-dev/nsgo/issues/1451) | The formula font loads without holding the page's one thread for its 0.7 s, in pieces between frames or as a smaller font |
 
 ## Terminal
 

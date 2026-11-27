@@ -28,10 +28,57 @@ type Fonts struct {
 	Fallbacks [][]byte
 }
 
+// mathEngine is Untie's layout engine: localEngine in-process on native targets
+// (and as a fallback on the web), or workerEngine backed by a browser Web Worker
+// so parsing New Computer Modern Math never stalls the page's thread.
+type mathEngine interface {
+	LayoutContext(ctx context.Context, expr *untie.Expr, style untie.Style) (*untie.Box, error)
+	LayoutContextWithOptions(ctx context.Context, expr *untie.Expr, style untie.Style, opts untie.LayoutOptions) (*untie.Box, error)
+	layoutSystemText(root *untie.Formula, key layoutKey, missing []untie.MissingFallback, language string, measured []textMeasure) (*untie.Box, error)
+}
+
+type localEngine struct {
+	*untie.Engine
+}
+
+func (e localEngine) layoutSystemText(root *untie.Formula, key layoutKey, _ []untie.MissingFallback, _ string, _ []textMeasure) (*untie.Box, error) {
+	mode := untie.Inline
+	if key.display {
+		mode = untie.Display
+	}
+	return e.LayoutFormulaContextWithOptions(context.Background(), root, mode, key.style(), untie.LayoutOptions{Recovery: untie.RecoveryVisible})
+}
+
+func loadUntieEngine(fonts Fonts) (*untie.Engine, error) {
+	if len(fonts.Math) == 0 {
+		return nil, errors.New("formula: no math font")
+	}
+	config := untie.FontSetConfig{Math: untie.FontFace{Bytes: fonts.Math}}
+	if len(fonts.Text) > 0 {
+		config.Text = &untie.FontFace{Bytes: fonts.Text}
+	}
+	for _, f := range fonts.Fallbacks {
+		config.Fallbacks = append(config.Fallbacks, untie.FontFace{Bytes: f})
+	}
+	set, err := untie.LoadFontSet(config)
+	if err != nil {
+		return nil, err
+	}
+	return untie.NewEngine(set, untie.Limits{})
+}
+
+func loadLocalEngine(fonts Fonts) (mathEngine, error) {
+	engine, err := loadUntieEngine(fonts)
+	if err != nil {
+		return nil, err
+	}
+	return localEngine{engine}, nil
+}
+
 // Renderer lays formulas out in one set of fonts and keeps the last layouts it made, as shapes ready to draw. Missing text runs are measured and drawn by each View with its platform text engine. It is safe for concurrent use, so the engines of a process share one.
 type Renderer struct {
 	fonts  Fonts
-	engine func() (*untie.Engine, error)
+	engine func() (mathEngine, error)
 	// loaded is set once engine has returned.
 	loaded atomic.Bool
 
@@ -46,7 +93,7 @@ const cacheSize = 256
 // referenceSize is the font size formulas are laid out at, which drawing scales to the font size a formula inherits: layout is linear in the size.
 const referenceSize = 100
 
-// NewRenderer prepares a renderer for fonts, parsing and validating them, which takes a while for a large font: about 120 ms for New Computer Modern Math on an M-series Mac, and about 0.7 s in WebAssembly. It fails when Math has no usable MATH table.
+// NewRenderer prepares a renderer for fonts, parsing and validating them, which takes a while for a large font: about 120 ms for New Computer Modern Math on an M-series Mac, and runs in a Web Worker in browsers so the page's thread stays responsive. It fails when Math has no usable MATH table.
 func NewRenderer(fonts Fonts) (*Renderer, error) {
 	r := newRenderer(fonts)
 	if _, err := r.engine(); err != nil {
@@ -57,23 +104,9 @@ func NewRenderer(fonts Fonts) (*Renderer, error) {
 
 func newRenderer(fonts Fonts) *Renderer {
 	r := &Renderer{fonts: fonts, entries: map[layoutKey]*list.Element{}}
-	r.engine = sync.OnceValues(func() (*untie.Engine, error) {
+	r.engine = sync.OnceValues(func() (mathEngine, error) {
 		defer r.loaded.Store(true)
-		if len(fonts.Math) == 0 {
-			return nil, errors.New("formula: no math font")
-		}
-		config := untie.FontSetConfig{Math: untie.FontFace{Bytes: fonts.Math}}
-		if len(fonts.Text) > 0 {
-			config.Text = &untie.FontFace{Bytes: fonts.Text}
-		}
-		for _, f := range fonts.Fallbacks {
-			config.Fallbacks = append(config.Fallbacks, untie.FontFace{Bytes: f})
-		}
-		set, err := untie.LoadFontSet(config)
-		if err != nil {
-			return nil, err
-		}
-		return untie.NewEngine(set, untie.Limits{})
+		return loadMathEngine(fonts)
 	})
 	return r
 }

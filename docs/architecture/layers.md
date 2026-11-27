@@ -162,7 +162,7 @@ A line means "imports". `internal/moduletest/layering_test.go` checks the graph 
 - `updater` imports only `core` and its catalogs; `internal/backend` imports it, to check as the app starts where the platform's updater keeps no schedule, and `tsx` imports it for `nsgo/updater`.
 - `ui` imports `base`, `core`, `mobile`, `desktop` and the icons; `base` never imports it.
 - `tsx/tsxtest` is the one package that imports both `tsx` and `nsgotest`, and `tsx/ui` with the packages below it the TSX packages that import `ui`. `tsx/internal/js`, the engines' API, imports nothing of NSGo's, and on the web reaches the page through `syscall/js`.
-- `base/terminal` is the one package of `base` that is not portable: it loads native libghostty-vt through purego or an embedded browser WebAssembly module, runs programs on desktops and remote sessions there, on iOS and Android and in the browser, and elsewhere builds to report that it cannot (`unportable` in `layering_test.go`).
+- `base/terminal` and `base/formula` are the packages of `base` that are not portable (`unportable` in `layering_test.go`): `base/terminal` loads native libghostty-vt through purego or an embedded browser WebAssembly module, runs programs on desktops and remote sessions there, on iOS and Android and in the browser, and elsewhere builds to report that it cannot; `base/formula` uses `syscall/js` on the web to parse its math font and lay out formulas in a dedicated Web Worker without blocking the page's thread.
 
 ## Why core and backends do not meet
 
@@ -184,7 +184,7 @@ Backends exchange view and service messages with `core` through the engine, so `
 - `ScopeCleanup`, which `core` sets, registers a cleanup on a scope's running owner, as `Scope.Cleanup` does, and returns what takes it off again, so a `gpu` resource's `Close` leaves nothing on the scope it was created under.
 - `UpdateDownload` lets `core.DownloadUpdate` use the platform HTTP client without a surface. It verifies and stages the package before installation is requested through the engine.
 
-Portable packages build unchanged for every target, with no purego, `syscall` or `unsafe`: `core`, `base` but for `base/terminal`, `ui`, `i18n`, `mobile`, `web`, `audio`, `desktop`, `icons`, `tsx`, `nsgotest`, `internal/automation`, `internal/driver`, `internal/appstartup`, `internal/mimeinfo`, `internal/layout`, `internal/testhost`, the shader compilers and `internal/engine`. No package has cgo files or hand-written C.
+Portable packages build unchanged for every target, with no purego, `syscall` or `unsafe`: `core`, `base` but for `base/terminal` and `base/formula`, `ui`, `i18n`, `mobile`, `web`, `audio`, `desktop`, `icons`, `tsx`, `nsgotest`, `internal/automation`, `internal/driver`, `internal/appstartup`, `internal/mimeinfo`, `internal/layout`, `internal/testhost`, the shader compilers and `internal/engine`. No package has cgo files or hand-written C.
 
 ## Backends
 

@@ -1400,6 +1400,9 @@ func buildWeb(ctx context.Context, p *project, dir string, dev bool) error {
 	if app.Exec, err = write("wasm_exec.js", js); err != nil {
 		return err
 	}
+	if app.Worker, err = write("nsgo-worker.js", workerJS); err != nil {
+		return err
+	}
 	if p.split != nil {
 		// The realm's programs and the app's bundles are the page's files,
 		// so a Content-Security-Policy needs no 'unsafe-eval'
@@ -1539,6 +1542,7 @@ type webApp struct {
 	Wasm          string `json:"wasm"`
 	WasmSize      int64  `json:"wasmSize"`
 	Exec          string `json:"exec"`
+	Worker        string `json:"worker,omitempty"`
 	Loader        string `json:"loader"`
 	Host          string `json:"host,omitempty"`
 	// Runtime is the script that gives the page's realm the runtime's
@@ -1557,6 +1561,12 @@ type webApp struct {
 //
 //go:embed web/nsgo.js
 var loaderJS []byte
+
+// workerJS is nsgo-worker.js, which boots the compiled WebAssembly module in a
+// dedicated Web Worker for background tasks such as formula font parsing.
+//
+//go:embed web/worker.js
+var workerJS []byte
 
 // webHost reads nsgo.yaml's host module, which must be inside the app's
 // directory once symbolic links are resolved.
