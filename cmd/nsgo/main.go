@@ -208,6 +208,11 @@ func main() {
 		if err = fs.Parse(args); err != nil {
 			break
 		}
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "tests" {
+				o.testsSet = true
+			}
+		})
 		o.skipTests = !*tests
 		var ask func(context.Context) (bool, error)
 		if stdinIsTerminal() {

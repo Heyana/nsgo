@@ -109,3 +109,43 @@ nsgo diff -exit-code chat              # exit with status 1 when there are diffe
 - **Line endings and formatting.** Files are compared with CRLF read as LF, and Go files whose `go/format` output matches the recorded version count as unedited.
 - **Offline use and unavailable versions.** Recorded versions are read from `GOMODCACHE` first so `nsgo diff` works offline under `GOPROXY=off`; otherwise they download through Go module proxies with `GOTOOLCHAIN=local`. When a recorded version can no longer be downloaded, every non-generated file counts as edited and the output explains why.
 - **Safety.** Every path in `nsgo-copy.yaml` is validated on read (refusing escapes such as `../form/form.go` with the line number), all reads stay inside an `os.Root` at the copy's directory, and symlinks are refused.
+
+## Updating a copy
+
+Pass another version to `nsgo add` to update an existing copy file by file while keeping the app's own edits:
+
+```sh
+nsgo add chat@v0.5.0                  # update by component name from nsgo-copy.yaml
+nsgo add chat@upgrade                 # update to the newest release
+nsgo add chat@v0.4.0                  # downgrade to an earlier version
+nsgo add components/chat@v0.5.0       # disambiguate by directory when two copies share a name
+nsgo add -dry-run chat@v0.5.0         # preview per-file actions without writing
+```
+
+A component name is matched against the module's `nsgo-copy.yaml` records first so resolution works offline; if two copies from different modules share a name, pass the copy's directory or `module@version#component`.
+
+For each file, `nsgo add` reconstructs the recorded version (base) and the target version (author) and compares them with the directory (app), reading CRLF as LF and formatting Go files before comparing:
+
+- **App left the file alone:** takes the new version and preserves CRLF line endings if the file in the directory uses CRLF.
+- **Author left it alone, or both made the same change:** stays untouched.
+- **Both changed it differently:** the update is refused, naming every conflicting file and writing nothing.
+- **Author dropped it:** deleted when the app left it alone; flagged when the app edited it (refused under `-y`, or confirmed interactively).
+- **Author added it and a file of that name already exists** (compared case-insensitively): refused, writing nothing.
+
+Around the files, `locales/catalog_gen.go` is regenerated from the resulting catalogs, other copied components imported from the same module move to the same version in the same plan, `go.mod` requirements, license policy, and target vetting work as for a new copy, and `nsgo-copy.yaml` records the new version and its files. A version whose module no longer declares the component is refused, naming that version.
+
+### Carrying app edits over by hand
+
+When both the app and the author edited the same file, `nsgo add` stops before writing anything rather than guessing at a line merge. Carry your edits over by hand with `nsgo diff`:
+
+1. Save your own edits against the recorded version:
+   ```sh
+   nsgo diff chat > chat.patch
+   ```
+2. Inspect what the author changed in the target version:
+   ```sh
+   nsgo diff chat@v0.5.0
+   ```
+3. Temporarily restore the conflicting file to the recorded version (for example with `git apply -R` on that file's hunk from `chat.patch`, or by reverting your edits to it) so `nsgo add` sees it as unedited.
+4. Run `nsgo add chat@v0.5.0` to take the new version cleanly and update `nsgo-copy.yaml`.
+5. Re-apply your edits from `chat.patch` onto the updated file, then run `nsgo diff chat` and `nsgo check` to verify only your intended edits remain and the copy builds cleanly.

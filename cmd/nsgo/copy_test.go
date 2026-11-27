@@ -777,10 +777,21 @@ func TestCopyVersionsAndTestsFlag(t *testing.T) {
 		t.Errorf("record tests = %v, err = %v; want false", rec, err)
 	}
 
-	// 4. Existing copy at another version is refused naming nsgo diff.
-	_, err = runAdd(t, dir, addOptions{yes: true}, nil, "example.com/verkit@v1.2.0#pill")
-	if err == nil || !strings.Contains(err.Error(), "nsgo diff pill@v1.2.0") {
-		t.Errorf("another version refusal = %v, want nsgo diff pill@v1.2.0", err)
+	// 4. Existing copy at another version updates in place, preserving tests: false (#2469).
+	upPlan, err := runAdd(t, dir, addOptions{yes: true}, nil, "example.com/verkit@v1.2.0#pill")
+	if err != nil {
+		t.Fatalf("update to v1.2.0 failed: %v\n%s", err, upPlan)
+	}
+	if !strings.Contains(upPlan, "updating copied component from v1.1.0 to v1.2.0") {
+		t.Errorf("update plan missing header:\n%s", upPlan)
+	}
+	rec, err = readCopyRecord(filepath.Join(dir, "components/pill"))
+	if err != nil || rec.ModuleVersion != "v1.2.0" || rec.Tests {
+		t.Errorf("updated record = %+v, err = %v; want v1.2.0 and tests=false", rec, err)
+	}
+	pillSrc, err := os.ReadFile(filepath.Join(dir, "components/pill/pill.go"))
+	if err != nil || !strings.Contains(string(pillSrc), `"pill2"`) {
+		t.Errorf("updated pill.go = %q, err = %v; want pill2", pillSrc, err)
 	}
 
 	// 5. Typed version below app's requirement leaves requirement alone and says copy is older.

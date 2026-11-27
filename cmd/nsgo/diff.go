@@ -734,6 +734,15 @@ func (m *diffModuleContext) downloadVerifiedZip(ctx context.Context, modPath, qu
 // without generated files), reusing copy.go's zip collection, ancestor license
 // collection and AST rewriting helpers directly.
 func reconstructCopyFiles(m *diffModuleContext, dm *downloadedModule, c moduleCopy, allCopies []moduleCopy) (map[string][]byte, error) {
+	return reconstructComponentCopyFiles(m.modPath, m.compBase, dm, c, allCopies)
+}
+
+// reconstructComponentCopyFiles reconstructs the canonical copy of c's
+// component from dm, placed at c.importPath with sibling copies at their
+// current record locations (falling back to appModPath/compBase/<pkg>),
+// formatted, and without generated catalog files. Shared by nsgo diff (#2468)
+// and nsgo add component updates (#2469).
+func reconstructComponentCopyFiles(appModPath, compBase string, dm *downloadedModule, c moduleCopy, allCopies []moduleCopy) (map[string][]byte, error) {
 	if dm.manifest == nil || dm.manifest.Components == nil {
 		return nil, fmt.Errorf("%s@%s declares no component %q", dm.path, dm.version, c.record.Component)
 	}
@@ -745,7 +754,7 @@ func reconstructCopyFiles(m *diffModuleContext, dm *downloadedModule, c moduleCo
 	// Build import rewrite table matching #2467:
 	// - this component and its locales/ -> c.importPath
 	// - every other component of the same module -> where its record is now,
-	//   else its default destination under m.compBase.
+	//   else its default destination under compBase.
 	rewrites := map[string]string{
 		dm.path + "/" + srcDir:              c.importPath,
 		dm.path + "/" + srcDir + "/locales": c.importPath + "/locales",
@@ -765,7 +774,7 @@ func reconstructCopyFiles(m *diffModuleContext, dm *downloadedModule, c moduleCo
 			destImp = existing.importPath
 		} else {
 			pkgName := path.Base(otherSrcDir)
-			destImp = m.modPath + "/" + path.Join(m.compBase, pkgName)
+			destImp = appModPath + "/" + path.Join(compBase, pkgName)
 		}
 		rewrites[dm.path+"/"+otherSrcDir] = destImp
 		rewrites[dm.path+"/"+otherSrcDir+"/locales"] = destImp + "/locales"

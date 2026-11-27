@@ -35,6 +35,7 @@ type addOptions struct {
 	diff      bool   // print every copied component file in full
 	dir       string // destination directory for the one copied component
 	skipTests bool   // -tests=false leaves out _test.go files and testdata/
+	testsSet  bool   // true when -tests was explicitly passed on the command line
 }
 
 // addRequest is a module or component named on nsgo add's command line: its path, the version typed after @ (else the index entry's version or the query upgrade for libraries, or resolved from go.mod/index/upgrade for components), the optional component name, and the bare or @registry/name index name it was resolved from when named by one.
@@ -43,6 +44,7 @@ type addRequest struct {
 	typed           bool
 	component       string
 	fromName        string
+	fromCopy        bool   // true when resolved from an existing copy's nsgo-copy.yaml record
 	itemVersion     string // version declared in a registry entry for a component item
 	registryLicense string // SPDX expression from a registry entry, when added by name
 }
@@ -84,6 +86,7 @@ type addSpec struct {
 	typed           bool
 	component       string
 	fromName        string
+	fromCopy        bool
 	itemVersion     string
 	registryLicense string
 }
@@ -266,6 +269,7 @@ func resolveAddSpecs(ctx context.Context, specs []addSpec, modDir string) ([]add
 				typed:           s.typed,
 				component:       s.component,
 				fromName:        s.fromName,
+				fromCopy:        s.fromCopy,
 				itemVersion:     s.itemVersion,
 				registryLicense: s.registryLicense,
 			}
@@ -297,6 +301,7 @@ func resolveAddSpecs(ctx context.Context, specs []addSpec, modDir string) ([]add
 				typed:           s.typed,
 				component:       s.component,
 				fromName:        s.fromName,
+				fromCopy:        s.fromCopy,
 				itemVersion:     s.itemVersion,
 				registryLicense: s.registryLicense,
 			})
@@ -474,11 +479,15 @@ func addModulesWithIndex(ctx context.Context, o addOptions, args []string, idx *
 		}
 		return listAddItems(ctx, idx, args, out)
 	}
-	specs, err := parseAddSpecsWithIndex(args, idx)
-	if err != nil {
-		return err
+	if len(args) == 0 {
+		return fmt.Errorf("add: name a module, library or component: %s add name|@registry/name|module[@version][#component]", nsgoCommand())
 	}
-	if o.dir != "" && len(specs) != 1 {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			return fmt.Errorf("add: flags go before the modules: %s add %s %s", nsgoCommand(), arg, args[0])
+		}
+	}
+	if o.dir != "" && len(args) != 1 {
 		return errors.New("add: -dir applies to one component")
 	}
 	// An interrupt kills the go commands of planning, whose errors would say only that they were killed.
@@ -491,6 +500,10 @@ func addModulesWithIndex(ctx context.Context, o addOptions, args []string, idx *
 	m, err := findAddModule(ctx)
 	if err != nil {
 		return planning(err)
+	}
+	specs, err := resolveCopyOrAddSpecs(m, args, idx)
+	if err != nil {
+		return err
 	}
 	// The plan says what planning found, so the step leaves no line of its own.
 	s := begin("planning %s", strings.Join(args, " "))
