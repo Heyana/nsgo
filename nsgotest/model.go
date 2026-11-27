@@ -288,7 +288,11 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 	if v == nil {
 		return
 	}
-	v.Drawing = d
+	if v.Drawing != d {
+		d.Retain()
+		v.Drawing.Release()
+		v.Drawing = d
+	}
 	v.ResolutionScale, v.CanvasSampling = float32(d.ResolutionScale()), d.Upscale
 	a.anim.BindCanvas(v.ID, d.Slots)
 	v.Ops = slices.Clone(a.anim.CanvasOps(v.ID, d))
@@ -315,6 +319,13 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 		v.Children = append(v.Children, &View{Kind: KindView, Parent: v, Frame: n.Bounds, Node: n,
 			Style: ViewStyle{Opacity: 1},
 			Props: ViewProps{Role: n.Role, Label: n.Label, TestID: n.TestID, Selected: n.Selected}})
+	}
+}
+
+func (a *App) releaseDrawings() {
+	for _, v := range a.views {
+		v.Drawing.Release()
+		v.Drawing = nil
 	}
 }
 
@@ -580,6 +591,8 @@ func (a *App) apply(b *driver.MountBatch) {
 			created[it.ID] = true
 		case driver.ItemDelete:
 			if v != nil {
+				v.Drawing.Release()
+				v.Drawing = nil
 				if v.Kind == KindModal {
 					a.cancelModalPresent(it.ID)
 					if !v.modalDismissed {

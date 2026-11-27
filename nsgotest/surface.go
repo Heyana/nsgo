@@ -175,6 +175,9 @@ func (a *App) surfaceConfig(id uint32) SurfaceConfig {
 func (a *App) closeSurface(id uint32) {
 	if s := a.surfaceModels[id]; s != nil {
 		s.closed = true
+		if s.model != a {
+			s.model.releaseDrawings()
+		}
 		delete(a.surfaceModels, id)
 	}
 }

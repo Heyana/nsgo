@@ -421,3 +421,122 @@ func TestTargetDoublePressPanAndPinch(t *testing.T) {
 		}
 	})
 }
+
+// Reproduces the target-mode sprite animation race: the engine commits pooled
+// canvas drawings at frame rate, the platform immediately releases each
+// superseded drawing, and target.drain applies queued batches concurrently on
+// the test goroutine.
+func TestTargetObserveRetainsPooledCanvasDrawingsUnderConcurrentDrain(t *testing.T) {
+	clock := core.NewManualClock(time.Unix(0, 0))
+	root := core.NewRoot(core.RootOptions{Post: func(func()) {}, Clock: clock})
+	defer root.Dispose()
+	tree := core.NewTree(root, core.ApproxTextEngine{})
+	tree.Resize(core.Size{Width: 400, Height: 300}, core.Geometry{})
+
+	atlas := core.Src("asset:perf/sprite-atlas.png")
+	srcRects := []core.Bounds{{Size: core.Size{Width: 32, Height: 32}}}
+	xforms := []core.RSXform{{SCos: 1, TX: 8, TY: 8}}
+	var frame *core.Signal[int]
+	tree.Mount(func(cx *core.Scope) core.Node {
+		frame = core.NewSignal(cx, 0)
+		return core.Canvas{
+			TestID: "sprites",
+			Style:  core.Style{Width: core.Pt(400), Height: core.Pt(300)},
+			Draw: func(d *core.Drawing, _ core.Size) {
+				v := frame.Get()
+				for i := range 64 {
+					d.DrawImageFrom(atlas, 0, 0, 32, 32, float32((i*17+v)%300), float32((i*13+v)%200), 16, 16)
+				}
+				d.DrawAtlas(atlas, srcRects, xforms, nil)
+			},
+		}
+	})
+
+	a := &App{
+		t:     t,
+		Clock: clock,
+		start: clock.Now(),
+		views: map[driver.NodeID]*View{},
+		edits: map[driver.NodeID]uint32{},
+		anim:  driver.NewAnimator(func(driver.Event) {}),
+	}
+	tg := &target{a: a}
+	a.target = tg
+
+	// Initial commit populates the canvas view and starts the platform lease.
+	first := tree.Commit()
+	if first == nil {
+		t.Fatal("initial commit returned nil batch")
+	}
+	tg.observe(0, first)
+	driver.RetainBatchDrawings(first)
+	var platformDrawing *driver.Drawing
+	for _, it := range first.Items {
+		if it.Kind == driver.ItemCanvas {
+			platformDrawing = it.Drawing
+		}
+	}
+	tg.drain()
+
+	var done atomic.Bool
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for !done.Load() {
+			tg.drain()
+			runtime.Gosched()
+		}
+		tg.drain()
+	}()
+
+	var seen []*driver.Drawing
+	for i := 1; i <= 250; i++ {
+		frame.Set(i)
+		b := tree.Commit()
+		if b == nil {
+			continue
+		}
+		// Order matches engine.observed.Mount: observe queues for the test
+		// goroutine, then the platform retains the new drawing and releases the
+		// previous one before target.drain necessarily runs.
+		tg.observe(0, b)
+		driver.RetainBatchDrawings(b)
+		for _, it := range b.Items {
+			if it.Kind == driver.ItemCanvas {
+				seen = append(seen, it.Drawing)
+				was := platformDrawing
+				platformDrawing = it.Drawing
+				was.Release()
+			}
+		}
+		if i%5 == 0 {
+			runtime.Gosched()
+		}
+	}
+
+	done.Store(true)
+	wg.Wait()
+
+	v := a.Find("id:sprites")
+	if v == nil || v.Drawing == nil {
+		t.Fatal("canvas view missing drawing after concurrent drain")
+	}
+	if len(v.Drawing.Ops) != 65 {
+		t.Fatalf("len(v.Drawing.Ops) = %d, want 65", len(v.Drawing.Ops))
+	}
+	if !v.Drawing.InUse() {
+		t.Fatal("active model drawing should remain retained")
+	}
+
+	// Releasing both the platform and the test model should return every
+	// drawing's lease to 0 so the pool can reuse them.
+	platformDrawing.Release()
+	tg.mainClosed()
+	tg.releaseUpdates()
+	for i, d := range seen {
+		if d.InUse() {
+			t.Fatalf("drawing %d still InUse after platform and model release", i)
+		}
+	}
+}

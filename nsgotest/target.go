@@ -123,6 +123,7 @@ func (t *target) observe(surface uint32, b *driver.MountBatch) {
 	if t.lost != "" || !t.windowed && surface != 0 {
 		return
 	}
+	driver.RetainBatchDrawings(b)
 	u := targetUpdate{surface: surface, batch: b, aside: t.windowed && surface == 0}
 	if u.aside {
 		for _, it := range b.Items {
@@ -188,8 +189,12 @@ func (t *target) applyLive(b *driver.MountBatch) {
 		}
 		why, _, _ = strings.Cut(strings.TrimPrefix(why, "nsgotest: "), "\n")
 		t.mu.Lock()
+		dropped := t.updates
 		t.lost, t.updates = why, nil
 		t.mu.Unlock()
+		for _, u := range dropped {
+			driver.ReleaseBatchDrawings(u.batch)
+		}
 		log.Printf("nsgo: the automation stopped following a surface: %s", why)
 		fail(automation.Failed, "the automation stopped following the window: "+why)
 	}()
@@ -250,6 +255,8 @@ func (a *App) startTarget(view func(cx *core.Scope) core.Node, fn func(app *core
 		}
 		t.releaseHeld()
 		a.root.Dispose()
+		t.releaseUpdates()
+		a.releaseDrawings()
 	})
 	a.seed()
 	a.anim = driver.NewAnimator(func(driver.Event) {})
@@ -352,11 +359,26 @@ func (t *target) drainEvents() bool {
 	return events
 }
 
+func (t *target) releaseUpdates() {
+	t.mu.Lock()
+	dropped := t.updates
+	t.updates = nil
+	t.mu.Unlock()
+	for _, u := range dropped {
+		driver.ReleaseBatchDrawings(u.batch)
+	}
+}
+
 func (t *target) drain() bool {
 	t.mu.Lock()
 	updates := t.updates
 	t.updates = nil
 	t.mu.Unlock()
+	defer func() {
+		for _, u := range updates {
+			driver.ReleaseBatchDrawings(u.batch)
+		}
+	}()
 	for _, u := range updates {
 		if b := u.batch; b != nil {
 			t.a.traceBatch(b, 0)
@@ -466,6 +488,7 @@ func (t *target) applyOwn(b *driver.MountBatch) {
 func (t *target) mainClosed() {
 	a := t.a
 	t.surface = t.source
+	a.releaseDrawings()
 	a.views, a.rootID, a.Keymap, a.keyBindings = map[driver.NodeID]*View{}, 0, nil, nil
 	a.SystemGestures = core.SystemGestureOptions{}
 	delete(a.menus, nil)

@@ -291,10 +291,11 @@ func (g *agent) drainEvery(d time.Duration) {
 // drainAll has every live model take what came, and forgets the surfaces destroyed. The caller holds g.work.
 func (g *agent) drainAll() {
 	g.mu.Lock()
-	var live []*followed
+	var live, closed []*followed
 	for key, f := range g.surfaces {
 		if f.closed {
 			g.forget(key, f)
+			closed = append(closed, f)
 			continue
 		}
 		if f.app.target != nil && f.lost() == "" {
@@ -302,6 +303,12 @@ func (g *agent) drainAll() {
 		}
 	}
 	g.mu.Unlock()
+	for _, f := range closed {
+		if f.app.target != nil {
+			f.app.target.releaseUpdates()
+		}
+		f.app.releaseDrawings()
+	}
 	for _, f := range live {
 		g.drain(f)
 	}
