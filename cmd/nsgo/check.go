@@ -348,7 +348,7 @@ func targetSupportsAutomation(name string) bool {
 		return true
 	}
 	switch name {
-	case "macos_arm64", "macos_x64", "macos_universal", "linux_arm64", "linux_x64", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
+	case "macos_arm64", "macos_x64", "macos_universal", "windows_arm64", "windows_x64", "linux_arm64", "linux_x64", "web", "ios", "tvos", "watchos", "ios_simulator", "tvos_simulator", "watchos_simulator":
 		return true
 	}
 	return false

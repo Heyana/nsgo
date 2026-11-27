@@ -270,3 +270,16 @@ func TestAndroidHostSessionFastReloadOverADB(t *testing.T) {
 		t.Errorf("host process env log = %q, want %q", envLines, wantEnv)
 	}
 }
+
+func TestAndroidHostStartArgs(t *testing.T) {
+	plain := androidHostStartArgs("dev.example.demo", devOptions{})
+	wantPlain := []string{"shell", "am", "start", "-W", "-S", "-n", "dev.example.demo" + androidComponent}
+	if !slices.Equal(plain, wantPlain) {
+		t.Fatalf("plain args = %v, want %v", plain, wantPlain)
+	}
+	auto := androidHostStartArgs("dev.example.demo", devOptions{automation: true})
+	wantAuto := append(wantPlain, "--ez", androidAutomationExtra, "true")
+	if !slices.Equal(auto, wantAuto) {
+		t.Fatalf("automation args = %v, want %v", auto, wantAuto)
+	}
+}

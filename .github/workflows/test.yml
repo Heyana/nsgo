@@ -363,6 +363,13 @@ jobs:
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
         run: xvfb-run -a go tool nsgo test -target linux -run '^TestCanvasImageTint$' ./internal/testhost/testdata/capture
+      - name: Test Linux MCP automation end to end
+        env:
+          NSGO_AUTOMATION_E2E: '1'
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          GTK_A11Y: none
+        run: xvfb-run -a dbus-run-session -- go tool nsgo test -run '^TestLinuxAutomationEndToEnd$' ./cmd/nsgo -- -count=1
 
   linux-gstreamer-128:
     name: Linux audio (GStreamer 1.28)
@@ -537,6 +544,8 @@ jobs:
         run: go tool nsgo test -target web -timeout 1m ./testdata/devtools-geometry
       - name: Test browser package trust persistence
         run: go tool nsgo test -target web ./tsx/pkg
+      - name: Test web MCP automation end to end
+        run: go tool nsgo test -run '^TestWeb(Automation|MCP)EndToEnd$' ./cmd/nsgo -- -count=1
 
   # The runtime is built once here and both emulator jobs package it, so the APK
   # under test still comes from this commit's Java.

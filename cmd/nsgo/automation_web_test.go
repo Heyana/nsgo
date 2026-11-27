@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -369,6 +370,52 @@ while [ ! -e "$NSGO_TEST_BROWSER_CLOSED" ]; do sleep 0.05; done
 	checkBrowserProfileRemoved(t)
 }
 
+func TestWebAutomationSessionExplicitHost(t *testing.T) {
+	var navigated []string
+	var navMu sync.Mutex
+	mock := newMockCDPServer(t, func(msg cdpMessage) (any, error) {
+		if msg.Method == "Page.navigate" {
+			var p struct{ URL string }
+			json.Unmarshal(msg.Params, &p)
+			navMu.Lock()
+			navigated = append(navigated, p.URL)
+			navMu.Unlock()
+		}
+		return map[string]any{}, nil
+	})
+	t.Setenv("NSGO_TEST_BROWSER_PORT", fakeBrowserPort(t, mock.srv))
+	closedMarker := filepath.Join(t.TempDir(), "closed")
+	mock.closedFile = closedMarker
+	t.Setenv("NSGO_TEST_BROWSER_CLOSED", closedMarker)
+	fakeBrowser(t, `profile=$(cat "$NSGO_TEST_BROWSER_PROFILE")
+printf '%s\n/devtools/browser/test\n' "$NSGO_TEST_BROWSER_PORT" > "$profile/DevToolsActivePort"
+while [ ! -e "$NSGO_TEST_BROWSER_CLOSED" ]; do sleep 0.05; done
+`)
+
+	srv, err := startDevServer("127.0.0.1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.close()
+	p := &project{Dir: t.TempDir()}
+	s := webSession(devOptions{automation: true, server: srv})
+	defer s.close()
+
+	app, err := s.start(t.Context(), p)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer app.stop()
+
+	navMu.Lock()
+	got := append([]string(nil), navigated...)
+	navMu.Unlock()
+	wantURL := srv.pageURL(srv.url(), "/")
+	if len(got) != 1 || got[0] != wantURL {
+		t.Fatalf("navigated = %v, want [%s]", got, wantURL)
+	}
+}
+
 func TestWebAutomationSessionReportsBrowserExit(t *testing.T) {
 	mock := newMockCDPServer(t, nil)
 	t.Setenv("NSGO_TEST_BROWSER_PORT", fakeBrowserPort(t, mock.srv))
@@ -617,4 +664,235 @@ func TestWebAutomationEndToEnd(t *testing.T) {
 	}
 	must(automation.Press, automation.PressParams{Selector: "id:add"}, nil)
 	shows(`text:"Count: 1"`)
+}
+
+// TestWebMCPEndToEnd spawns the real nsgo mcp CLI with -target web, letting it start nsgo dev -automation -target web in headless Chromium, drives the app end to end over MCP stdio (including app-defined tools, input, scrolling, alerts, screenshots, logs and reload), and checks that closing MCP ends the dev session cleanly.
+func TestWebMCPEndToEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns nsgo mcp -target web and drives an app in a browser")
+	}
+	if _, err := findBrowser(); err != nil {
+		t.Skip(err)
+	}
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp(filepath.Join(root, "testdata"), ".automation-web-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	})
+	for _, name := range []string{"nsgo.yaml", "main.go"} {
+		code, err := os.ReadFile(filepath.Join(root, "testdata", "automation", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), code, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Minute)
+	defer cancel()
+	var output lockedBuffer
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("nsgo mcp output:\n%s", output.String())
+		}
+	})
+	command := exec.CommandContext(ctx, "go", "tool", "nsgo", "mcp", "-target", "web", "-port", "0", dir)
+	command.Dir = root
+	command.Stderr = &output
+	client := mcp.NewClient(&mcp.Implementation{Name: "web-mcp-test"}, nil)
+	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	call := func(method string, args map[string]any) []mcp.Content {
+		t.Helper()
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: method, Arguments: args})
+		if err != nil {
+			t.Fatalf("%s: %v", method, err)
+		}
+		if result.IsError || len(result.Content) == 0 {
+			t.Fatalf("%s: %+v", method, result)
+		}
+		return result.Content
+	}
+	read := func(method string, args map[string]any) string {
+		t.Helper()
+		content := call(method, args)
+		if body, ok := content[0].(*mcp.TextContent); ok {
+			return body.Text
+		}
+		t.Fatalf("%s returned %T instead of text", method, content[0])
+		return ""
+	}
+	show := func(selector string) {
+		t.Helper()
+		read(automation.Wait, map[string]any{"selector": selector})
+	}
+
+	// Wait for the child nsgo dev -automation -target web build and headless browser connection.
+	for {
+		status := read(automation.Status, nil)
+		var live automation.StatusResult
+		if err := json.Unmarshal([]byte(status), &live); err != nil {
+			t.Fatal(err)
+		}
+		if live.BuildError != "" {
+			t.Fatalf("building the web app: %s", live.BuildError)
+		}
+		if live.App {
+			if live.Target != "web" || live.Run != 1 {
+				t.Fatalf("status: %+v", live)
+			}
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("the web app did not connect: %s", status)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	var list automation.WindowsResult
+	for deadline := time.Now().Add(30 * time.Second); len(list.Windows) == 0; time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the web app showed no window")
+		}
+		if err := json.Unmarshal([]byte(read(automation.Windows, nil)), &list); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(list.Windows) != 1 || !list.Windows[0].Default || list.Windows[0].Kind != "app" || list.Windows[0].Width != webAutomationWidth || list.Windows[0].Height != webAutomationHeight {
+		t.Fatalf("windows: %+v", list.Windows)
+	}
+
+	// App-defined MCP tools appear in tools/list and update the web app's state.
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hasSetCount bool
+	for _, tool := range tools.Tools {
+		if tool.Name == "set_count" && tool.Description == "Set the counter to a test value" {
+			hasSetCount = true
+			break
+		}
+	}
+	if !hasSetCount {
+		t.Fatal("nsgo mcp -target web did not list set_count")
+	}
+	read("set_count", map[string]any{"count": 3})
+	show(`text:"Count: 3"`)
+
+	if snapshot := read(automation.Snapshot, nil); !strings.Contains(snapshot, `- button "Add"`) || !strings.Contains(snapshot, "id=add") {
+		t.Fatalf("snapshot:\n%s", snapshot)
+	}
+	read(automation.Press, map[string]any{"selector": "id:add"})
+	show(`text:"Count: 4"`)
+	read(automation.Type, map[string]any{"selector": "id:name", "text": "Ada"})
+	show(`text:"Hello, Ada"`)
+	read(automation.Key, map[string]any{"selector": "id:name", "key": "mod+a"})
+	read(automation.Key, map[string]any{"selector": "id:name", "key": "Backspace"})
+	show(`text:"Hello, "`)
+
+	// Native menus report unsupported cleanly over MCP on the web.
+	menuRes, err := session.CallTool(ctx, &mcp.CallToolParams{Name: automation.Menu, Arguments: map[string]any{"path": []string{"Actions", "Reset"}}})
+	if err != nil || !menuRes.IsError || len(menuRes.Content) == 0 {
+		t.Fatalf("menu on web: %+v, %v", menuRes, err)
+	}
+	if text := menuRes.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, string(automation.Unsupported)) {
+		t.Fatalf("menu on web error = %q, want unsupported", text)
+	}
+
+	// Alerts: list, answer and dismiss.
+	read(automation.Press, map[string]any{"selector": "id:ask"})
+	if alerts := read(automation.Alert, nil); !strings.Contains(alerts, "Keep going?") {
+		t.Fatalf("alerts:\n%s", alerts)
+	}
+	read(automation.Alert, map[string]any{"answer": 0})
+	show(`text:"Answer: Yes"`)
+	read(automation.Press, map[string]any{"selector": "id:ask"})
+	read(automation.Alert, map[string]any{"answer": -1})
+	var afterDismiss automation.AlertResult
+	if err := json.Unmarshal([]byte(read(automation.Alert, nil)), &afterDismiss); err != nil || len(afterDismiss.Alerts) != 0 {
+		t.Fatalf("alerts after dismiss: %+v, %v", afterDismiss, err)
+	}
+
+	// Token is absent from the app's environment.
+	show(`text:"Token in the environment: false"`)
+
+	// Scroll and find.
+	rowY := func() float64 {
+		t.Helper()
+		var found automation.FindResult
+		if err := json.Unmarshal([]byte(read(automation.Find, map[string]any{"selector": "id:row-60"})), &found); err != nil {
+			t.Fatal(err)
+		}
+		if len(found.Elements) == 0 {
+			t.Fatal("id:row-60 not found")
+		}
+		return found.Elements[0].Bounds[1]
+	}
+	before := rowY()
+	read(automation.Scroll, map[string]any{"selector": "id:list", "by": 1500})
+	if moved := before - rowY(); moved < 1000 {
+		t.Fatalf("the list scrolled %g points of 1500", moved)
+	}
+
+	// Screenshot via MCP returns a PNG matching the viewport.
+	screenshot := call(automation.Screenshot, nil)
+	shot, ok := screenshot[0].(*mcp.ImageContent)
+	if !ok || shot.MIMEType != "image/png" || len(shot.Data) == 0 {
+		t.Fatalf("screenshot returned %+v", screenshot)
+	}
+	size, err := png.DecodeConfig(bytes.NewReader(shot.Data))
+	if err != nil || size.Width < webAutomationWidth || size.Height < webAutomationHeight {
+		t.Fatalf("screenshot size %dx%d: %v", size.Width, size.Height, err)
+	}
+
+	// Logs succeeds over MCP.
+	var logs automation.LogsResult
+	if err := json.Unmarshal([]byte(read(automation.Logs, map[string]any{"lines": 20})), &logs); err != nil {
+		t.Fatalf("logs: %v", err)
+	}
+
+	// Reload rebuilds, reloads the page, reconnects with run >= 2 and remains interactive.
+	read(automation.Reload, nil)
+	for {
+		status := read(automation.Status, nil)
+		var live automation.StatusResult
+		if err := json.Unmarshal([]byte(status), &live); err != nil {
+			t.Fatal(err)
+		}
+		if live.BuildError != "" {
+			t.Fatalf("rebuilding the web app: %s", live.BuildError)
+		}
+		if live.App && live.Run >= 2 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("the reloaded web app did not reconnect: %s", status)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	read(automation.Press, map[string]any{"selector": "id:add"})
+	show(`text:"Count: 1"`)
+
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readSession(dir); !os.IsNotExist(err) {
+		t.Fatalf("the dev session did not end with MCP: %v", err)
+	}
 }

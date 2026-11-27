@@ -120,13 +120,13 @@ func (s *androidHostDev) start(ctx context.Context, p *project) (app, error) {
 			return app{}, fmt.Errorf("adb forward returned invalid port %q", port)
 		}
 		s.port = trimmed
-		if err := s.device.run(ctx, "shell", "am", "start", "-W", "-S", "-n", p.ID+androidComponent); err != nil {
+		if err := s.device.run(ctx, androidHostStartArgs(p.ID, s.opts)...); err != nil {
 			return app{}, err
 		}
 		s.installed = s.inputs
 	} else if alive, err := s.device.running(ctx, p.ID); err == nil && !alive {
 		// Re-launch the installed Activity if the user dismissed it, without reinstalling the APK.
-		if err := s.device.run(ctx, "shell", "am", "start", "-W", "-S", "-n", p.ID+androidComponent); err != nil {
+		if err := s.device.run(ctx, androidHostStartArgs(p.ID, s.opts)...); err != nil {
 			return app{}, err
 		}
 	}
@@ -144,6 +144,15 @@ func (s *androidHostDev) start(ctx context.Context, p *project) (app, error) {
 		stop()
 		os.RemoveAll(dir)
 	}, wait: wait}, nil
+}
+
+// androidHostStartArgs returns the adb arguments that launch the Android host-dev activity, passing the automation extra when -automation is set.
+func androidHostStartArgs(id string, opts devOptions) []string {
+	args := []string{"shell", "am", "start", "-W", "-S", "-n", id + androidComponent}
+	if opts.automation {
+		args = append(args, "--ez", androidAutomationExtra, "true")
+	}
+	return args
 }
 
 func (s *androidHostDev) stopActivity() {

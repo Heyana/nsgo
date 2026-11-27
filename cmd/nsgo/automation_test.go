@@ -722,6 +722,39 @@ func TestAutomationSupportedTargets(t *testing.T) {
 	}
 }
 
+func TestCheckTargetSupportsAutomation(t *testing.T) {
+	cases := []struct {
+		target string
+		want   bool
+	}{
+		{"macos_arm64", true},
+		{"macos_x64", true},
+		{"macos_universal", true},
+		{"windows_arm64", true},
+		{"windows_x64", true},
+		{"linux_arm64", true},
+		{"linux_x64", true},
+		{"web", true},
+		{"android_arm64", true},
+		{"android_x64", true},
+		{"ios", true},
+		{"tvos", true},
+		{"watchos", true},
+		{"ios_simulator", true},
+		{"tvos_simulator", true},
+		{"watchos_simulator", true},
+		{"miniprogram_wechat", true},
+		{"miniprogram_alipay", true},
+		{"tui", false},
+		{"harmonyos", false},
+	}
+	for _, tc := range cases {
+		if got := targetSupportsAutomation(tc.target); got != tc.want {
+			t.Errorf("targetSupportsAutomation(%q) = %v, want %v", tc.target, got, tc.want)
+		}
+	}
+}
+
 func TestCheckDevAutomation(t *testing.T) {
 	for _, tc := range []struct {
 		target, goos string

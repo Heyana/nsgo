@@ -90,6 +90,10 @@ public class NsgoActivity extends Activity {
         if (view != null) view.stopHostView();
         requestOrientation(0);
         NsgoView next = new NsgoView(new MutableContextWrapper(this));
+        Intent intent = getIntent();
+        if (intent != null) {
+            next.setAutomation(intent.getBooleanExtra(TestAgent.AUTOMATION_EXTRA, false));
+        }
         next.setHostSocket(socket);
         view = next;
         setContentView(next);

@@ -118,6 +118,24 @@ func TestLinuxAutomationEndToEnd(t *testing.T) {
 	if len(list.Windows) != 1 || !list.Windows[0].Default || list.Windows[0].Width <= 0 {
 		t.Fatalf("windows: %+v", list.Windows)
 	}
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hasSetCount bool
+	for _, tool := range tools.Tools {
+		if tool.Name == "set_count" && tool.Description == "Set the counter to a test value" {
+			hasSetCount = true
+			break
+		}
+	}
+	if !hasSetCount {
+		t.Fatal("nsgo mcp on Linux did not list set_count")
+	}
+	read("set_count", map[string]any{"count": 3})
+	show(`text:"Count: 3"`)
+	read(automation.Menu, map[string]any{"path": []string{"Actions", "Reset"}})
+	show(`text:"Count: 0"`)
 	if snapshot := read(automation.Snapshot, nil); !strings.Contains(snapshot, "id=add") {
 		t.Fatalf("snapshot:\n%s", snapshot)
 	}
@@ -137,6 +155,27 @@ func TestLinuxAutomationEndToEnd(t *testing.T) {
 	read(automation.Alert, map[string]any{"answer": 0})
 	show(`text:"Answer: Yes"`)
 	show(`text:"Token in the environment: false"`)
+
+	rowY := func() float64 {
+		t.Helper()
+		var found automation.FindResult
+		if err := json.Unmarshal([]byte(read(automation.Find, map[string]any{"selector": "id:row-60"})), &found); err != nil {
+			t.Fatal(err)
+		}
+		if len(found.Elements) == 0 {
+			t.Fatal("id:row-60 not found")
+		}
+		return found.Elements[0].Bounds[1]
+	}
+	before := rowY()
+	read(automation.Scroll, map[string]any{"selector": "id:list", "by": 1500})
+	if moved := before - rowY(); moved < 1000 {
+		t.Fatalf("the list scrolled %g points of 1500", moved)
+	}
+	var logs automation.LogsResult
+	if err := json.Unmarshal([]byte(read(automation.Logs, map[string]any{"lines": 20})), &logs); err != nil {
+		t.Fatalf("logs: %v", err)
+	}
 
 	screenshot := call(automation.Screenshot, nil)
 	shot, ok := screenshot[0].(*mcp.ImageContent)
