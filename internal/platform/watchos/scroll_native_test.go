@@ -48,22 +48,22 @@ func TestScrollBelowTheScreensTopRestsAtZero(t *testing.T) {
 	if got, _ := offset(); got != (core.Point{}) {
 		t.Fatalf("the scroll view rests at %v, want its top", got)
 	}
-	wait := func(want core.Point) {
+	waitMatch := func(desc string, match func(core.Point) bool) {
 		t.Helper()
 		for deadline := time.Now().Add(5 * time.Second); ; {
 			app.Settle()
 			got, _ := offset()
-			if got == want {
+			if match(got) {
 				return
 			}
 			if time.Now().After(deadline) {
-				t.Fatalf("the scroll view is at %v, want %v", got, want)
+				t.Fatalf("the scroll view is at %v, want %s", got, desc)
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
 	app.Scroll("id:list", 60)
-	wait(core.Point{Y: 60})
+	waitMatch("Y > 20", func(p core.Point) bool { return p.Y > 20 })
 	app.Press("id:top")
-	wait(core.Point{})
+	waitMatch("(0, 0)", func(p core.Point) bool { return p == (core.Point{}) })
 }

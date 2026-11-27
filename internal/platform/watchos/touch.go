@@ -40,16 +40,8 @@ type touchState struct {
 	locked   []*view // the scroll views a pan holds still
 }
 
-// Host.swift's touch phases.
-const (
-	touchBegan uint8 = iota
-	touchMoved
-	touchEnded
-	touchCancelled
-)
-
 func hostTouch(phase uint8, x, y, t float64) {
-	if s == nil || !s.inputGate.allowDirect(s.test != nil) {
+	if s == nil || !s.inputGate.allowTouch(s.test != nil, phase) {
 		return
 	}
 	at := driver.Point{X: driver.Points(x), Y: driver.Points(y)}
@@ -80,6 +72,15 @@ func (s *surface) touchDown(at driver.Point, t float64) {
 		return
 	}
 	s.pressOutside(root, at)
+	if cv := hit(root, at, func(v *view) bool {
+		return crownKindOf(v.watchNode, s.viewInputDisabled(v.watchNode)) != crownNone
+	}); cv != nil {
+		s.crown.setFocus(cv.id)
+	} else if hit(root, at, func(v *view) bool {
+		return v.kind == driver.KindScroll || v.field != nil || pressable(v)
+	}) != nil {
+		s.crown.clearAllFocus()
+	}
 	if v := hit(root, at, pressable); v != nil {
 		g.pressed = v
 		g.pressAt = driver.Event{Count: 1, Page: at, Point: s.local(v, at), Index: -1}

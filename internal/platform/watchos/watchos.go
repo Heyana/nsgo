@@ -96,6 +96,7 @@ type surface struct {
 
 	touch   touchState
 	fingers responderTouches
+	crown   crownRouter
 	blocked []*view // the scroll views a touch responder locked (ItemBlockNative)
 }
 
@@ -182,6 +183,7 @@ func runHost() {
 		purego.NewCallback(hostSnapshot),
 		purego.NewCallback(hostAuth),
 		purego.NewCallback(hostPermission),
+		purego.NewCallback(hostCrown),
 	}
 	purego.SyscallN(connect, uintptr(unsafe.Pointer(&table[0])), uintptr(len(table)))
 	// The table is copied; the callbacks live as long as the process.
@@ -601,10 +603,14 @@ func (s *surface) apply(b *driver.MountBatch) {
 			if v.field != nil && fieldCanFocus(v.field.Config) {
 				s.w.op(opFocus, v.hostID)
 			}
+			if crownKindOf(v.watchNode, s.viewInputDisabled(v.watchNode)) != crownNone {
+				s.crown.setFocus(v.id)
+			}
 		case driver.ItemBlur:
 			if v.field != nil {
 				s.w.op(opBlur, v.hostID)
 			}
+			s.crown.clearFocus(v.id)
 		case driver.ItemScrollConfig:
 			axisChanged := v.scroll.Horizontal != it.Scroll.Horizontal
 			v.scroll = *it.Scroll
@@ -686,6 +692,7 @@ func (s *surface) retirePayload(n *watchNode) {
 			s.w.op(opBlur, v.hostID)
 		}
 	}
+	s.crown.forgetNode(n.id)
 	s.inputGate.forgetScroll(uint32(n.hostID))
 	if s.sticky.delete(n.id) {
 		s.recull = true
@@ -718,6 +725,7 @@ func (s *surface) deleteView(v *view, lb *layoutBatch) {
 
 // close reaps any active leaving ghosts on surface teardown.
 func (s *surface) close() {
+	s.crown.reset()
 	s.closeLeaving(s.destroyPayload)
 }
 
@@ -757,11 +765,58 @@ func (s *surface) flush() {
 		}
 		delete(s.redraw, n)
 	}
+	s.syncCrown()
 	if len(s.w.buf) == 0 {
 		return
 	}
 	purego.SyscallN(applyFn, uintptr(unsafe.Pointer(&s.w.buf[0])), uintptr(len(s.w.buf)))
 	s.w.buf = s.w.buf[:0]
+}
+
+func (s *surface) viewInputDisabled(n *watchNode) bool {
+	if v := viewOf(n); v != nil && v.field != nil {
+		return !fieldCanFocus(v.field.Config)
+	}
+	return false
+}
+
+func (s *surface) focusedNode() *watchNode {
+	if s.focused == nil {
+		return nil
+	}
+	return s.focused.watchNode
+}
+
+func (s *surface) syncCrown() {
+	s.crown.syncMode(&s.w, s.node(s.root), s.focusedNode(), s.viewInputDisabled)
+}
+
+func (s *surface) crownCenter(n *watchNode) (local, page driver.Point) {
+	f := n.shownFrame()
+	local = driver.Point{X: f.Size.Width / 2, Y: f.Size.Height / 2}
+	if b, ok := s.surfaceBounds(n); ok {
+		page = driver.Point{X: b.Origin.X + b.Size.Width/2, Y: b.Origin.Y + b.Size.Height/2}
+	} else {
+		page = local
+	}
+	return local, page
+}
+
+func (s *surface) handleCrown(phase uint8, delta, velocity float64) {
+	events := s.crown.handle(phase, delta, velocity, s.node(s.root), s.focusedNode(), s.viewInputDisabled, s.crownCenter)
+	for _, ev := range events {
+		if v := s.view(ev.ID); v != nil && !v.deleted {
+			v.report(ev)
+		}
+	}
+	s.flush()
+}
+
+func hostCrown(phase uint8, delta, velocity float64) {
+	if s == nil || !s.inputGate.allowCrown(s.test != nil) {
+		return
+	}
+	s.handleCrown(phase, delta, velocity)
 }
 
 // sendLook sends n's frame, look and ink where they changed.
@@ -894,9 +949,10 @@ func hostScroll(id uint32, x, y float64, phase uint8) {
 	v.phase = phase
 	switch {
 	case phase == phaseDragging && was != phaseDragging:
-		// A drag that scrolls is no press, and cancels touches unless a responder blocked it.
+		// A drag that scrolls is no press, cancels touches unless a responder blocked it, and returns Digital Crown focus to ScrollViews.
 		s.cancelPress()
 		s.touchesTaken()
+		s.crown.clearAllFocus()
 		if was == phaseGliding {
 			v.scrollEvent(driver.EventMomentumEnd)
 		}

@@ -105,3 +105,91 @@ func TestInputIsolationScroll(t *testing.T) {
 		t.Error("reused scroll ID after forgetScroll did not accept initial layout offset")
 	}
 }
+
+func TestInputIsolationNativeTouchAndCrown(t *testing.T) {
+	var gate testInputGate
+	const scrollID uint32 = 77
+
+	// Physical touches, text edits and Digital Crown events are blocked when isolated.
+	if gate.allowTouch(true, touchBegan) {
+		t.Error("test mode accepted physical touch")
+	}
+	if gate.allowText(true, textFocused) || gate.allowText(true, textChanged) {
+		t.Error("test mode accepted physical text event")
+	}
+	if gate.allowCrown(true) {
+		t.Error("test mode accepted physical crown rotation")
+	}
+	// Normal mode accepts all of them.
+	if !gate.allowTouch(false, touchBegan) || !gate.allowText(false, textChanged) || !gate.allowCrown(false) {
+		t.Error("normal mode rejected user input")
+	}
+
+	// Native simulator HID touch window admits SwiftUI DragGesture callbacks,
+	// TextField focus/blur callbacks, and ScrollView drags that begin during it.
+	seq := gate.beginNativeTouch()
+	if !gate.allowTouch(true, touchBegan) {
+		t.Error("native touch window rejected touchBegan")
+	}
+	if !gate.touchSeenSince(seq) || gate.touchEndedSince(seq) {
+		t.Error("touch sequence tracking mismatch after touchBegan")
+	}
+	if !gate.allowText(true, textFocused) || !gate.allowText(true, textBlurred) {
+		t.Error("native touch window rejected TextField focus/blur")
+	}
+	if gate.allowText(true, textChanged) {
+		t.Error("native touch window admitted stray textChanged edit")
+	}
+	// Scroll drag starting inside native touch window stays admitted through glide and rest.
+	if !gate.allowScroll(true, scrollID, phaseDragging) {
+		t.Error("native touch window rejected scripted scroll drag")
+	}
+	if !gate.allowScroll(true, scrollID, phaseOffset) {
+		t.Error("native touch window rejected scripted scroll offset")
+	}
+	if !gate.allowTouch(true, touchEnded) {
+		t.Error("native touch window rejected touchEnded")
+	}
+	if !gate.touchEndedSince(seq) {
+		t.Error("touchEnded did not advance touchEndedSeq")
+	}
+	gate.endNativeTouch()
+
+	// After finger lifts, ongoing glide and rest for that scripted scroll stay admitted.
+	if !gate.allowScroll(true, scrollID, phaseGliding) {
+		t.Error("scripted scroll glide rejected after finger lift")
+	}
+	if !gate.allowScroll(true, scrollID, phaseOffset) {
+		t.Error("scripted scroll glide offset rejected")
+	}
+	if !gate.allowScroll(true, scrollID, phaseRest) {
+		t.Error("scripted scroll rest rejected")
+	}
+	// Once rested, stray physical scroll drags and touches are rejected again.
+	if gate.allowScroll(true, scrollID, phaseDragging) {
+		t.Error("physical scroll drag admitted after scripted scroll rested")
+	}
+	if gate.allowTouch(true, touchBegan) {
+		t.Error("physical touch admitted after native touch window closed")
+	}
+
+	// Native focus window admits TextField focus/blur while settling, then closes.
+	gate.setNativeFocusWindow(true)
+	if !gate.allowText(true, textFocused) || gate.allowText(true, textSubmitted) {
+		t.Error("native focus window gating mismatch")
+	}
+	gate.setNativeFocusWindow(false)
+	if gate.allowText(true, textFocused) {
+		t.Error("textFocused admitted after native focus window closed")
+	}
+
+	// Scripted Digital Crown scope admits hostCrown and closes cleanly.
+	gate.enter()
+	if !gate.allowCrown(true) {
+		t.Error("scripted scope rejected hostCrown")
+	}
+	gate.leave()
+	if gate.allowCrown(true) {
+		t.Error("hostCrown stayed open after scripted scope ended")
+	}
+}

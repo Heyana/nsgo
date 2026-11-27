@@ -161,6 +161,7 @@ Windows shows the overlay scroll indicator for user scrolling and its momentum, 
 | Windows | `WM_MOUSEWHEEL` and `WM_MOUSEHWHEEL` before the scroll views | Turns of less than a notch | The system's, as more turns |
 | Linux | The scroll controller (or hosted-view shield) before the scroll views; a touchpad keeps its view until `decelerate` or `gdk_scroll_event_is_stop` | GTK's surface unit, or deltas of points before 4.8 | The view's own, from the end's `Velocity` |
 | Android | `ACTION_SCROLL` generic motions on the view; `WheelScroll` frames a touchpad gesture from begin through idle end | `SOURCE_TOUCHPAD` | The view's own, from the end's `Velocity` |
+| watchOS | SwiftUI's `.digitalCrownRotation` via `CrownReceiver` (`opCrown`) when a view that takes `OnWheel`, turns a value (`increment`/`decrement` actions) or pans (`OnPan`) holds focus or is active without a competing scrollable `ScrollView`; `ScrollView` keeps native crown scrolling otherwise | Continuous Digital Crown turns (`Precise: true` on `OnWheel`, detent steps on value views, axis-aware `OnPan`) | The view's own, from the end's `Velocity` |
 
 ## File drops
 

@@ -80,16 +80,8 @@ func (s *surface) drawField(v *view, ctx uintptr, baseUp bool) {
 	v.shown.Draw(ctx, float64(v.shownFrame().Size.Height), cgRect(box), baseUp)
 }
 
-// Host.swift's text events.
-const (
-	textChanged uint8 = iota
-	textSubmitted
-	textFocused
-	textBlurred
-)
-
 func hostText(id uint32, kind uint8, data *byte, n int) {
-	if s == nil || !s.inputGate.allowDirect(s.test != nil) {
+	if s == nil || !s.inputGate.allowText(s.test != nil, kind) {
 		return
 	}
 	v := s.hostView(driver.NodeID(id))

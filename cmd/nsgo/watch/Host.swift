@@ -44,6 +44,9 @@ struct Bridge {
 	var auth: @convention(c) (UInt32, UInt8, UnsafePointer<UInt8>?, Int) -> Void
 	/// Permission request id answered with driver.Permission* status code.
 	var permission: @convention(c) (UInt32, UInt8) -> Void
+	/// Digital Crown rotation: phase (0 began, 1 changed, 2 ended/idle),
+	/// delta in crown units since the last report, and velocity in units/sec.
+	var crown: @convention(c) (UInt8, Double, Double) -> Void
 }
 
 var bridge: Bridge?
@@ -52,7 +55,7 @@ var bridge: Bridge?
 /// order.
 @_cdecl("nsgo_watch_connect")
 public func nsgoWatchConnect(_ fns: UnsafePointer<UnsafeRawPointer>, _ n: Int) {
-	guard n >= 11 else { return }
+	guard n >= 12 else { return }
 	bridge = Bridge(
 		size: unsafeBitCast(fns[0], to: (@convention(c) (Double, Double, Double, Double, Double, Double, Double, UInt32) -> Void).self),
 		touch: unsafeBitCast(fns[1], to: (@convention(c) (UInt8, Double, Double, Double) -> Void).self),
@@ -64,7 +67,8 @@ public func nsgoWatchConnect(_ fns: UnsafePointer<UnsafeRawPointer>, _ n: Int) {
 		lifecycle: unsafeBitCast(fns[7], to: (@convention(c) (UInt8) -> Void).self),
 		snapshot: unsafeBitCast(fns[8], to: (@convention(c) (UnsafePointer<UInt8>?, Int) -> Void).self),
 		auth: unsafeBitCast(fns[9], to: (@convention(c) (UInt32, UInt8, UnsafePointer<UInt8>?, Int) -> Void).self),
-		permission: unsafeBitCast(fns[10], to: (@convention(c) (UInt32, UInt8) -> Void).self))
+		permission: unsafeBitCast(fns[10], to: (@convention(c) (UInt32, UInt8) -> Void).self),
+		crown: unsafeBitCast(fns[11], to: (@convention(c) (UInt8, Double, Double) -> Void).self))
 }
 
 /// nsgo_watch_main runs the app on the calling thread, the main thread,
@@ -548,6 +552,12 @@ struct Alert: Identifiable {
 	var root: Node?
 	var ticking = false
 	var alert: Alert?
+	/// crownMode is 0 when SwiftUI's ScrollViews own the Digital Crown, 1 for
+	/// continuous wheel/pan views, and 2 for detent value-turning views.
+	var crownMode: UInt8 = 0
+	/// focusedField is the host ID of the TextField/SecureField currently
+	/// holding SwiftUI keyboard focus, or 0 when none is focused.
+	var focusedField: UInt32 = 0
 	/// The surface's size and pixels a point, for snapshots.
 	@ObservationIgnored var size = CGSize.zero
 	@ObservationIgnored var scale = 2.0
@@ -555,7 +565,7 @@ struct Alert: Identifiable {
 	/// The ops Go writes, as watchos.go's op constants number them.
 	enum Op: UInt8 {
 		case create = 1, insert, remove, delete, frame, look, ink, redraw, scroll, scrollTo, input, focus, blur,
-			alert, root, lock, dismiss, cull, access, authSession, permission, stickyCells, retire
+			alert, root, lock, dismiss, cull, access, authSession, permission, stickyCells, retire, crown
 	}
 
 	func apply(_ r: Reader) {
@@ -581,6 +591,7 @@ struct Alert: Identifiable {
 				if let n = nodes[r.u32()] { detach(n) }
 			case .delete:
 				let id = r.u32()
+				if focusedField == id { focusedField = 0 }
 				if let n = nodes.removeValue(forKey: id) {
 					clearSticky(n)
 					detach(n)
@@ -639,9 +650,17 @@ struct Alert: Identifiable {
 				let text = r.string()
 				if n.text != text { n.text = text }
 			case .focus:
-				nodes[r.u32()]?.focused = true
+				let id = r.u32()
+				if let n = nodes[id] {
+					n.focused = true
+					if n.kind == .input { focusedField = id }
+				}
 			case .blur:
-				nodes[r.u32()]?.focused = false
+				let id = r.u32()
+				if let n = nodes[id] {
+					n.focused = false
+				}
+				if focusedField == id { focusedField = 0 }
 			case .alert:
 				let id = r.u32(), title = r.string(), message = r.string()
 				var actions: [(String, UInt8)] = []
@@ -689,11 +708,16 @@ struct Alert: Identifiable {
 				guard let n = nodes[id] else { continue }
 				setSticky(n, cells: cells)
 			case .retire:
-				if let n = nodes[r.u32()] {
+				let id = r.u32()
+				if focusedField == id { focusedField = 0 }
+				if let n = nodes[id] {
 					n.leaving = true
 					n.focused = false
 					n.locked = true
 				}
+			case .crown:
+				let mode = r.u8()
+				if crownMode != mode { crownMode = mode }
 			}
 		}
 	}
@@ -956,6 +980,11 @@ struct FieldNode: View {
 			.onSubmit { sendText(node.id, 1, node.text) }
 			.onChange(of: focus) { _, on in
 				node.focused = on
+				if on {
+					Store.shared.focusedField = node.id
+				} else if Store.shared.focusedField == node.id {
+					Store.shared.focusedField = 0
+				}
 				sendText(node.id, on ? 2 : 3, node.text)
 			}
 			.onChange(of: node.focused, initial: true) { _, on in
@@ -970,6 +999,51 @@ struct FieldNode: View {
 		if node.a11yValue.isEmpty { return node.text }
 		if node.text.isEmpty || node.a11yValue == node.text { return node.a11yValue }
 		return "\(node.text), \(node.a11yValue)"
+	}
+}
+
+/// CrownReceiver attaches SwiftUI's Digital Crown rotation modifier while Go
+/// has an active view that pans or turns a value, and unmounts when none is
+/// active so SwiftUI's ScrollView keeps native crown scrolling.
+struct CrownReceiver: View {
+	let mode: UInt8
+	@FocusState private var focused: Bool
+	@State private var value = 0.0
+	@State private var lastOffset = 0.0
+	@State private var active = false
+
+	var body: some View {
+		Color.clear
+			.frame(width: 1, height: 1)
+			.allowsHitTesting(false)
+			.accessibilityHidden(true)
+			.focusable(true)
+			.focused($focused)
+			.digitalCrownRotation($value, onChange: { event in
+				let delta = event.offset - lastOffset
+				lastOffset = event.offset
+				if !active {
+					active = true
+					bridge?.crown(0, delta, event.velocity)
+				} else if delta != 0 || event.velocity != 0 {
+					bridge?.crown(1, delta, event.velocity)
+				}
+			}, onIdle: {
+				if active {
+					active = false
+					bridge?.crown(2, 0, 0)
+				}
+			})
+			.onAppear { focused = true }
+			.onChange(of: mode) { _, _ in
+				if !focused { focused = true }
+			}
+			.onDisappear {
+				if active {
+					active = false
+					bridge?.crown(2, 0, 0)
+				}
+			}
 	}
 }
 
@@ -1003,6 +1077,9 @@ struct Root: View {
 		GeometryReader { geo in
 			ZStack(alignment: .topLeading) {
 				if store.ticking { Ticker().frame(width: 0, height: 0) }
+				if store.crownMode != 0 && store.focusedField == 0 {
+					CrownReceiver(mode: store.crownMode)
+				}
 				if let root = store.root { NodeView(node: root) }
 			}
 			.frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)

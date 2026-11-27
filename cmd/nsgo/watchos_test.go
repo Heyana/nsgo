@@ -75,6 +75,9 @@ func TestWatchHostUsageDescriptionGuards(t *testing.T) {
 		"NSRemindersUsageDescription",
 		"NSBluetoothAlwaysUsageDescription",
 		"CBCentralManagerOptionShowPowerAlertKey",
+		"digitalCrownRotation",
+		"CrownReceiver",
+		"case .crown:",
 	} {
 		if !strings.Contains(src, key) {
 			t.Errorf("watch/Host.swift is missing %s", key)
