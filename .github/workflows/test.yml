@@ -1018,6 +1018,8 @@ jobs:
         run: go tool nsgo test -run '^TestDirectionMirrorsNativeControls$' ./internal/platform/windows
       - name: Test native network reachability
         run: go tool nsgo test -run '^TestNetworkMonitorReadsNetworkListManager$' ./internal/platform/windows
+      - name: Test hidden title bar caption buttons on Mica and maximize
+        run: go tool nsgo test -run '^(TestHiddenTitleBarNoSystemCaptionButtonsOnMaximize|TestHiddenTitleBarCaptionHitTestAndClientButtons)$' ./internal/platform/windows -- -count=1
       - name: Test Windows automation end to end
         env:
           NSGO_AUTOMATION_E2E: '1'

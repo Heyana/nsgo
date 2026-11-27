@@ -14,8 +14,9 @@ import (
 
 // TestHiddenTitleBarNoSystemCaptionButtonsOnMaximize checks that a hidden
 // title bar suppresses WM_NCPAINT, WM_NCUAHDRAWCAPTION and WM_NCUAHDRAWFRAME
-// so Windows/DWM never paints the system caption buttons on maximize or title
-// updates (which would flash during complex layouts and linger on Mica).
+// while keeping DWM non-client rendering (shadow/backdrop), so Windows/DWM
+// never paints system caption buttons behind NSGo's custom buttons on Mica in
+// either normal (unmaximized) or maximized state.
 func TestHiddenTitleBarNoSystemCaptionButtonsOnMaximize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens a window")
@@ -51,7 +52,88 @@ func TestHiddenTitleBarNoSystemCaptionButtonsOnMaximize(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
+	// checkNoNativeCaptionStrip samples screen pixels via BitBlt in the strip
+	// where native Windows 11 DWM caption glyphs sit on an active Mica desktop:
+	// with captionHeight=48 and captionButtonSize=32, NSGo's custom buttons sit
+	// at y=[8..40] with their 10pt glyphs at y=[19..31] (minimize starting at
+	// x=right-101); native DWM's 46pt-wide minimize glyph sits around x=right-115
+	// and y=[8..20]. Any high-contrast pixels in x=[right-128..right-106],
+	// y=[4..22] are native DWM glyphs showing through Mica.
+	checkNoNativeCaptionStrip := func(phase string) {
+		t.Helper()
+		var mcr rect
+		var morg point
+		var scale float64
+		var hasMica bool
+		onMain(t, hwnd, func(w *window) {
+			getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&mcr)))
+			clientToScreen.Call(w.hwnd, uintptr(unsafe.Pointer(&morg)))
+			scale = w.scale
+			hasMica = w.material != driver.WindowMaterialNone
+		})
+		if !hasMica {
+			t.Logf("%s: system backdrop unavailable; skipping Mica pixel check", phase)
+			return
+		}
+		px := func(pt float64) int32 { return int32(pt * scale) }
+		x0 := morg.X + mcr.Right - px(128)
+		y0 := morg.Y + px(4)
+		rw, rh := px(22), px(18)
+		if rw <= 0 || rh <= 0 {
+			return
+		}
+		screenDC, _, _ := captureGetDC.Call(0)
+		if screenDC == 0 {
+			return
+		}
+		defer captureReleaseDC.Call(0, screenDC)
+		memDC, _, _ := captureCreateDC.Call(screenDC)
+		defer captureDeleteDC.Call(memDC)
+		bmp, _, _ := captureCreateBitmap.Call(screenDC, uintptr(rw), uintptr(rh))
+		defer captureDeleteObject.Call(bmp)
+		old, _, _ := captureSelect.Call(memDC, bmp)
+		bitBlt := gdi32.NewProc("BitBlt")
+		bitBlt.Call(memDC, 0, 0, uintptr(rw), uintptr(rh), screenDC, uintptr(x0), uintptr(y0), 0x00CC0020|0x40000000)
+		captureSelect.Call(memDC, old)
+		type bmiHeader struct {
+			Size, Width, Height    int32
+			Planes, BitCount       uint16
+			Compression, SizeImage uint32
+			XPels, YPels           int32
+			ClrUsed, ClrImp        uint32
+		}
+		hdr := bmiHeader{Size: 40, Width: rw, Height: -rh, Planes: 1, BitCount: 32}
+		pix := make([]byte, int(rw)*int(rh)*4)
+		captureDIBits.Call(memDC, bmp, 0, uintptr(rh), uintptr(unsafe.Pointer(&pix[0])), uintptr(unsafe.Pointer(&hdr)), 0)
+		// Ignore disconnected sessions where BitBlt returns all black.
+		var maxLuma, minLuma int = 0, 255
+		for i := 0; i < len(pix); i += 4 {
+			luma := (int(pix[i+2])*299 + int(pix[i+1])*587 + int(pix[i])*114) / 1000
+			if luma > maxLuma {
+				maxLuma = luma
+			}
+			if luma < minLuma {
+				minLuma = luma
+			}
+		}
+		if maxLuma < 16 {
+			t.Logf("%s: screen capture is blank: skipping pixel check", phase)
+			return
+		}
+		t.Logf("%s caption strip luma range: %d..%d", phase, minLuma, maxLuma)
+		// A native DWM minimize glyph has high contrast (>80 luma delta) against the
+		// uniform Mica background in this empty region.
+		if maxLuma-minLuma > 40 {
+			t.Errorf("native system caption button pixels detected above custom buttons in %s state (luma range %d..%d)", phase, minLuma, maxLuma)
+		}
+	}
+
 	onMain(t, hwnd, func(w *window) {
+		const dwmwaNCRenderingEnabled = 1
+		enabled := int32(-1)
+		if hr, _, _ := dwmGetWindowAttribute.Call(w.hwnd, dwmwaNCRenderingEnabled, uintptr(unsafe.Pointer(&enabled)), 4); !failed(hr) && enabled == 0 {
+			t.Error("DWM non-client rendering is disabled on a framed Mica window with a hidden title bar")
+		}
 		for _, msg := range []struct {
 			name string
 			id   uint32
@@ -65,6 +147,15 @@ func TestHiddenTitleBarNoSystemCaptionButtonsOnMaximize(t *testing.T) {
 			}
 		}
 		setForegroundWindow.Call(w.hwnd)
+		setWindowTextW.Call(w.hwnd, uintptr(unsafe.Pointer(wide(title+"-normal"))))
+		sendMessage.Call(w.hwnd, wmNCActivate, 0, 0)
+		sendMessage.Call(w.hwnd, wmNCActivate, 1, 0)
+		w.frame()
+	})
+	time.Sleep(150 * time.Millisecond)
+	checkNoNativeCaptionStrip("unmaximized")
+
+	onMain(t, hwnd, func(w *window) {
 		w.toggleMaximize()
 	})
 	for deadline := time.Now().Add(3 * time.Second); ; {
@@ -85,80 +176,7 @@ func TestHiddenTitleBarNoSystemCaptionButtonsOnMaximize(t *testing.T) {
 		w.frame()
 	})
 	time.Sleep(150 * time.Millisecond)
-
-	// On an active desktop session with Mica, check the top strip above NSGo's
-	// custom caption buttons (where Windows 11 draws its 46px-wide system
-	// caption glyphs when WM_NCPAINT reaches DefWindowProc).
-	var mcr rect
-	var morg point
-	var scale float64
-	var hasMica bool
-	onMain(t, hwnd, func(w *window) {
-		getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&mcr)))
-		clientToScreen.Call(w.hwnd, uintptr(unsafe.Pointer(&morg)))
-		scale = w.scale
-		hasMica = w.material != driver.WindowMaterialNone
-	})
-	if !hasMica {
-		return
-	}
-	// Sample screen pixels via BitBlt in the strip where native DWM glyphs sit:
-	// with captionHeight=48 and captionButtonSize=32, NSGo's custom buttons sit
-	// at y=[8..40] and their 10pt glyphs at y=[19..29]; native DWM glyphs sit
-	// at y=[10..20] around x=right-115 (minimize) and x=right-69 (restore).
-	// Specifically, x=[right-128..right-105] is left of NSGo's custom minimize
-	// button (which starts at right-112, glyph at right-101..right-91), so any
-	// dark pixels in x=[right-128..right-105], y=[6..20] are native DWM glyphs.
-	px := func(pt float64) int32 { return int32(pt * scale) }
-	x0 := morg.X + mcr.Right - px(128)
-	y0 := morg.Y + px(6)
-	rw, rh := px(22), px(14)
-	if rw <= 0 || rh <= 0 {
-		return
-	}
-	screenDC, _, _ := captureGetDC.Call(0)
-	if screenDC == 0 {
-		return
-	}
-	defer captureReleaseDC.Call(0, screenDC)
-	memDC, _, _ := captureCreateDC.Call(screenDC)
-	defer captureDeleteDC.Call(memDC)
-	bmp, _, _ := captureCreateBitmap.Call(screenDC, uintptr(rw), uintptr(rh))
-	defer captureDeleteObject.Call(bmp)
-	old, _, _ := captureSelect.Call(memDC, bmp)
-	bitBlt := gdi32.NewProc("BitBlt")
-	bitBlt.Call(memDC, 0, 0, uintptr(rw), uintptr(rh), screenDC, uintptr(x0), uintptr(y0), 0x00CC0020|0x40000000)
-	captureSelect.Call(memDC, old)
-	type bmiHeader struct {
-		Size, Width, Height    int32
-		Planes, BitCount       uint16
-		Compression, SizeImage uint32
-		XPels, YPels           int32
-		ClrUsed, ClrImp        uint32
-	}
-	hdr := bmiHeader{Size: 40, Width: rw, Height: -rh, Planes: 1, BitCount: 32}
-	pix := make([]byte, int(rw)*int(rh)*4)
-	captureDIBits.Call(memDC, bmp, 0, uintptr(rh), uintptr(unsafe.Pointer(&pix[0])), uintptr(unsafe.Pointer(&hdr)), 0)
-	// Ignore disconnected sessions where BitBlt returns all black.
-	var maxLuma, minLuma int = 0, 255
-	for i := 0; i < len(pix); i += 4 {
-		luma := (int(pix[i+2])*299 + int(pix[i+1])*587 + int(pix[i])*114) / 1000
-		if luma > maxLuma {
-			maxLuma = luma
-		}
-		if luma < minLuma {
-			minLuma = luma
-		}
-	}
-	if maxLuma < 16 {
-		t.Log("screen capture is blank: skipping maximized pixel check")
-		return
-	}
-	// A native DWM minimize glyph has high contrast (>80 luma delta) against the
-	// uniform Mica background in this empty region.
-	if maxLuma-minLuma > 40 {
-		t.Errorf("native system caption button pixels detected above custom buttons on maximize (luma range %d..%d)", minLuma, maxLuma)
-	}
+	checkNoNativeCaptionStrip("maximized")
 }
 
 // TestHiddenTitleBarCaptionHitTestAndClientButtons checks that WM_NCHITTEST
