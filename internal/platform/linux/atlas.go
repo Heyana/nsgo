@@ -26,6 +26,7 @@ func (p *canvasPlayer) atlas(op *driver.DrawOp) {
 	}
 	pattern := cairoPatternCreateForSurface(src)
 	defer cairoPatternDestroy(pattern)
+	cairoPatternSetExtend(pattern, 3) // CAIRO_EXTEND_PAD
 	if op.Sampling == driver.ImageSamplingNearest {
 		const cairoFilterNearest = 3
 		cairoPatternSetFilter(pattern, cairoFilterNearest)

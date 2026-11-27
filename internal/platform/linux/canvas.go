@@ -730,6 +730,9 @@ func (p *canvasPlayer) drawImage(op *driver.DrawOp, surf uintptr, picWidth int, 
 		k := float64(nat.Width) / float64(picWidth)
 		cairoScale(cr, k, k)
 		setPictureSource(cr, surf, op.Sampling)
+		// Pad edge texels so bilinear scaling does not blend with transparent
+		// pixels outside the source surface; the clip above bounds the draw.
+		cairoPatternSetExtend(cairoGetSource(cr), 3) // CAIRO_EXTEND_PAD
 		cairoPaintWithAlpha(cr, p.st.alpha)
 		cairoRestore(cr)
 	})
