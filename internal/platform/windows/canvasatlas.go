@@ -18,14 +18,16 @@ type atlasBatchSprite struct {
 }
 
 func (c *canvasPlayer) atlas(op *driver.DrawOp) {
-	if op.Image == nil || op.Atlas == nil || len(*op.Atlas) == 0 {
+	imgSrc := c.drawing.Image(op)
+	sprites := c.drawing.AtlasSprites(op)
+	if imgSrc == nil || len(sprites) == 0 {
 		return
 	}
-	if op.Image.Offscreen != nil {
-		c.atlasImages(op)
+	if imgSrc.Offscreen != nil {
+		c.atlasImages(op, sprites)
 		return
 	}
-	s := c.p.w.canvasImage(*op.Image)
+	s := c.p.w.canvasImage(*imgSrc)
 	if s == nil || s.pic == nil {
 		c.waited = c.waited || (s != nil && s.load != nil)
 		return
@@ -34,7 +36,6 @@ func (c *canvasPlayer) atlas(op *driver.DrawOp) {
 	if bitmap == nil {
 		return
 	}
-	sprites := *op.Atlas
 	scale := float32(s.pic.width) / max(float32(natural(s).Width), 1e-3)
 	if c.batchAtlas(bitmap, sprites, scale, s.pic.width, s.pic.height, op.Sampling) {
 		return
@@ -47,13 +48,13 @@ func (c *canvasPlayer) atlas(op *driver.DrawOp) {
 }
 
 // atlasImages draws each sprite as the DrawImageFrom it stands for, for sources the sprite batch does not cover: offscreen drawings.
-func (c *canvasPlayer) atlasImages(op *driver.DrawOp) {
+func (c *canvasPlayer) atlasImages(op *driver.DrawOp, sprites driver.AtlasSprites) {
 	ctm, alpha := c.st.ctm, c.st.alpha
-	for _, sprite := range *op.Atlas {
+	for _, sprite := range sprites {
 		b := sprite.Rect
 		c.st.ctm, c.st.alpha = atlasMatrix(sprite.Transform).then(ctm), alpha*sprite.Alpha
 		w, h := float32(b.Size.Width), float32(b.Size.Height)
-		c.image(&driver.DrawOp{Kind: driver.DrawImage, Image: op.Image, Sampling: op.Sampling, W: w, H: h,
+		c.image(&driver.DrawOp{Kind: driver.DrawImage, ImageIndex: op.ImageIndex, Sampling: op.Sampling, W: w, H: h,
 			X1: float32(b.Origin.X), Y1: float32(b.Origin.Y), X2: w, Y2: h})
 	}
 	c.st.ctm, c.st.alpha = ctm, alpha

@@ -54,7 +54,7 @@ func (s *surface) paintChange(v *view) {
 		s.paint(v)
 		return
 	}
-	area, ok := driver.CanvasDamage(v.canvasLast, ops)
+	area, ok := driver.CanvasDamage(v.drawing, v.canvasLast, ops)
 	if !ok {
 		s.paint(v)
 		return
@@ -202,6 +202,7 @@ func (s *surface) paint(v *view) {
 // ctx, whose canvas shows tile at ratio pixels per point.
 func (s *surface) canvasPlayer(v *view, ctx js.Value, ratio, w, h float64, tile canvasRect) *canvas2d.Player {
 	p := canvas2d.NewPlayer(ctx, ratio, math.Hypot(w, h))
+	p.Drawing = v.drawing
 	p.OriginX, p.OriginY = tile.x, tile.y
 	p.Font = fontCSS
 	p.NewCanvas = s.scratchCanvas

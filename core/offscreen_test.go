@@ -36,7 +36,7 @@ func TestOffscreenImageLifecycleAndCaching(t *testing.T) {
 	if len(hostCanvas.Ops) != 1 || hostCanvas.Ops[0].Kind != driver.DrawImage {
 		t.Fatalf("host canvas ops = %d, want 1 DrawImage", len(hostCanvas.Ops))
 	}
-	firstSnap := hostCanvas.Ops[0].Image.Offscreen
+	firstSnap := hostCanvas.Image(&hostCanvas.Ops[0]).Offscreen
 	if firstSnap == nil || firstSnap.ID != layer.ID() || firstSnap.Version != 1 || firstSnap.Scale != 2 {
 		t.Fatalf("unexpected initial snapshot: %+v", firstSnap)
 	}
@@ -49,8 +49,8 @@ func TestOffscreenImageLifecycleAndCaching(t *testing.T) {
 		if draws != 1 || layer.Version() != 1 {
 			t.Fatalf("step %d re-rendered offscreen image: draws=%d version=%d", step, draws, layer.Version())
 		}
-		ops := h.find("host").canvas.drawing.Ops
-		if len(ops) != 1 || ops[0].Image.Offscreen != firstSnap {
+		d := h.find("host").canvas.drawing
+		if len(d.Ops) != 1 || d.Image(&d.Ops[0]).Offscreen != firstSnap {
 			t.Fatalf("step %d changed snapshot without Invalidate", step)
 		}
 	}
@@ -65,7 +65,8 @@ func TestOffscreenImageLifecycleAndCaching(t *testing.T) {
 	if draws != 2 || layer.Version() != 2 {
 		t.Fatalf("after Invalidate: draws=%d version=%d, want 2, 2", draws, layer.Version())
 	}
-	secondSnap := h.find("host").canvas.drawing.Ops[0].Image.Offscreen
+	hostDrawing := h.find("host").canvas.drawing
+	secondSnap := hostDrawing.Image(&hostDrawing.Ops[0]).Offscreen
 	if secondSnap == nil || secondSnap.Version != 2 || secondSnap == firstSnap {
 		t.Fatalf("expected new snapshot at version 2, got %+v", secondSnap)
 	}
@@ -220,7 +221,9 @@ func TestOffscreenImageFontsChangedAndPixelsCopy(t *testing.T) {
 	if draws != 1 {
 		t.Fatalf("draws = %d, want 1", draws)
 	}
-	copied := h.find("c").canvas.drawing.Ops[0].Image.Offscreen.Drawing.Ops[0].Image.Pixels
+	hostD := h.find("c").canvas.drawing
+	offD := hostD.Image(&hostD.Ops[0]).Offscreen.Drawing
+	copied := offD.Image(&offD.Ops[0]).Pixels
 	if copied == nil || copied == buf || copied.Pix[0] != 42 {
 		t.Fatal("offscreen drawing did not copy Pixels buffer")
 	}

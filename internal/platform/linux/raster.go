@@ -100,7 +100,9 @@ type canvasDraw struct {
 
 // setCanvas takes v's new drawing, drawn whole.
 func (w *window) setCanvas(v *view, d *driver.Drawing) {
+	was := v.drawing
 	v.drawing = d
+	was.Release()
 	c := &v.canvas
 	c.split, c.last, c.whole, c.area = driver.CanvasSplit{}, c.last[:0], true, driver.Bounds{}
 	if s := driver.SplitCanvas(d); s.Static(d) {
@@ -130,7 +132,7 @@ func (w *window) changedCanvases() {
 		if !c.whole {
 			if len(c.last) != len(ops) {
 				c.whole = true
-			} else if area, ok := driver.CanvasDamage(c.last, ops); !ok {
+			} else if area, ok := driver.CanvasDamage(v.drawing, c.last, ops); !ok {
 				c.whole = true
 			} else if area.Size.Width > 0 && area.Size.Height > 0 {
 				c.area = union(c.area, area)

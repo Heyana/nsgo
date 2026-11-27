@@ -129,9 +129,9 @@ func TestCanvasAtlasDrawsLikeImages(t *testing.T) {
 			}
 			if tt.batched && nativeBatch {
 				direct := drawImage(t, g, size, size, func(p *painter) {
-					c := p.newCanvasPlayer(&view{}, tt.world, size, size)
+					c := p.newCanvasPlayer(&view{}, atlas, tt.world, size, size)
 					s := w.canvasImage(source)
-					if !c.batchAtlas(s.bitmapOf(p.dc, 0), *atlas.Ops[0].Atlas, 1, s.pic.width, s.pic.height, atlas.Ops[0].Sampling) {
+					if !c.batchAtlas(s.bitmapOf(p.dc, 0), atlas.AtlasSprites(&atlas.Ops[0]), 1, s.pic.width, s.pic.height, atlas.Ops[0].Sampling) {
 						t.Fatal("the compatible DrawAtlas did not batch")
 					}
 				}, w)

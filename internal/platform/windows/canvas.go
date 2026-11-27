@@ -107,6 +107,7 @@ type segment struct {
 type canvasPlayer struct {
 	p       *painter
 	v       *view
+	drawing *driver.Drawing
 	world   matrix // the view's, or the identity into a bitmap of its own
 	width   float32
 	height  float32
@@ -147,7 +148,7 @@ func (w *window) changedCanvases() {
 			w.redrawView(v)
 			return
 		}
-		area, ok := driver.CanvasDamage(last, ops)
+		area, ok := driver.CanvasDamage(v.drawing, last, ops)
 		switch {
 		case !ok:
 			w.redrawView(v)
@@ -168,8 +169,8 @@ func (w *window) changedNatives() {
 	})
 }
 
-func (p *painter) newCanvasPlayer(v *view, world matrix, width, height float32) *canvasPlayer {
-	return &canvasPlayer{p: p, v: v, world: world, width: width, height: height,
+func (p *painter) newCanvasPlayer(v *view, d *driver.Drawing, world matrix, width, height float32) *canvasPlayer {
+	return &canvasPlayer{p: p, v: v, drawing: d, world: world, width: width, height: height,
 		st:      canvasState{ctm: identity, fill: 0x000000ff, stroke: 0x000000ff, width: 1, miter: 10, alpha: 1},
 		strokes: map[string]*comObject{}}
 }
@@ -217,7 +218,7 @@ func (p *painter) canvasOffscreen(v *view, ops []driver.DrawOp, width, height, s
 	op.setTransform(identity)
 	clear := colorF{}
 	dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
-	c := op.newCanvasPlayer(v, identity, width, height)
+	c := op.newCanvasPlayer(v, v.drawing, identity, width, height)
 	c.off, c.pixelScale = off, scale
 	c.playAll(ops)
 	for len(op.pushed) > 0 {
@@ -1058,17 +1059,18 @@ func plainLayout(text string, font driver.Font) *comObject {
 // image draws op's image once it has loaded, and the canvas again when
 // it loads.
 func (c *canvasPlayer) image(op *driver.DrawOp) {
-	if op.Image == nil {
+	imgSrc := c.drawing.Image(op)
+	if imgSrc == nil {
 		return
 	}
-	if op.Image.Offscreen != nil {
-		e := c.p.offscreenBitmap(c.v, op.Image.Offscreen)
+	if imgSrc.Offscreen != nil {
+		e := c.p.offscreenBitmap(c.v, imgSrc.Offscreen)
 		if e == nil || e.bitmap == nil {
 			return
 		}
 		nat := e.points
-		if op.Image.Size.Width > 0 && op.Image.Size.Height > 0 {
-			nat = op.Image.Size
+		if imgSrc.Size.Width > 0 && imgSrc.Size.Height > 0 {
+			nat = imgSrc.Size
 		}
 		w, h := op.W, op.H
 		if w == 0 && h == 0 {
@@ -1093,7 +1095,7 @@ func (c *canvasPlayer) image(op *driver.DrawOp) {
 		})
 		return
 	}
-	s := c.p.w.canvasImage(*op.Image)
+	s := c.p.w.canvasImage(*imgSrc)
 	if s == nil || s.pic == nil {
 		c.waited = c.waited || (s != nil && s.load != nil)
 		return

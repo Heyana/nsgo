@@ -71,6 +71,7 @@ func (s *surface) offscreenCanvas(off *driver.OffscreenCanvas, v *view) (js.Valu
 
 	waited := false
 	p := canvas2d.NewPlayer(ctx, scale, math.Hypot(float64(off.Size.Width), float64(off.Size.Height)))
+	p.Drawing = off.Drawing
 	p.Font = fontCSS
 	p.NewCanvas = s.scratchCanvas
 	p.Image = func(src driver.ImageSource, readable bool) (js.Value, float64, bool) {

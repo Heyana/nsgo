@@ -112,7 +112,7 @@ func (s *surface) canvasContext() *canvasGL {
 }
 
 func (s *surface) shadeCanvas(v *view, p *canvas2d.Player, op *driver.DrawOp) bool {
-	if !canvasshade.Shades(op) {
+	if !canvasshade.Shades(p.Drawing, op) {
 		return false
 	}
 	g := s.canvasContext()
@@ -133,7 +133,11 @@ func (s *surface) shadeCanvas(v *view, p *canvas2d.Player, op *driver.DrawOp) bo
 	var size canvasshade.Image
 	var first glTexture
 	if op.Kind != driver.DrawShader {
-		t, density, ok := s.canvasTexture(g, v, *op.Image)
+		imgSrc := p.Drawing.Image(op)
+		if imgSrc == nil {
+			return false
+		}
+		t, density, ok := s.canvasTexture(g, v, *imgSrc)
 		if !ok {
 			return true
 		}
@@ -145,7 +149,7 @@ func (s *surface) shadeCanvas(v *view, p *canvas2d.Player, op *driver.DrawOp) bo
 		D: m.Get("d").Float(), E: m.Get("e").Float(), F: m.Get("f").Float()}
 	target := p.Ctx.Get("canvas")
 	clip := goimage.Rect(0, 0, target.Get("width").Int(), target.Get("height").Int())
-	pass, ok := canvasshade.Plan(op, at, clip, size)
+	pass, ok := canvasshade.Plan(p.Drawing, op, at, clip, size)
 	if !ok {
 		return true
 	}

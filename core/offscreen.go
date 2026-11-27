@@ -235,14 +235,21 @@ func (o *OffscreenImage) Release() {
 // copyDrawingFrames returns d with any Pixels image sources copied once
 // per (buffer, version), reusing entries from prev for unchanged frames.
 func copyDrawingFrames(d *Drawing, prev map[pixelKey]*image.RGBA) (*Drawing, map[pixelKey]*image.RGBA) {
-	if !slices.ContainsFunc(d.Ops, func(op driver.DrawOp) bool {
-		return op.Image != nil && op.Image.Pixels != nil ||
-			driver.PaintShader(op.Shader) != nil && slices.ContainsFunc(driver.PaintShader(op.Shader).Images, func(img ImageSource) bool { return img.Pixels != nil })
-	}) {
+	hasImgPixels := slices.ContainsFunc(d.Images, func(img ImageSource) bool { return img.Pixels != nil })
+	hasShaderPixels := d.Shaded() && slices.ContainsFunc(d.Ops, func(op driver.DrawOp) bool {
+		s := driver.PaintShader(op.Shader)
+		return s != nil && slices.ContainsFunc(s.Images, func(img ImageSource) bool { return img.Pixels != nil })
+	})
+	if !hasImgPixels && !hasShaderPixels {
 		return d, nil
 	}
 	out := *d
-	out.Ops = slices.Clone(d.Ops)
+	if hasImgPixels {
+		out.Images = slices.Clone(d.Images)
+	}
+	if hasShaderPixels {
+		out.Ops = slices.Clone(d.Ops)
+	}
 	frames := map[pixelKey]*image.RGBA{}
 	frame := func(img *ImageSource) {
 		k := pixelKey{img.Pixels, img.Version}
@@ -255,24 +262,24 @@ func copyDrawingFrames(d *Drawing, prev map[pixelKey]*image.RGBA) (*Drawing, map
 		}
 		img.Pixels = c
 	}
-	eachShaderImage(&out, func(img *ImageSource) {
-		if img.Pixels != nil && !img.Pixels.Rect.Empty() {
-			frame(img)
-		}
-	})
-	for i := range out.Ops {
-		op := &out.Ops[i]
-		if op.Image == nil || op.Image.Pixels == nil {
+	if hasShaderPixels {
+		eachShaderImage(&out, func(img *ImageSource) {
+			if img.Pixels != nil && !img.Pixels.Rect.Empty() {
+				frame(img)
+			}
+		})
+	}
+	for i := range out.Images {
+		img := &out.Images[i]
+		if img.Pixels == nil {
 			continue
 		}
-		if op.Image.Pixels.Rect.Empty() {
+		if img.Pixels.Rect.Empty() {
 			// A buffer with no pixels draws nothing.
-			op.Image = nil
+			*img = ImageSource{}
 			continue
 		}
-		img := *op.Image
-		frame(&img)
-		op.Image = &img
+		frame(img)
 	}
 	return &out, frames
 }

@@ -120,7 +120,7 @@ func offscreenImage(src driver.ImageSource, host CanvasHost) (img uintptr, width
 		ops = off.Drawing.Ops
 	}
 	subHost := CanvasHost{Ratio: scale, Redraw: host.Redraw, Owner: host.Owner, BaseUp: true}
-	p := newPlayer(ctx, ops, driver.CanvasSplit{}, subHost)
+	p := newPlayer(ctx, off.Drawing, ops, driver.CanvasSplit{}, subHost)
 	p.run()
 	offscreenRenders.Add(1)
 	img = cgBitmapContextCreateImage(ctx)
@@ -201,7 +201,7 @@ func RasterizeDrawing(d *driver.Drawing, width, height, scale float64) uintptr {
 	// Top down in logical points; the bitmap context's base space points up.
 	cgContextTranslateCTM(ctx, 0, float64(ph))
 	cgContextScaleCTM(ctx, float64(pw)/width, -float64(ph)/height)
-	p := newPlayer(ctx, d.Ops, driver.CanvasSplit{}, CanvasHost{Ratio: scale, BaseUp: true})
+	p := newPlayer(ctx, d, d.Ops, driver.CanvasSplit{}, CanvasHost{Ratio: scale, BaseUp: true})
 	p.run()
 	img := cgBitmapContextCreateImage(ctx)
 	Release(ctx)

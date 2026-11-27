@@ -51,6 +51,15 @@ func newTrack() *drawTrack {
 	return &drawTrack{st: trackState{m: canvasIdentity, fill: RGB(0x000000), width: 1, miter: 10, align: TextAlignStart}}
 }
 
+func (t *drawTrack) reset() {
+	t.at = 0
+	t.st = trackState{m: canvasIdentity, fill: RGB(0x000000), width: 1, miter: 10, align: TextAlignStart}
+	t.stack = t.stack[:0]
+	t.segs = t.segs[:0]
+	t.pathOps = t.pathOps[:0]
+	t.cur, t.start, t.has = cpoint{}, cpoint{}, false
+}
+
 // tracked replays the ops recorded since the last call.
 func (d *Drawing) tracked() *drawTrack {
 	if d.track == nil {

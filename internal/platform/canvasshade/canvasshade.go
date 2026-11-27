@@ -90,7 +90,7 @@ type Pass struct {
 
 // Shades reports whether op shades with a program a backend can run: a
 // DrawShader, or an image op with a shader.
-func Shades(op *driver.DrawOp) bool {
+func Shades(d *driver.Drawing, op *driver.DrawOp) bool {
 	s := driver.PaintShader(op.Shader)
 	if s == nil || s.Program == nil || s.Program.IR == nil {
 		return false
@@ -99,7 +99,7 @@ func Shades(op *driver.DrawOp) bool {
 	case driver.DrawShader:
 		return true
 	case driver.DrawImage, driver.DrawAtlas, driver.DrawVertices:
-		return op.Image != nil
+		return d.Image(op) != nil
 	}
 	return false
 }
@@ -111,15 +111,15 @@ const maxSide = 8192
 // Plan lays out op under m, within clip, the target's pixels the canvas
 // may change; img is the size of an image op's image. It reports false
 // when op shades nothing there.
-func Plan(op *driver.DrawOp, m Affine, clip image.Rectangle, img Image) (Pass, bool) {
-	if !Shades(op) {
+func Plan(d *driver.Drawing, op *driver.DrawOp, m Affine, clip image.Rectangle, img Image) (Pass, bool) {
+	if !Shades(d, op) {
 		return Pass{}, false
 	}
 	p := Pass{Shader: driver.PaintShader(op.Shader)}
 	n := 6
 	switch {
-	case op.Kind == driver.DrawAtlas && op.Atlas != nil:
-		n = 6 * len(*op.Atlas)
+	case op.Kind == driver.DrawAtlas:
+		n = 6 * len(d.AtlasSprites(op))
 	case op.Kind == driver.DrawVertices && op.Mesh != nil:
 		n = len(op.Mesh.Vertices)
 	}
@@ -146,10 +146,11 @@ func Plan(op *driver.DrawOp, m Affine, clip image.Rectangle, img Image) (Pass, b
 		dst := func(u, v float64) (float64, float64) { return u * p.Scale, v * p.Scale }
 		quad(0, 0, f(op.W), f(op.H), at, dst, pos, white)
 	} else {
-		if img.W <= 0 || img.H <= 0 || img.PixelsW <= 0 || img.PixelsH <= 0 {
+		src := d.Image(op)
+		if src == nil || img.W <= 0 || img.H <= 0 || img.PixelsW <= 0 || img.PixelsH <= 0 {
 			return Pass{}, false
 		}
-		p.Images = append([]driver.ImageSource{*op.Image}, p.Shader.Images...)
+		p.Images = append([]driver.ImageSource{*src}, p.Shader.Images...)
 		p.Size, p.Scale = [2]float64{img.W, img.H}, img.PixelsW/img.W
 		kx, ky := img.PixelsW/img.W, img.PixelsH/img.H
 		pos := func(u, v float64) (float64, float64) { return u, v }
@@ -175,10 +176,11 @@ func Plan(op *driver.DrawOp, m Affine, clip image.Rectangle, img Image) (Pass, b
 			}
 			quad(sx, sy, sx+sw, sy+sh, at, dst, pos, c)
 		case driver.DrawAtlas:
-			if op.Atlas == nil {
+			sprites := d.AtlasSprites(op)
+			if len(sprites) == 0 {
 				return Pass{}, false
 			}
-			for _, s := range *op.Atlas {
+			for _, s := range sprites {
 				r, t := s.Rect, s.Transform
 				ox, oy := float64(r.Origin.X), float64(r.Origin.Y)
 				cs, sn, tx, ty := f(t.SCos), f(t.SSin), f(t.TX), f(t.TY)

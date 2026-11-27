@@ -115,7 +115,13 @@ func (t *Tree) commit(shared bool) *driver.MountBatch {
 		items = append([]driver.MountItem(nil), t.items...)
 		t.shrinkItems(len(t.items))
 	}
-	b := &driver.MountBatch{Root: t.view.id, Items: items, LayoutAnimation: t.layoutAnim, Causes: causes}
+	var b *driver.MountBatch
+	if shared {
+		t.sharedBatch = driver.MountBatch{Root: t.view.id, Items: items, LayoutAnimation: t.layoutAnim, Causes: causes}
+		b = &t.sharedBatch
+	} else {
+		b = &driver.MountBatch{Root: t.view.id, Items: items, LayoutAnimation: t.layoutAnim, Causes: causes}
+	}
 	if t.devNative != nil && t.devNative.requested {
 		b.GeometryVersion = uint64(t.commits)
 		t.devNative.pending = false

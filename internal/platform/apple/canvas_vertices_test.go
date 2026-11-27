@@ -115,7 +115,7 @@ func BenchmarkPlayDeformingMesh(b *testing.B) {
 				}
 				d := driver.NewDrawing(nil).DrawVertices(src, vertices)
 				DrawTopDown(ctx, h, true, func(baseUp bool) {
-					Play(ctx, d.Ops, CanvasHost{Ratio: scale, BaseUp: baseUp})
+					Play(ctx, d, d.Ops, CanvasHost{Ratio: scale, BaseUp: baseUp})
 				})
 			}
 			// The CPU time of every thread, which a loaded machine inflates less than the wall time.

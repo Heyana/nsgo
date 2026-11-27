@@ -57,7 +57,7 @@ func TestCanvasSendsPixelCopiesOnceAndByKey(t *testing.T) {
 		src := driver.ImageSource{Pixels: px, Version: 1}
 		d := driver.NewDrawing(nil).DrawImage(src, 0, 0).DrawImageIn(src, 4, 4, 6, 4)
 		var images []canvasOp
-		for _, o := range decodeCanvas(t, d.Ops, true) {
+		for _, o := range decodeCanvas(t, d, d.Ops, true) {
 			if o.K == int(driver.DrawImage) {
 				images = append(images, o)
 			}
@@ -89,7 +89,7 @@ func TestCanvasExpandedAtlasSendsPixelsOnce(t *testing.T) {
 	xforms := []driver.RSXform{{SCos: 1}, {SCos: 1, TX: 8}}
 	d := driver.NewDrawing(nil).DrawAtlas(driver.ImageSource{Pixels: px, Version: 1}, rects, xforms, nil)
 	var withBytes, named int
-	for _, o := range decodeCanvas(t, d.Ops, false) {
+	for _, o := range decodeCanvas(t, d, d.Ops, false) {
 		if o.K != int(driver.DrawImage) {
 			continue
 		}

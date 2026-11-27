@@ -43,7 +43,7 @@ func EnableCanvasShaders() {
 // shaded runs op through its program when it shades with one, reporting
 // whether it did; a false report draws an image op plain.
 func (p *player) shaded(op *driver.DrawOp) bool {
-	return shadeCanvas != nil && canvasshade.Shades(op) && shadeCanvas(p, op)
+	return shadeCanvas != nil && canvasshade.Shades(p.drawing, op) && shadeCanvas(p, op)
 }
 
 var cgContextGetClipBoundingBox func(ctx uintptr) CGRect
@@ -89,7 +89,11 @@ func (p *player) shade(op *driver.DrawOp) bool {
 	var first *shadeImage
 	var size canvasshade.Image
 	if op.Kind != driver.DrawShader {
-		first = p.shadeImage(*op.Image)
+		imgSrc := p.drawing.Image(op)
+		if imgSrc == nil {
+			return false
+		}
+		first = p.shadeImage(*imgSrc)
 		if first == nil {
 			return true
 		}
@@ -107,7 +111,7 @@ func (p *player) shade(op *driver.DrawOp) bool {
 		x0, y0, x1, y1 = min(x0, x), min(y0, y), max(x1, x), max(y1, y)
 	}
 	bounds := image.Rect(int(math.Floor(x0)), int(math.Floor(y0)), int(math.Ceil(x1)), int(math.Ceil(y1)))
-	pass, ok := canvasshade.Plan(op, m, bounds, size)
+	pass, ok := canvasshade.Plan(p.drawing, op, m, bounds, size)
 	if !ok {
 		return true
 	}

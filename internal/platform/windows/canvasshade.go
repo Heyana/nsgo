@@ -37,7 +37,7 @@ func (*window) EnableCanvasShaders() {
 // shaded runs op through its program when it shades with one, reporting
 // whether it did; a false report draws an image op plain.
 func (c *canvasPlayer) shaded(op *driver.DrawOp) bool {
-	return shadeCanvas != nil && canvasshade.Shades(op) && shadeCanvas(c, op)
+	return shadeCanvas != nil && canvasshade.Shades(c.drawing, op) && shadeCanvas(c, op)
 }
 
 // Vtable indexes and values the canvas passes use besides shader.go's.
@@ -195,11 +195,12 @@ func (c *canvasPlayer) shade(op *driver.DrawOp) bool {
 	var size canvasshade.Image
 	var first *d3dImage
 	if op.Kind != driver.DrawShader {
-		if op.Image.Offscreen != nil {
+		imgSrc := c.drawing.Image(op)
+		if imgSrc == nil || imgSrc.Offscreen != nil {
 			// An offscreen bitmap is Direct2D's alone: it draws plain.
 			return false
 		}
-		s := c.p.w.canvasImage(*op.Image)
+		s := c.p.w.canvasImage(*imgSrc)
 		if s == nil || s.pic == nil {
 			c.waited = c.waited || (s != nil && s.load != nil)
 			return true
@@ -214,7 +215,7 @@ func (c *canvasPlayer) shade(op *driver.DrawOp) bool {
 	toPixels := c.world.then(scaling(px, px))
 	m := c.st.ctm.then(toPixels)
 	bound := toPixels.bound(rect{0, 0, int32(math.Ceil(float64(c.width))), int32(math.Ceil(float64(c.height)))})
-	pass, ok := canvasshade.Plan(op, canvasshade.Affine{A: m.a, B: m.b, C: m.c, D: m.d, E: m.e, F: m.f},
+	pass, ok := canvasshade.Plan(c.drawing, op, canvasshade.Affine{A: m.a, B: m.b, C: m.c, D: m.d, E: m.e, F: m.f},
 		image.Rect(int(bound.Left), int(bound.Top), int(bound.Right), int(bound.Bottom)), size)
 	if !ok {
 		return true

@@ -2,8 +2,10 @@ package driver
 
 import (
 	"cmp"
+	"maps"
 	"math"
 	"slices"
+	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
 )
@@ -18,6 +20,13 @@ import (
 // looked, so a drawing that never asks pays nothing for them.
 type Drawing struct {
 	Ops []DrawOp
+	// Images holds the image sources drawn by DrawImage, DrawVertices and
+	// DrawAtlas ops, referenced by DrawOp.ImageIndex (1-based; 0 means none).
+	// Consecutive ops drawing the same image share one entry.
+	Images []ImageSource
+	// Sprites holds the sprite records drawn by DrawAtlas ops, referenced
+	// by DrawOp.SpriteStart and DrawOp.SpriteLen.
+	Sprites []AtlasSprite
 	// Slots bind arguments of Ops to animated nodes: the platform plays
 	// the ops with the nodes' values in their place, and plays them again
 	// when one changes, with no work on the engine.
@@ -50,12 +59,150 @@ type Drawing struct {
 	shader      *Shader
 	shaderStack []*Shader
 	shaded      bool
+	// lease counts active platform retains on a pooled drawing (nil for
+	// unpooled drawings). Stored behind a pointer so shallow Drawing copies
+	// (core's scaled/Painted/copyDrawingFrames) share the lease without
+	// copying an atomic value.
+	lease *atomic.Int32
 }
 
 // NewDrawing returns an empty drawing that measures text with text, as
 // the core records a Canvas's: MeasureText, TextMetrics and the
 // alignment of texts ask it.
 func NewDrawing(text TextEngine) *Drawing { return &Drawing{text: text} }
+
+// NewPooledDrawing returns an empty drawing with a reuse lease so core can
+// reset and reuse its buffers across frames once platforms have released it.
+func NewPooledDrawing(text TextEngine) *Drawing {
+	return &Drawing{text: text, lease: new(atomic.Int32)}
+}
+
+// Retain marks d as in use by a platform until a matching Release call.
+func (d *Drawing) Retain() {
+	if d != nil && d.lease != nil {
+		d.lease.Add(1)
+	}
+}
+
+// Release ends one platform retain of d.
+func (d *Drawing) Release() {
+	if d != nil && d.lease != nil {
+		d.lease.Add(-1)
+	}
+}
+
+// InUse reports whether any platform still holds a retain on d.
+func (d *Drawing) InUse() bool {
+	return d != nil && d.lease != nil && d.lease.Load() > 0
+}
+
+// RetainBatchDrawings retains every canvas drawing carried by b.
+func RetainBatchDrawings(b *MountBatch) {
+	if b == nil {
+		return
+	}
+	for i := range b.Items {
+		if b.Items[i].Kind == ItemCanvas {
+			b.Items[i].Drawing.Retain()
+		}
+	}
+}
+
+// ReleaseBatchDrawings releases every canvas drawing carried by b.
+func ReleaseBatchDrawings(b *MountBatch) {
+	if b == nil {
+		return
+	}
+	for i := range b.Items {
+		if b.Items[i].Kind == ItemCanvas {
+			b.Items[i].Drawing.Release()
+		}
+	}
+}
+
+// Reset clears d's recorded operations and state while retaining the capacity
+// of its slices (Ops, Images, Sprites, Slots, Nodes, ViewPaints, and internal
+// stacks) so subsequent frames record without heap allocations. A drawing
+// handed to a platform must not be reset while the platform still reads it.
+func (d *Drawing) Reset() {
+	clear(d.Ops)
+	d.Ops = d.Ops[:0]
+	clear(d.Images)
+	d.Images = d.Images[:0]
+	d.Sprites = d.Sprites[:0]
+	d.Slots = d.Slots[:0]
+	clear(d.Nodes)
+	d.Nodes = d.Nodes[:0]
+	clear(d.ViewPaints)
+	d.ViewPaints = d.ViewPaints[:0]
+	d.Resolution = 0
+	d.Upscale = 0
+	clear(d.measured)
+	clear(d.marks)
+	if d.track != nil {
+		d.track.reset()
+	}
+	d.pathAside = false
+	d.sampling = ImageSamplingSmooth
+	d.samplingStack = d.samplingStack[:0]
+	d.shader = nil
+	clear(d.shaderStack)
+	d.shaderStack = d.shaderStack[:0]
+	d.shaded = false
+}
+
+// Image returns the image source op draws, or nil when op has none or its
+// source is empty.
+func (d *Drawing) Image(op *DrawOp) *ImageSource {
+	if d == nil || op == nil || op.ImageIndex <= 0 || int(op.ImageIndex) > len(d.Images) {
+		return nil
+	}
+	img := &d.Images[op.ImageIndex-1]
+	if img.Empty() {
+		return nil
+	}
+	return img
+}
+
+// AtlasSprites returns the sprite list recorded for a DrawAtlas op, or nil
+// when op has none.
+func (d *Drawing) AtlasSprites(op *DrawOp) AtlasSprites {
+	if d == nil || op == nil || op.SpriteLen <= 0 {
+		return nil
+	}
+	start := int(op.SpriteStart)
+	end := start + int(op.SpriteLen)
+	if start < 0 || end > len(d.Sprites) {
+		return nil
+	}
+	return AtlasSprites(d.Sprites[start:end])
+}
+
+// addImage appends img to d.Images and returns its 1-based index, sharing
+// the previous entry when consecutive image ops draw the same source.
+// Returns 0 when img is empty.
+func (d *Drawing) addImage(img ImageSource) int32 {
+	if img.Empty() {
+		return 0
+	}
+	if n := len(d.Images); n > 0 && sameDrawingImage(d.Images[n-1], img) {
+		return int32(n)
+	}
+	d.Images = append(d.Images, img)
+	return int32(len(d.Images))
+}
+
+func sameDrawingImage(a, b ImageSource) bool {
+	if a.URI != b.URI || a.Size != b.Size || a.Scales != b.Scales ||
+		len(a.Data) != len(b.Data) || (len(a.Data) > 0 && &a.Data[0] != &b.Data[0]) ||
+		a.Pixels != b.Pixels || a.Offscreen != b.Offscreen || a.Version != b.Version {
+		return false
+	}
+	if len(a.Variants) == 0 && len(b.Variants) == 0 {
+		return true
+	}
+	return maps.Equal(a.Variants, b.Variants)
+}
 
 // ResolutionScale is what d's Resolution multiplies the pixels per point a platform
 // plays it at by: within (0, 1), or 1 for a nil d or any other value,
@@ -189,10 +336,13 @@ type DrawOp struct {
 	Gradient  *CanvasGradient
 	Composite CompositeOp
 	Dash      *LineDash
-	Image     *ImageSource
-	Sampling  ImageSampling
-	Mesh      *CanvasMesh
-	Atlas     *AtlasSprites
+	// ImageIndex is a 1-based index into Drawing.Images (0 means no image).
+	ImageIndex int32
+	Sampling   ImageSampling
+	Mesh       *CanvasMesh
+	// SpriteStart and SpriteLen select a DrawAtlas op's sprites in Drawing.Sprites.
+	SpriteStart int32
+	SpriteLen   int32
 	// Tinted multiplies a DrawImage's source channels by Color before it composites.
 	Tinted bool
 	// Shader shades a DrawShader's rectangle, or the image a DrawImage,
@@ -520,7 +670,7 @@ func (d *Drawing) op(o DrawOp) *Drawing {
 	case o.Kind.UsesPath():
 		d.restorePath()
 	}
-	if o.Image != nil {
+	if o.ImageIndex > 0 {
 		o.Sampling = d.sampling
 		if d.shader != nil {
 			o.Shader = ShaderPaint{d.shader}
@@ -1032,7 +1182,7 @@ func (d *Drawing) Clear(x, y, w, h float32) *Drawing {
 
 // DrawImage draws img at (x, y) at its natural size.
 func (d *Drawing) DrawImage(img ImageSource, x, y float32) *Drawing {
-	return d.op(DrawOp{Kind: DrawImage, Image: &img, X: x, Y: y})
+	return d.op(DrawOp{Kind: DrawImage, ImageIndex: d.addImage(img), X: x, Y: y})
 }
 
 // DrawImageIn draws img stretched into the rectangle x, y, w, h.
@@ -1040,7 +1190,7 @@ func (d *Drawing) DrawImageIn(img ImageSource, x, y, w, h float32) *Drawing {
 	if w == 0 && h == 0 {
 		return d
 	}
-	return d.op(DrawOp{Kind: DrawImage, Image: &img, X: x, Y: y, W: w, H: h})
+	return d.op(DrawOp{Kind: DrawImage, ImageIndex: d.addImage(img), X: x, Y: y, W: w, H: h})
 }
 
 // DrawImageFrom draws the part sx, sy, sw, sh of img, in its own points,
@@ -1049,7 +1199,7 @@ func (d *Drawing) DrawImageFrom(img ImageSource, sx, sy, sw, sh, x, y, w, h floa
 	if w == 0 && h == 0 || sw == 0 && sh == 0 {
 		return d
 	}
-	return d.op(DrawOp{Kind: DrawImage, Image: &img, X1: sx, Y1: sy, X2: sw, Y2: sh, X: x, Y: y, W: w, H: h})
+	return d.op(DrawOp{Kind: DrawImage, ImageIndex: d.addImage(img), X1: sx, Y1: sy, X2: sw, Y2: sh, X: x, Y: y, W: w, H: h})
 }
 
 // DrawSVG draws svg at (x, y) at its intrinsic size, respecting its
@@ -1093,7 +1243,7 @@ func (d *Drawing) DrawSVGIn(svg *SVG, x, y, w, h float32) *Drawing {
 // DrawTintedImage draws img at its natural size, multiplying each image
 // channel by tint's corresponding sRGB or opacity channel before compositing.
 func (d *Drawing) DrawTintedImage(img ImageSource, tint Color, x, y float32) *Drawing {
-	return d.op(DrawOp{Kind: DrawImage, Image: &img, Tinted: true, Color: tint, X: x, Y: y})
+	return d.op(DrawOp{Kind: DrawImage, ImageIndex: d.addImage(img), Tinted: true, Color: tint, X: x, Y: y})
 }
 
 // DrawTintedImageIn draws img into a rectangle with the same tint as DrawTintedImage.
@@ -1101,7 +1251,7 @@ func (d *Drawing) DrawTintedImageIn(img ImageSource, tint Color, x, y, w, h floa
 	if w == 0 && h == 0 {
 		return d
 	}
-	return d.op(DrawOp{Kind: DrawImage, Image: &img, Tinted: true, Color: tint, X: x, Y: y, W: w, H: h})
+	return d.op(DrawOp{Kind: DrawImage, ImageIndex: d.addImage(img), Tinted: true, Color: tint, X: x, Y: y, W: w, H: h})
 }
 
 // DrawTintedImageFrom draws a part of img with the same tint as DrawTintedImage.
@@ -1109,7 +1259,7 @@ func (d *Drawing) DrawTintedImageFrom(img ImageSource, tint Color, sx, sy, sw, s
 	if w == 0 && h == 0 || sw == 0 && sh == 0 {
 		return d
 	}
-	return d.op(DrawOp{Kind: DrawImage, Image: &img, Tinted: true, Color: tint,
+	return d.op(DrawOp{Kind: DrawImage, ImageIndex: d.addImage(img), Tinted: true, Color: tint,
 		X1: sx, Y1: sy, X2: sw, Y2: sh, X: x, Y: y, W: w, H: h})
 }
 
@@ -1229,8 +1379,9 @@ func (d *Drawing) Painted(p *PaintStyle, current Color) *Drawing {
 	if len(d.ViewPaints) == 0 {
 		return d
 	}
-	out := &Drawing{Ops: slices.Clone(d.Ops), Slots: d.Slots, Nodes: d.Nodes, ViewPaints: d.ViewPaints,
-		Resolution: d.Resolution, Upscale: d.Upscale, text: d.text}
+	out := &Drawing{Ops: slices.Clone(d.Ops), Images: d.Images, Sprites: d.Sprites,
+		Slots: d.Slots, Nodes: d.Nodes, ViewPaints: d.ViewPaints,
+		Resolution: d.Resolution, Upscale: d.Upscale, text: d.text, shaded: d.shaded, lease: d.lease}
 	for _, v := range d.ViewPaints {
 		if v.Op >= len(out.Ops) {
 			continue

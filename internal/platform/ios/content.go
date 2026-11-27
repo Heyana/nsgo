@@ -104,7 +104,7 @@ func (v *view) redrawAnimated() {
 		v.redraw()
 		return
 	}
-	area, whole := apple.Damaged(v.played, v.surface.animator.CanvasOps(v.id, v.drawing))
+	area, whole := apple.Damaged(v.drawing, v.played, v.surface.animator.CanvasOps(v.id, v.drawing))
 	switch {
 	case whole:
 		v.redraw()

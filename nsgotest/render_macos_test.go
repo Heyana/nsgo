@@ -25,6 +25,8 @@ func TestWindowlessCanvasSamples(t *testing.T) {
 			d := &core.Drawing{}
 			d.SetFillColor(core.RGB(0xffffff)).FillRect(0, 0, float32(sample.Width), float32(sample.Height))
 			d.Ops = append(d.Ops, sample.Drawing.Ops...)
+			d.Images = sample.Drawing.Images
+			d.Sprites = sample.Drawing.Sprites
 			img, err := Render(d, core.Size{Width: core.Points(sample.Width), Height: core.Points(sample.Height)}, canvastest.Scale)
 			if err != nil {
 				t.Fatal(err)

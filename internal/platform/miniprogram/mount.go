@@ -81,7 +81,7 @@ type host interface {
 	// pixel ratio's to their nearest unless smooth, and returns the
 	// picture as a URL; "" while an image it draws loads, which paints it
 	// again (repaint).
-	paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size, scale float64, smooth bool) string
+	paint(id driver.NodeID, d *driver.Drawing, ops []driver.DrawOp, size driver.Size, scale float64, smooth bool) string
 	// tick asks for a call of mounter.tick at the next frame.
 	tick()
 }
@@ -985,7 +985,7 @@ func (m *mounter) paint(v *view) {
 	if size.Width <= 0 || size.Height <= 0 {
 		return
 	}
-	url := m.h.paint(v.id, m.animator.CanvasOps(v.id, v.drawing), size, v.drawing.ResolutionScale(), v.drawing.Smooth())
+	url := m.h.paint(v.id, v.drawing, m.animator.CanvasOps(v.id, v.drawing), size, v.drawing.ResolutionScale(), v.drawing.Smooth())
 	if url == "" {
 		m.repaint[v.id] = true
 		return

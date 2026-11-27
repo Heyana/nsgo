@@ -53,7 +53,7 @@ func (h *fakeHost) imagePixels(_ driver.NodeID, pixels *image.RGBA, tint driver.
 }
 func (h *fakeHost) setClipboard(text string) { h.clipboard = append(h.clipboard, text) }
 
-func (h *fakeHost) paint(_ driver.NodeID, _ []driver.DrawOp, _ driver.Size, scale float64, smooth bool) string {
+func (h *fakeHost) paint(_ driver.NodeID, _ *driver.Drawing, _ []driver.DrawOp, _ driver.Size, scale float64, smooth bool) string {
 	h.paints = append(h.paints, fakePaint{scale, smooth})
 	return "data:image/png;base64,"
 }

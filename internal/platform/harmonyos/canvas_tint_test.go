@@ -17,7 +17,7 @@ func TestCanvasImagesCarryTheirTint(t *testing.T) {
 	d.DrawTintedImage(img, driver.Color(0x80ff0000), 1, 2)
 	d.DrawTintedImage(img, 0, 3, 4)
 	var got []map[string]any
-	if err := json.Unmarshal([]byte(canvasJSON(d.Ops, true)), &got); err != nil {
+	if err := json.Unmarshal([]byte(canvasJSON(&d, d.Ops, true)), &got); err != nil {
 		t.Fatal(err)
 	}
 	var images []map[string]any

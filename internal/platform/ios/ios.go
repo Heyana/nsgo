@@ -1154,6 +1154,7 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 
 // Mount implements engine.Platform.
 func (s *surface) Mount(b *driver.MountBatch) {
+	driver.RetainBatchDrawings(b)
 	if s.batches.Push(b) {
 		s.native.Send(selPerformOnMain, selApply, objc.ID(0), false)
 	}
@@ -1479,6 +1480,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		}
 		if int(it.ID) >= len(s.views) || s.views[it.ID] == nil {
+			if it.Kind == driver.ItemCanvas {
+				it.Drawing.Release()
+			}
 			continue
 		}
 		v := s.views[it.ID]
@@ -1619,6 +1623,8 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemCanvas:
 			if ch := canvases.Load(); ch != nil {
 				ch.apply(s, v, it.Drawing)
+			} else {
+				it.Drawing.Release()
 			}
 		case driver.ItemGPU:
 			if v.kind == driver.KindGPU && it.GPU != nil && s.env.GPU {

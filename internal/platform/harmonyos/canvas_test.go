@@ -16,7 +16,7 @@ func TestCanvasImagesCarryTheirSampling(t *testing.T) {
 	d := driver.NewDrawing(nil)
 	canvastest.DrawSampling(d, driver.ImageSource{URI: "asset:checker.png"}, 64)
 	var ops []canvasOp
-	if err := json.Unmarshal([]byte(canvasJSON(d.Ops, true)), &ops); err != nil {
+	if err := json.Unmarshal([]byte(canvasJSON(d, d.Ops, true)), &ops); err != nil {
 		t.Fatal(err)
 	}
 	var nearest []bool
@@ -63,7 +63,7 @@ func TestCanvasSendsAtlasPacked(t *testing.T) {
 	}
 	xforms := []driver.RSXform{{SCos: 2, TX: 11, TY: 23}, {SCos: 0.5, SSin: -1, TX: -3, TY: 7}}
 	d := driver.NewDrawing(nil).SetAlpha(0.5).SetImageSmoothing(false).DrawAtlas(src, rects, xforms, []float32{0.25})
-	ops := decodeCanvas(t, d.Ops, true)
+	ops := decodeCanvas(t, d, d.Ops, true)
 	if len(ops) != 2 {
 		t.Fatalf("got %d ops, want the alpha and one atlas: %+v", len(ops), ops)
 	}
@@ -85,10 +85,13 @@ func TestCanvasSendsAtlasPacked(t *testing.T) {
 
 // TestCanvasDropsAnAtlasWithoutAnImage checks that an atlas op the host could not draw is not sent.
 func TestCanvasDropsAnAtlasWithoutAnImage(t *testing.T) {
-	sprites := driver.AtlasSprites{{Rect: driver.Bounds{Size: driver.Size{Width: 1, Height: 1}}, Transform: driver.RSXform{SCos: 1}, Alpha: 1}}
-	ops := []driver.DrawOp{{Kind: driver.DrawAtlas, Atlas: &sprites}, {Kind: driver.DrawAtlas, Image: &driver.ImageSource{URI: "a.png"}}}
+	d := &driver.Drawing{
+		Images:  []driver.ImageSource{{URI: "a.png"}},
+		Sprites: []driver.AtlasSprite{{Rect: driver.Bounds{Size: driver.Size{Width: 1, Height: 1}}, Transform: driver.RSXform{SCos: 1}, Alpha: 1}},
+		Ops:     []driver.DrawOp{{Kind: driver.DrawAtlas, SpriteStart: 0, SpriteLen: 1}, {Kind: driver.DrawAtlas, ImageIndex: 1}},
+	}
 	for _, packed := range []bool{true, false} {
-		if got := decodeCanvas(t, ops, packed); len(got) != 0 {
+		if got := decodeCanvas(t, d, d.Ops, packed); len(got) != 0 {
 			t.Fatalf("packed %v: got %+v, want nothing", packed, got)
 		}
 	}
@@ -103,7 +106,7 @@ func TestCanvasExpandsAtlasForAnOlderHost(t *testing.T) {
 	}
 	xforms := []driver.RSXform{{SCos: 2, TX: 11, TY: 23}, {SCos: 0.5, SSin: -1, TX: -3, TY: 7}}
 	d := driver.NewDrawing(nil).SetAlpha(0.5).SetImageSmoothing(false).DrawAtlas(src, rects, xforms, []float32{0.25})
-	ops := decodeCanvas(t, d.Ops, false)
+	ops := decodeCanvas(t, d, d.Ops, false)
 	var kinds []int
 	for _, o := range ops {
 		kinds = append(kinds, o.K)
@@ -134,10 +137,10 @@ func TestCanvasExpandsAtlasForAnOlderHost(t *testing.T) {
 	}
 }
 
-func decodeCanvas(t *testing.T, ops []driver.DrawOp, packed bool) []canvasOp {
+func decodeCanvas(t *testing.T, d *driver.Drawing, ops []driver.DrawOp, packed bool) []canvasOp {
 	t.Helper()
 	var out []canvasOp
-	if err := json.Unmarshal([]byte(canvasJSON(ops, packed)), &out); err != nil {
+	if err := json.Unmarshal([]byte(canvasJSON(d, ops, packed)), &out); err != nil {
 		t.Fatal(err)
 	}
 	return out
@@ -151,7 +154,7 @@ func meshVertex(x, y, u, v driver.Points, c driver.Color) driver.CanvasVertex {
 func encode(t *testing.T, d *driver.Drawing) (images, meshes []canvasOp) {
 	t.Helper()
 	var ops []canvasOp
-	if err := json.Unmarshal([]byte(canvasJSON(d.Ops, true)), &ops); err != nil {
+	if err := json.Unmarshal([]byte(canvasJSON(d, d.Ops, true)), &ops); err != nil {
 		t.Fatal(err)
 	}
 	for _, o := range ops {

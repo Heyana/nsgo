@@ -37,46 +37,52 @@ func graphicsView(t *testing.T, opts Options, theme *Theme) (*Terminal, *Ref, *n
 	return term, ref, app
 }
 
-func canvasOps(t *testing.T, app *nsgotest.App) []driver.DrawOp {
+func canvasView(t *testing.T, app *nsgotest.App) *nsgotest.View {
 	t.Helper()
-	var find func(*nsgotest.View) []driver.DrawOp
-	find = func(v *nsgotest.View) []driver.DrawOp {
+	var find func(*nsgotest.View) *nsgotest.View
+	find = func(v *nsgotest.View) *nsgotest.View {
 		if v.Drawing != nil {
-			return v.Ops
+			return v
 		}
 		for _, c := range v.Children {
-			if ops := find(c); ops != nil {
-				return ops
+			if found := find(c); found != nil {
+				return found
 			}
 		}
 		return nil
 	}
-	ops := find(app.Find("id:term"))
-	if ops == nil {
+	v := find(app.Find("id:term"))
+	if v == nil {
 		t.Fatal("terminal canvas missing")
 	}
-	return ops
+	return v
 }
 
-func imageOps(t *testing.T, app *nsgotest.App) []driver.DrawOp {
+func canvasOps(t *testing.T, app *nsgotest.App) []driver.DrawOp {
+	t.Helper()
+	return canvasView(t, app).Ops
+}
+
+func imageOps(t *testing.T, app *nsgotest.App) (*driver.Drawing, []driver.DrawOp) {
+	v := canvasView(t, app)
 	var out []driver.DrawOp
-	for _, op := range canvasOps(t, app) {
+	for _, op := range v.Ops {
 		if op.Kind == driver.DrawImage {
 			out = append(out, op)
 		}
 	}
-	return out
+	return v.Drawing, out
 }
 
 func TestTerminalGraphicsLifecycle(t *testing.T) {
 	term, ref, app := graphicsView(t, Options{}, nil)
 	term.Feed([]byte(kittyImage(7, ",c=4,r=2", redImage...)))
 	app.Settle()
-	ops := imageOps(t, app)
+	d, ops := imageOps(t, app)
 	if len(ops) != 1 {
 		t.Fatalf("image ops %d, want 1", len(ops))
 	}
-	first := ops[0].Image.Pixels
+	first := d.Image(&ops[0]).Pixels
 	if got := first.RGBAAt(0, 0); got != (stdcolor.RGBA{255, 0, 0, 255}) {
 		t.Fatalf("pixels %v", got)
 	}
@@ -86,34 +92,37 @@ func TestTerminalGraphicsLifecycle(t *testing.T) {
 	// A synchronized update holds the exact image snapshot, then releases new pixels.
 	term.Feed([]byte("\x1b[?2026h" + kittyImage(7, ",c=4,r=2", greenImage...)))
 	app.Settle()
-	if got := imageOps(t, app)[0].Image.Pixels; got != first {
+	d, ops = imageOps(t, app)
+	if got := d.Image(&ops[0]).Pixels; got != first {
 		t.Fatal("image changed during synchronized update")
 	}
 	term.Feed([]byte("\x1b[?2026l"))
 	app.Settle()
-	second := imageOps(t, app)[0].Image.Pixels
+	d, ops = imageOps(t, app)
+	second := d.Image(&ops[0]).Pixels
 	if second == first || second.RGBAAt(0, 0) != (stdcolor.RGBA{0, 255, 0, 255}) {
 		t.Fatal("replacement did not show")
 	}
 	// Unchanged generations reuse the same decoded source.
 	term.Feed([]byte("text"))
 	app.Settle()
-	if imageOps(t, app)[0].Image.Pixels != second {
+	d, ops = imageOps(t, app)
+	if d.Image(&ops[0]).Pixels != second {
 		t.Fatal("recopied unchanged image")
 	}
 	term.Feed([]byte("\x1b[?1049h"))
 	app.Settle()
-	if len(imageOps(t, app)) != 0 {
+	if _, ops := imageOps(t, app); len(ops) != 0 {
 		t.Fatal("main-screen image leaked onto alternate screen")
 	}
 	term.Feed([]byte("\x1b[?1049l"))
 	app.Settle()
-	if len(imageOps(t, app)) != 1 {
+	if _, ops := imageOps(t, app); len(ops) != 1 {
 		t.Fatal("main-screen image missing after alternate screen")
 	}
 	term.Feed([]byte("\x1b_Ga=d,d=I,i=7,q=2\x1b\\"))
 	app.Settle()
-	if len(imageOps(t, app)) != 0 || len(ref.v.imageCache) != 0 {
+	if _, ops := imageOps(t, app); len(ops) != 0 || len(ref.v.imageCache) != 0 {
 		t.Fatal("deleted image retained")
 	}
 }
@@ -128,7 +137,7 @@ func TestTerminalGraphicsPNGAndLimit(t *testing.T) {
 			png.Encode(&b, img)
 			term.Feed([]byte("\x1b_Ga=T,f=100,i=8,c=2,r=2,q=2;" + base64.StdEncoding.EncodeToString(b.Bytes()) + "\x1b\\"))
 			app.Settle()
-			ops := imageOps(t, app)
+			d, ops := imageOps(t, app)
 			if limit != 0 {
 				if len(ops) != 0 {
 					t.Fatal("image bypassed limit")
@@ -138,7 +147,7 @@ func TestTerminalGraphicsPNGAndLimit(t *testing.T) {
 			if len(ops) != 1 {
 				t.Fatalf("PNG image ops %d", len(ops))
 			}
-			if got := ops[0].Image.Pixels.RGBAAt(0, 0); got.R != 100 || got.G != 50 || got.B != 25 || got.A != 128 {
+			if got := d.Image(&ops[0]).Pixels.RGBAAt(0, 0); got.R != 100 || got.G != 50 || got.B != 25 || got.A != 128 {
 				t.Fatalf("premultiplied PNG %v", got)
 			}
 		})
@@ -152,7 +161,7 @@ func TestTerminalGraphicsPlaceholders(t *testing.T) {
 	text := kittyImage(id, ",U=1,p=3,c=2,r=1", redImage...) + "\x1b[38;2;0;0;9;58;2;0;0;3m" + string([]rune{kittyPlaceholder, kittyDiacritics[0], kittyDiacritics[0], kittyDiacritics[1], kittyPlaceholder}) + "\x1b[0m"
 	term.Feed([]byte(text))
 	app.Settle()
-	ops := imageOps(t, app)
+	_, ops := imageOps(t, app)
 	if len(ops) != 2 {
 		t.Fatalf("virtual image ops %d, want 2", len(ops))
 	}
@@ -239,12 +248,12 @@ func TestTerminalGraphicsCropStackAndScroll(t *testing.T) {
 		kittyImage(12, ",c=2,r=2,z=-1,X=1,Y=2,x=1,w=1", greenImage...) +
 		kittyImage(13, ",c=2,r=2,z=1", redImage...)))
 	app.Settle()
-	ops := imageOps(t, app)
+	d, ops := imageOps(t, app)
 	// z=-1 is split between rows, so later row backgrounds cannot erase it.
 	if len(ops) != 4 {
 		t.Fatalf("image draws %d, want 4", len(ops))
 	}
-	if ops[0].Image.Pixels.RGBAAt(0, 0) != (stdcolor.RGBA{255, 0, 0, 255}) || ops[1].X1 != 1 || ops[1].X2 != 1 {
+	if d.Image(&ops[0]).Pixels.RGBAAt(0, 0) != (stdcolor.RGBA{255, 0, 0, 255}) || ops[1].X1 != 1 || ops[1].X2 != 1 {
 		t.Fatal("source crop changed")
 	}
 	if ops[1].X != ref.v.padX+1/ref.v.ratio || ops[1].Y != ref.v.padY+2/ref.v.ratio {
@@ -252,14 +261,16 @@ func TestTerminalGraphicsCropStackAndScroll(t *testing.T) {
 	}
 	bg, text, front, back := -1, -1, -1, -1
 	fill := core.Color(0)
+	firstPix := d.Image(&ops[0]).Pixels
+	lastPix := d.Image(&ops[len(ops)-1]).Pixels
 	for i, op := range canvasOps(t, app) {
 		if op.Kind == driver.DrawFillColor {
 			fill = op.Color
 		}
-		if op.Kind == driver.DrawImage && op.Image.Pixels == ops[0].Image.Pixels {
+		if op.Kind == driver.DrawImage && d.Image(&op).Pixels == firstPix {
 			back = i
 		}
-		if op.Kind == driver.DrawImage && op.Image.Pixels == ops[len(ops)-1].Image.Pixels {
+		if op.Kind == driver.DrawImage && d.Image(&op).Pixels == lastPix {
 			front = i
 		}
 		if op.Kind == driver.DrawRect && fill == core.RGB(0x2472c8) {
@@ -279,7 +290,8 @@ func TestTerminalGraphicsCropStackAndScroll(t *testing.T) {
 			t.Fatal("scroll did not move image origin above viewport")
 		}
 	}
-	for _, op := range imageOps(t, app) {
+	_, scrolled := imageOps(t, app)
+	for _, op := range scrolled {
 		if op.Y < ref.v.padY || op.H > ref.v.cellH+0.01 {
 			t.Fatalf("scrolled image not clipped %+v", op)
 		}

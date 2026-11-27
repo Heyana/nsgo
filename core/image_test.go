@@ -245,9 +245,9 @@ func TestCanvasCopiesThePixelsItDraws(t *testing.T) {
 	sent := func(b *driver.MountBatch) *ImageSource {
 		for _, it := range b.Items {
 			if it.Kind == driver.ItemCanvas {
-				for _, op := range it.Drawing.Ops {
-					if op.Kind == driver.DrawImage {
-						return op.Image
+				for i := range it.Drawing.Ops {
+					if op := &it.Drawing.Ops[i]; op.Kind == driver.DrawImage {
+						return it.Drawing.Image(op)
 					}
 				}
 			}
@@ -374,9 +374,9 @@ func TestCanvasDrawsNoEmptyBuffer(t *testing.T) {
 		if it.Kind != driver.ItemCanvas {
 			continue
 		}
-		for _, op := range it.Drawing.Ops {
-			if op.Kind == driver.DrawImage && op.Image != nil {
-				t.Fatalf("drew %+v, want no image for an empty buffer", op.Image)
+		for i := range it.Drawing.Ops {
+			if op := &it.Drawing.Ops[i]; op.Kind == driver.DrawImage && it.Drawing.Image(op) != nil {
+				t.Fatalf("drew %+v, want no image for an empty buffer", it.Drawing.Image(op))
 			}
 		}
 		return

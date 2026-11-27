@@ -56,36 +56,38 @@ func (im *loadedImage) crop(b driver.Bounds) (tile uintptr, temporary bool) {
 }
 
 func (p *player) atlas(op *driver.DrawOp) {
-	if op.Image == nil || op.Atlas == nil || len(*op.Atlas) == 0 {
+	imgSrc := p.drawing.Image(op)
+	sprites := p.drawing.AtlasSprites(op)
+	if imgSrc == nil || len(sprites) == 0 {
 		return
 	}
-	if op.Image.Offscreen != nil {
-		p.atlasImages(op)
+	if imgSrc.Offscreen != nil {
+		p.atlasImages(op, sprites)
 		return
 	}
 	var im *loadedImage
 	if p.host.image != nil {
-		im = p.host.image(*op.Image, p.host.Ratio)
+		im = p.host.image(*imgSrc, p.host.Ratio)
 		if im == nil || im.image == 0 {
 			return
 		}
 	} else {
-		im = canvasImage(*op.Image, p.host)
+		im = canvasImage(*imgSrc, p.host)
 		if im == nil || im.image == 0 {
 			p.waited = p.waited || im == nil || !im.failed
 			return
 		}
 	}
-	if p.atlasFast(op, im) {
+	if p.atlasFast(op, imgSrc, sprites, im) {
 		return
 	}
-	p.atlasCG(op, im)
+	p.atlasCG(op, sprites, im)
 }
 
-func (p *player) atlasCG(op *driver.DrawOp, im *loadedImage) {
+func (p *player) atlasCG(op *driver.DrawOp, sprites driver.AtlasSprites, im *loadedImage) {
 	st := p.st()
 	flat := !st.shadow && !st.composite.Unbounded()
-	for _, sprite := range *op.Atlas {
+	for _, sprite := range sprites {
 		flat = flat && sprite.Transform.SSin == 0 && sprite.Transform.SCos > 0
 	}
 	ctx := p.ctx
@@ -96,7 +98,7 @@ func (p *player) atlasCG(op *driver.DrawOp, im *loadedImage) {
 		cgContextScaleCTM(ctx, 1, -1)
 		setImageSampling(ctx, op.Sampling)
 		alpha := st.alpha
-		for _, sprite := range *op.Atlas {
+		for _, sprite := range sprites {
 			tile, temporary := im.crop(sprite.Rect)
 			if tile == 0 {
 				continue
@@ -115,7 +117,7 @@ func (p *player) atlasCG(op *driver.DrawOp, im *loadedImage) {
 		cgContextRestoreGState(ctx)
 		return
 	}
-	for _, sprite := range *op.Atlas {
+	for _, sprite := range sprites {
 		tile, temporary := im.crop(sprite.Rect)
 		if tile == 0 {
 			continue
@@ -139,16 +141,16 @@ func (p *player) atlasCG(op *driver.DrawOp, im *loadedImage) {
 }
 
 // atlasImages draws each sprite as the DrawImageFrom it stands for, for sources the crop cache does not cover: offscreen drawings.
-func (p *player) atlasImages(op *driver.DrawOp) {
+func (p *player) atlasImages(op *driver.DrawOp, sprites driver.AtlasSprites) {
 	ctx, alpha := p.ctx, p.st().alpha
-	for _, sprite := range *op.Atlas {
+	for _, sprite := range sprites {
 		t, b := sprite.Transform, sprite.Rect
 		c, s := float64(t.SCos), float64(t.SSin)
 		cgContextSaveGState(ctx)
 		cgContextConcatCTM(ctx, affine{A: c, B: s, C: -s, D: c, X: float64(t.TX), Y: float64(t.TY)})
 		cgContextSetAlpha(ctx, alpha*float64(sprite.Alpha))
 		w, h := float32(b.Size.Width), float32(b.Size.Height)
-		p.image(&driver.DrawOp{Kind: driver.DrawImage, Image: op.Image, Sampling: op.Sampling, W: w, H: h,
+		p.image(&driver.DrawOp{Kind: driver.DrawImage, ImageIndex: op.ImageIndex, Sampling: op.Sampling, W: w, H: h,
 			X1: float32(b.Origin.X), Y1: float32(b.Origin.Y), X2: w, Y2: h})
 		cgContextRestoreGState(ctx)
 	}

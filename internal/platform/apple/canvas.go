@@ -241,23 +241,24 @@ type CanvasHost struct {
 // Play draws ops into ctx, a view's context with its y axis pointing
 // down, as a web canvas would: CoreGraphics adds path points through the
 // transform current when they are added, as the canvas does, and a fill,
-// stroke or clip keeps the path.
-func Play(ctx uintptr, ops []driver.DrawOp, host CanvasHost) {
-	PlayOver(ctx, ops, driver.CanvasSplit{}, host)
+// stroke or clip keeps the path. d supplies image and atlas buffers when
+// ops reference them.
+func Play(ctx uintptr, d *driver.Drawing, ops []driver.DrawOp, host CanvasHost) {
+	PlayOver(ctx, d, ops, driver.CanvasSplit{}, host)
 }
 
 // PlayOver plays ops as Play does, but over their static part drawn
 // already (a CanvasLayer): the ops before split.At that split skips set
 // only the state.
-func PlayOver(ctx uintptr, ops []driver.DrawOp, split driver.CanvasSplit, host CanvasHost) {
+func PlayOver(ctx uintptr, d *driver.Drawing, ops []driver.DrawOp, split driver.CanvasSplit, host CanvasHost) {
 	if ctx == 0 {
 		return
 	}
-	newPlayer(ctx, ops, split, host).run()
+	newPlayer(ctx, d, ops, split, host).run()
 }
 
-func newPlayer(ctx uintptr, ops []driver.DrawOp, split driver.CanvasSplit, host CanvasHost) *player {
-	return &player{ctx: ctx, ops: ops, split: split, base: cgContextGetCTM(ctx), host: host,
+func newPlayer(ctx uintptr, d *driver.Drawing, ops []driver.DrawOp, split driver.CanvasSplit, host CanvasHost) *player {
+	return &player{ctx: ctx, drawing: d, ops: ops, split: split, base: cgContextGetCTM(ctx), host: host,
 		stack: []canvasState{{fill: 0x000000ff, stroke: 0x000000ff, alpha: 1}}}
 }
 
@@ -291,8 +292,9 @@ func (p *player) run() {
 // asked only where the ops cannot tell (open), and the path the web's
 // fill, stroke and clip keep copied only when a later op uses it (keep).
 type player struct {
-	ctx   uintptr
-	ops   []driver.DrawOp
+	ctx     uintptr
+	drawing *driver.Drawing
+	ops     []driver.DrawOp
 	split driver.CanvasSplit // what PlayOver leaves out
 	// waited is set when an image the ops draw had not loaded.
 	waited bool
@@ -766,7 +768,8 @@ func (p *player) text(op *driver.DrawOp) {
 
 // image draws op's image once it is loaded.
 func (p *player) image(op *driver.DrawOp) {
-	if op.Image == nil {
+	imgSrc := p.drawing.Image(op)
+	if imgSrc == nil {
 		return
 	}
 	var cgImg uintptr
@@ -774,21 +777,21 @@ func (p *player) image(op *driver.DrawOp) {
 	var points driver.Size
 	var loaded *loadedImage
 	if p.host.image != nil {
-		img := p.host.image(*op.Image, p.host.Ratio)
+		img := p.host.image(*imgSrc, p.host.Ratio)
 		if img == nil || img.image == 0 {
 			return
 		}
 		cgImg, imgWidth, points, loaded = img.image, img.width, img.points, img
-	} else if op.Image.Offscreen != nil {
+	} else if imgSrc.Offscreen != nil {
 		var waited bool
-		cgImg, imgWidth, _, points, waited = offscreenImage(*op.Image, p.host)
+		cgImg, imgWidth, _, points, waited = offscreenImage(*imgSrc, p.host)
 		p.waited = p.waited || waited
 		if cgImg == 0 {
 			return
 		}
 		defer Release(cgImg)
 	} else {
-		img := canvasImage(*op.Image, p.host)
+		img := canvasImage(*imgSrc, p.host)
 		if img == nil || img.image == 0 {
 			p.waited = p.waited || img == nil || !img.failed
 			return
@@ -1153,8 +1156,8 @@ func Tint(ctx uintptr, r CGRect, c driver.Color) {
 // arguments played before now play after (driver.CanvasDamage), 2 points
 // wider for anti-aliasing and rounded out to whole points; whole is set
 // where only drawing all of it is right. An empty area draws nothing.
-func Damaged(before, after []driver.DrawOp) (area CGRect, whole bool) {
-	d, ok := driver.CanvasDamage(before, after)
+func Damaged(drawing *driver.Drawing, before, after []driver.DrawOp) (area CGRect, whole bool) {
+	d, ok := driver.CanvasDamage(drawing, before, after)
 	if !ok {
 		return CGRect{}, true
 	}

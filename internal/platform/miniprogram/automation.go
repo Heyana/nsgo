@@ -166,6 +166,7 @@ func (s *surface) drawViewToCanvas(ctx js.Value, v *view, ratio float64) {
 	case driver.KindCanvas:
 		if v.drawing != nil && w > 0 && h > 0 {
 			p := canvas2d.NewPlayer(ctx, ratio, math.Hypot(w, h))
+			p.Drawing = v.drawing
 			p.Font = canvasFont
 			ops := s.m.animator.CanvasOps(v.id, v.drawing)
 			for i := range ops {

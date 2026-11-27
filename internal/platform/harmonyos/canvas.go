@@ -13,7 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/webstyle"
 )
 
-var canvasEncoder atomic.Pointer[func([]driver.DrawOp, bool) string]
+var canvasEncoder atomic.Pointer[func(*driver.Drawing, []driver.DrawOp, bool) string]
 
 func (*surface) EnableCanvas() {
 	if canvasEncoder.Load() != nil {
@@ -23,9 +23,9 @@ func (*surface) EnableCanvas() {
 	canvasEncoder.Store(&fn)
 }
 
-func encodeCanvas(ops []driver.DrawOp, packed bool) string {
+func encodeCanvas(d *driver.Drawing, ops []driver.DrawOp, packed bool) string {
 	if fn := canvasEncoder.Load(); fn != nil {
-		return (*fn)(ops, packed)
+		return (*fn)(d, ops, packed)
 	}
 	return "[]"
 }
@@ -83,20 +83,20 @@ type canvasOp struct {
 }
 
 // image names the op's image and whether it is sampled nearest. sent holds the pixel copies the drawing's earlier ops carried, which this op only names.
-func (c *canvasOp) image(o *driver.DrawOp, sent map[*image.RGBA]bool) {
-	c.Img = o.Image.URI
-	if px := o.Image.Pixels; px != nil {
+func (c *canvasOp) image(src *driver.ImageSource, sampling driver.ImageSampling, sent map[*image.RGBA]bool) {
+	c.Img = src.URI
+	if px := src.Pixels; px != nil {
 		c.ImgKey = canvasPixelKeys.key(px)
 		if !sent[px] {
 			sent[px] = true
 			c.Pixels = base64.StdEncoding.EncodeToString(px.Pix)
 			c.PW, c.PH = px.Rect.Dx(), px.Rect.Dy()
 		}
-	} else if len(o.Image.Data) > 0 {
-		c.ImgKey = o.Image.Key()
-		c.ImgData = base64.StdEncoding.EncodeToString(o.Image.Data)
+	} else if len(src.Data) > 0 {
+		c.ImgKey = src.Key()
+		c.ImgData = base64.StdEncoding.EncodeToString(src.Data)
 	}
-	c.Nearest = o.Sampling == driver.ImageSamplingNearest
+	c.Nearest = sampling == driver.ImageSamplingNearest
 }
 
 // canvasPixelKeys names the pixel copies canvases draw. Only the engine goroutine, which mounts, uses it.
@@ -160,7 +160,7 @@ type stop struct {
 }
 
 // canvasJSON serializes a drawing for the host. packed says the host plays an atlas from one op (deviceData.CanvasAtlas); a host built before that op, such as an older committed prebuilt host, gets each sprite expanded into the image ops it has always played.
-func canvasJSON(ops []driver.DrawOp, packed bool) string {
+func canvasJSON(d *driver.Drawing, ops []driver.DrawOp, packed bool) string {
 	out := make([]canvasOp, 0, len(ops))
 	sent := map[*image.RGBA]bool{}
 	alpha := float32(1)
@@ -222,20 +222,23 @@ func canvasJSON(ops []driver.DrawOp, packed bool) string {
 				tint := uint32(o.Color)
 				c.Tint = &tint
 			}
-			if o.Image == nil {
+			imgSrc := d.Image(o)
+			if imgSrc == nil {
 				continue
 			}
-			c.image(o, sent)
+			c.image(imgSrc, o.Sampling, sent)
 		case driver.DrawAtlas:
-			if o.Image == nil || o.Atlas == nil || len(*o.Atlas) == 0 {
+			imgSrc := d.Image(o)
+			sprites := d.AtlasSprites(o)
+			if imgSrc == nil || len(sprites) == 0 {
 				continue
 			}
 			if !packed {
-				out = appendAtlas(out, o, alpha, sent)
+				out = appendAtlas(out, imgSrc, o.Sampling, sprites, alpha, sent)
 				continue
 			}
-			c.image(o, sent)
-			c.Sprites = atlasSprites(*o.Atlas)
+			c.image(imgSrc, o.Sampling, sent)
+			c.Sprites = atlasSprites(sprites)
 		}
 		out = append(out, c)
 	}
@@ -247,10 +250,10 @@ func canvasJSON(ops []driver.DrawOp, packed bool) string {
 }
 
 // appendAtlas replays an atlas through the image ops every host plays: a save, the sprite's transform, its alpha and the image, then a restore.
-func appendAtlas(out []canvasOp, op *driver.DrawOp, alpha float32, sent map[*image.RGBA]bool) []canvasOp {
+func appendAtlas(out []canvasOp, imgSrc *driver.ImageSource, sampling driver.ImageSampling, sprites driver.AtlasSprites, alpha float32, sent map[*image.RGBA]bool) []canvasOp {
 	img := canvasOp{K: int(driver.DrawImage)}
-	img.image(op, sent)
-	for _, sprite := range *op.Atlas {
+	img.image(imgSrc, sampling, sent)
+	for _, sprite := range sprites {
 		t, b := sprite.Transform, sprite.Rect
 		x, h := float32(b.Origin.X), float32(b.Size.Height)
 		img.X1, img.Y1 = &x, float32(b.Origin.Y)

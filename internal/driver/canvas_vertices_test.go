@@ -35,7 +35,7 @@ func TestDrawVerticesSnapshotsItsTriangles(t *testing.T) {
 	before := NewDrawing(nil).Translate(0, 0).DrawVertices(src, []CanvasVertex{a, b, c})
 	after := append([]DrawOp(nil), before.Ops...)
 	after[0].X = 10
-	area, ok := CanvasDamage(before.Ops, after)
+	area, ok := CanvasDamage(before, before.Ops, after)
 	if !ok || area != (Bounds{Origin: Point{2, 4}, Size: Size{16, 8}}) {
 		t.Fatalf("mesh damage = %+v, ok=%v", area, ok)
 	}

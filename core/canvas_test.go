@@ -113,3 +113,100 @@ func TestFontChangeDoesNotDrawDisposedCanvases(t *testing.T) {
 		t.Fatalf("disposed canvas drew again: draws=%d, items=%v", draws, kinds(batch))
 	}
 }
+
+func TestCanvasSteadyStateRedrawAllocatesNothing(t *testing.T) {
+	atlas := Src("asset:sprites.png")
+	rects := make([]Bounds, 100)
+	xforms := make([]RSXform, 100)
+	alphas := make([]float32, 100)
+	for i := range 100 {
+		rects[i] = Bounds{Origin: Point{X: Points((i % 8) * 32), Y: Points((i / 8) * 32)}, Size: Size{Width: 32, Height: 32}}
+		xforms[i] = RSXform{SCos: 1, TX: float32((i % 10) * 16), TY: float32((i / 10) * 16)}
+		alphas[i] = 1
+	}
+	var frame *Signal[int]
+	root := NewRoot(RootOptions{Post: func(func()) {}, RequestFrame: func() {}})
+	tree := NewTree(root, ApproxTextEngine{})
+	tree.Resize(Size{Width: 800, Height: 600}, Geometry{})
+	tree.Mount(func(cx *Scope) Node {
+		frame = NewSignal(cx, 0)
+		return Canvas{
+			Style:           Style{Width: Pt(800), Height: Pt(600)},
+			ResolutionScale: 0.5,
+			Draw: func(d *Drawing, _ Size) {
+				f := frame.Get()
+				shift := float32(f % 32)
+				for range 3 {
+					d.DrawAtlas(atlas, rects, xforms, alphas)
+				}
+				for i := range 200 {
+					d.DrawImageFrom(atlas, 0, 0, 32, 32, float32(i%25)*16+shift, float32(i/25)*16, 16, 16)
+				}
+			},
+		}
+	})
+	// Warm up initial commit and both double-buffered drawings.
+	for i := range 4 {
+		frame.Set(i)
+		if b := tree.CommitShared(); b == nil {
+			t.Fatalf("warmup commit %d returned nil", i)
+		}
+	}
+	step := 4
+	allocs := testing.AllocsPerRun(20, func() {
+		frame.Set(step)
+		step++
+		if b := tree.CommitShared(); b == nil {
+			t.Fatal("steady commit returned nil")
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("steady-state canvas redraw allocated %.2f times per frame, want 0", allocs)
+	}
+}
+
+func TestCanvasBufferReuseRespectsPlatformRetain(t *testing.T) {
+	atlas := Src("asset:sprites.png")
+	var frame *Signal[int]
+	h := newHost(t, Size{Width: 200, Height: 100}, func(cx *Scope) Node {
+		frame = NewSignal(cx, 1)
+		return Canvas{
+			TestID: "c",
+			Style:  Style{Width: Pt(200), Height: Pt(100)},
+			Draw: func(d *Drawing, _ Size) {
+				d.DrawImageFrom(atlas, 0, 0, 16, 16, float32(frame.Get()), 0, 16, 16)
+			},
+		}
+	})
+	canvasDrawing := func(b *driver.MountBatch) *Drawing {
+		for _, it := range b.Items {
+			if it.Kind == driver.ItemCanvas {
+				return it.Drawing
+			}
+		}
+		return nil
+	}
+	d1 := canvasDrawing(h.commit())
+	if d1 == nil || d1.Ops[0].X != 1 {
+		t.Fatalf("frame 1 drawing = %+v", d1)
+	}
+	// Platform retains frame 1 while frames 2 and 3 commit.
+	d1.Retain()
+	frame.Set(2)
+	d2 := canvasDrawing(h.commit())
+	frame.Set(3)
+	d3 := canvasDrawing(h.commit())
+	if d3 == d1 || d1.Ops[0].X != 1 {
+		t.Fatalf("retained frame 1 was overwritten: d1=%p d3=%p d1.X=%v", d1, d3, d1.Ops[0].X)
+	}
+	if d2 == d1 || d3 == d2 || d3.Ops[0].X != 3 {
+		t.Fatalf("unexpected drawings: d2=%p d3=%p d3.X=%v", d2, d3, d3.Ops[0].X)
+	}
+	// Once the platform releases frame 1, a subsequent frame reuses it.
+	d1.Release()
+	frame.Set(4)
+	d4 := canvasDrawing(h.commit())
+	if d4 != d1 || d4.Ops[0].X != 4 {
+		t.Fatalf("released drawing was not reused: d1=%p d4=%p d4.X=%v", d1, d4, d4.Ops[0].X)
+	}
+}

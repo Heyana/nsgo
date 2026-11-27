@@ -526,12 +526,14 @@ mount(() => <Canvas testID="canvas" style={{ width: 100, height: 50 }} draw={cx 
 	cx.drawTintedImage("asset:/sprite.png", "#4080c080", 4, 3, 2, 1, 10, 20, 30, 40);
 	cx.drawImage("asset:/sprite.png", 0, 0);
 }} />);`)
-	ops := app.Find("id:canvas").Ops
+	v := app.Find("id:canvas")
+	ops := v.Ops
 	if len(ops) != 2 {
 		t.Fatalf("recorded %d ops, want two images", len(ops))
 	}
 	tint := ops[0]
-	if tint.Kind != driver.DrawImage || tint.Image == nil || tint.Image.URI != "asset:/sprite.png" ||
+	img := v.Drawing.Image(&tint)
+	if tint.Kind != driver.DrawImage || img == nil || img.URI != "asset:/sprite.png" ||
 		!tint.Tinted || tint.Color != 0x4080c080 || tint.X1 != 4 || tint.Y1 != 3 || tint.X2 != 2 || tint.Y2 != 1 ||
 		tint.X != 10 || tint.Y != 20 || tint.W != 30 || tint.H != 40 {
 		t.Errorf("tinted image recorded as %+v", tint)

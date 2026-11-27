@@ -133,9 +133,10 @@ type canvasState struct {
 // canvasPlayer replays a drawing into a Cairo context, as the web's 2D
 // context does.
 type canvasPlayer struct {
-	w      *window
-	v      *view
-	cr     uintptr
+	w       *window
+	v       *view
+	drawing *driver.Drawing
+	cr      uintptr
 	base   cairoMatrix // the canvas's own coordinates
 	size   rect
 	st     canvasState
@@ -162,16 +163,16 @@ func (w *window) playCanvas(v *view, cr uintptr, r rect) {
 // (raster.go) and calling before, when set, with each op's index first.
 func (w *window) playCanvasFrom(v *view, cr uintptr, r rect, ops []driver.DrawOp, split driver.CanvasSplit,
 	before func(at int)) {
-	w.playCanvasOps(v, cr, r, ops, split, before)
+	w.playCanvasOps(v, v.drawing, cr, r, ops, split, before)
 }
 
-func (w *window) playCanvasOps(v *view, cr uintptr, r rect, ops []driver.DrawOp, split driver.CanvasSplit,
+func (w *window) playCanvasOps(v *view, d *driver.Drawing, cr uintptr, r rect, ops []driver.DrawOp, split driver.CanvasSplit,
 	before func(at int)) bool {
 	cairoSave(cr)
 	cairoRectangle(cr, r.x, r.y, r.w, r.h)
 	cairoClip(cr)
 	cairoTranslate(cr, r.x, r.y)
-	p := &canvasPlayer{w: w, v: v, cr: cr, size: r,
+	p := &canvasPlayer{w: w, v: v, drawing: d, cr: cr, size: r,
 		st: canvasState{fill: driver.RGB(0x000000), stroke: driver.RGB(0x000000), width: 1, miter: 10, alpha: 1}}
 	cairoGetMatrix(cr, &p.base)
 	cairoNewPath(cr)
@@ -649,23 +650,24 @@ type canvasImages map[string]*imageSlot
 // image draws op's image once it is loaded, and the canvas again when it
 // loads.
 func (p *canvasPlayer) image(op *driver.DrawOp) {
-	if op.Image == nil {
+	imgSrc := p.drawing.Image(op)
+	if imgSrc == nil {
 		return
 	}
 	var surf uintptr
 	var picWidth int
 	var nat driver.Size
-	if op.Image.Offscreen != nil {
-		e := p.w.offscreenSurface(p.v, op.Image.Offscreen)
+	if imgSrc.Offscreen != nil {
+		e := p.w.offscreenSurface(p.v, imgSrc.Offscreen)
 		if e == nil || e.surface == 0 {
 			return
 		}
-		surf, picWidth, nat = e.tinted(op), e.width, offscreenPoints(*op.Image, e)
+		surf, picWidth, nat = e.tinted(op), e.width, offscreenPoints(*imgSrc, e)
 		if surf == 0 {
 			return
 		}
 	} else {
-		s := p.w.canvasImage(*op.Image, p.v)
+		s := p.w.canvasImage(*imgSrc, p.v)
 		if s == nil || s.pic == nil {
 			p.waited = p.waited || (s != nil && s.load != nil)
 			return

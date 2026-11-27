@@ -116,7 +116,11 @@ type canvasNode struct {
 	effect  *computation
 	size    *Signal[Size]
 	drawing *Drawing
-	fresh   bool
+	// pool holds reusable drawings for this canvas so steady-state redraws
+	// keep Ops, Images and Sprites capacities without overwriting a drawing
+	// still retained by a platform.
+	pool  []*Drawing
+	fresh bool
 	// paint and color are the paint properties and text color the
 	// canvas inherits, which its drawing's view paints take.
 	paint driver.PaintStyle
@@ -141,6 +145,25 @@ type canvasNode struct {
 type pixelKey struct {
 	from    *image.RGBA
 	version uint64
+}
+
+const maxCanvasPool = 4
+
+// nextDrawing returns an idle pooled drawing reset for the next frame, or
+// creates a new pooled drawing when none is free (e.g. first two frames or
+// while previous frames are still retained by a platform).
+func (cn *canvasNode) nextDrawing(text driver.TextEngine) *Drawing {
+	for _, d := range cn.pool {
+		if d != cn.drawing && !d.InUse() {
+			d.Reset()
+			return d
+		}
+	}
+	d := driver.NewPooledDrawing(text)
+	if len(cn.pool) < maxCanvasPool {
+		cn.pool = append(cn.pool, d)
+	}
+	return d
 }
 
 // scaled returns d carrying the canvas's resolution and sampling, in a
@@ -269,7 +292,7 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 		if size == (Size{}) || cn.draw == nil {
 			return
 		}
-		d := driver.NewDrawing(t.text)
+		d := cn.nextDrawing(t.text)
 		cn.draw(d, size)
 		// A canvas that has drawn nothing has nothing to clear.
 		if cn.drawing == nil && len(d.Ops) == 0 && len(d.Nodes) == 0 {
@@ -282,6 +305,7 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 		if d.Shaded() {
 			t.enableCanvasShaders()
 		}
+		d.Resolution, d.Upscale = cn.resolution, cn.sampling
 		cn.drawing, cn.fresh = d, true
 		t.touch(n)
 	})
@@ -290,17 +314,18 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 // pickDrawingScales has the images d draws name the variant for the
 // screen, as Image's do.
 func (t *Tree) pickDrawingScales(d *Drawing) {
-	for i := range d.Ops {
-		if op := &d.Ops[i]; op.Image != nil && op.Image.Scales != 0 {
-			src := t.pickScale(*op.Image)
-			op.Image = &src
+	for i := range d.Images {
+		if d.Images[i].Scales != 0 {
+			d.Images[i] = t.pickScale(d.Images[i])
 		}
 	}
-	eachShaderImage(d, func(img *ImageSource) {
-		if img.Scales != 0 {
-			*img = t.pickScale(*img)
-		}
-	})
+	if d.Shaded() {
+		eachShaderImage(d, func(img *ImageSource) {
+			if img.Scales != 0 {
+				*img = t.pickScale(*img)
+			}
+		})
+	}
 }
 
 // eachShaderImage calls fn with each image the shaders of d's ops read,
@@ -338,14 +363,12 @@ func (t *Tree) refuseDrawingImages(n *node, d *Drawing) {
 }
 
 func (t *Tree) refuseDrawingImagesOwner(owner *Scope, d *Drawing) {
-	for i := range d.Ops {
-		if op := &d.Ops[i]; op.Image != nil {
-			src := *op.Image
-			t.refuseImageOwner(owner, &src)
-			op.Image = &src
-		}
+	for i := range d.Images {
+		t.refuseImageOwner(owner, &d.Images[i])
 	}
-	eachShaderImage(d, func(img *ImageSource) { t.refuseImageOwner(owner, img) })
+	if d.Shaded() {
+		eachShaderImage(d, func(img *ImageSource) { t.refuseImageOwner(owner, img) })
+	}
 }
 
 // MeasureText returns the advance width and the metrics of text's first

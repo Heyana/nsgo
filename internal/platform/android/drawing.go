@@ -142,12 +142,12 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 			w.flags(op.Font.Italic)
 			w.byte(byte(op.Font.Variant))
 		case driver.DrawAtlas:
-			writeAtlas(w, op)
+			writeAtlas(w, d, op)
 		case driver.DrawImage:
 			var key string
 			var density float32 = 1
-			if op.Image != nil {
-				key, density = op.Image.Key(), op.Image.Density()
+			if img := d.Image(op); img != nil {
+				key, density = img.Key(), img.Density()
 			}
 			w.str(key)
 			w.float(density)
@@ -165,8 +165,8 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 			}
 		case driver.DrawVertices:
 			var key string
-			if op.Image != nil {
-				key = op.Image.Key()
+			if img := d.Image(op); img != nil {
+				key = img.Key()
 			}
 			w.str(key)
 			w.flags(op.Sampling == driver.ImageSamplingNearest)
@@ -209,17 +209,19 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 }
 
 // writeAtlas supplies one image key followed by the sprite records.
-func writeAtlas(w *writer, op *driver.DrawOp) {
-	if op.Image == nil || op.Atlas == nil {
+func writeAtlas(w *writer, d *driver.Drawing, op *driver.DrawOp) {
+	img := d.Image(op)
+	sprites := d.AtlasSprites(op)
+	if img == nil || len(sprites) == 0 {
 		w.str("")
 		w.flags(false)
 		w.u32(0)
 		return
 	}
-	w.str(op.Image.Key())
+	w.str(img.Key())
 	w.flags(op.Sampling == driver.ImageSamplingNearest)
-	w.u32(uint32(len(*op.Atlas)))
-	for _, sprite := range *op.Atlas {
+	w.u32(uint32(len(sprites)))
+	for _, sprite := range sprites {
 		b, t := sprite.Rect, sprite.Transform
 		w.points(b.Origin.X)
 		w.points(b.Origin.Y)

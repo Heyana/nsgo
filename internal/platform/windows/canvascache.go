@@ -169,7 +169,7 @@ func (p *painter) playCanvas(v *view, ops []driver.DrawOp, width, height float32
 	if mixes && p.canvasOffscreen(v, ops, width, height, offscreenScale(width, height, p.scale, p.m)) {
 		return
 	}
-	c := p.newCanvasPlayer(v, p.m, width, height)
+	c := p.newCanvasPlayer(v, v.drawing, p.m, width, height)
 	c.playAll(ops)
 }
 
@@ -196,7 +196,7 @@ func (p *painter) recordCanvas(v *view, ops []driver.DrawOp, split driver.Canvas
 		}
 	}
 	if !(mixes && split.At == 0 && r.canvasOffscreen(v, ops, width, height, scale)) {
-		c := r.newCanvasPlayer(v, identity, width, height)
+		c := r.newCanvasPlayer(v, v.drawing, identity, width, height)
 		c.split = split
 		c.playAll(ops)
 	}
@@ -253,7 +253,7 @@ func (p *painter) lowCanvas(v *view, width, height float32) bool {
 			p.setTransform(identity)
 			clear := colorF{}
 			p.dc.call(rtClear, uintptr(unsafe.Pointer(&clear)))
-			cp := p.newCanvasPlayer(v, identity, width, height)
+			cp := p.newCanvasPlayer(v, d, identity, width, height)
 			cp.off, cp.pixelScale = c.low, scale
 			cp.playAll(ops)
 			waited = cp.waited

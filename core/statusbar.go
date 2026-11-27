@@ -134,5 +134,6 @@ func (t *Tree) emitStatusBar() {
 		return
 	}
 	st.shown, st.started = c, true
-	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemStatusBar, StatusBar: &c})
+	out := c
+	t.commands = append(t.commands, driver.MountItem{Kind: driver.ItemStatusBar, StatusBar: &out})
 }

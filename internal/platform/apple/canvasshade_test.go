@@ -78,10 +78,10 @@ func benchmarkGlyphs(b *testing.B, paint driver.ShaderPaint) {
 	defer runtime.KeepAlive(img) // the context draws into its pixels
 	defer Release(ctx)
 	host := CanvasHost{Ratio: canvastest.Scale}
-	Play(ctx, d.Ops, host) // decodes the atlas
+	Play(ctx, d, d.Ops, host) // decodes the atlas
 	b.ResetTimer()
 	for b.Loop() {
-		Play(ctx, d.Ops, host)
+		Play(ctx, d, d.Ops, host)
 	}
 }
 

@@ -1289,6 +1289,7 @@ func (w *window) owner() uintptr {
 
 // Mount implements engine.Platform.
 func (w *window) Mount(b *driver.MountBatch) {
+	driver.RetainBatchDrawings(b)
 	if w.batches.Push(b) {
 		postMessageW.Call(w.hwnd, wmApply, 0, 0)
 	}
@@ -1687,6 +1688,9 @@ func (w *window) apply(b *driver.MountBatch) {
 		}
 		v := w.view(it.ID)
 		if v == nil {
+			if it.Kind == driver.ItemCanvas {
+				it.Drawing.Release()
+			}
 			continue
 		}
 		switch it.Kind {
@@ -1842,7 +1846,10 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemCanvas:
 			held := w.uiaHeld(v)
 			had := len(v.canvasNodes())
+			was := v.drawing
 			v.drawing = it.Drawing
+			v.canvasCache.setDrawing(nil)
+			was.Release()
 			w.forgetParts(v.id, len(v.canvasNodes())+1, had)
 			w.uiaChanged(held)
 			w.animator.BindCanvas(v.id, it.Drawing.Slots)
@@ -2059,6 +2066,7 @@ func (w *window) destroy(v *view) {
 		sh.release()
 	}
 	v.boxShadows, v.shadowsUsed = nil, nil
+	v.drawing.Release()
 	v.retired, v.moving, v.fading, v.drawing = false, nil, nil, nil
 	v.source.reset(driver.ImageSource{})
 	v.placeholder.reset(driver.ImageSource{})

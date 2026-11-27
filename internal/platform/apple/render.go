@@ -72,7 +72,7 @@ func (r *drawingRenderer) bitmap(d *driver.Drawing, size driver.Size, scale floa
 	cgContextClearRect(bitmap, Rect(0, 0, w, h))
 	cgContextTranslateCTM(bitmap, 0, h)
 	cgContextScaleCTM(bitmap, scale, -scale)
-	Play(bitmap, d.Ops, CanvasHost{Ratio: scale, BaseUp: true, image: r.image})
+	Play(bitmap, d, d.Ops, CanvasHost{Ratio: scale, BaseUp: true, image: r.image})
 	if r.err != nil {
 		Release(bitmap)
 		return 0, 0, 0, r.err

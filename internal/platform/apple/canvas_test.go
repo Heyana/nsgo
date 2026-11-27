@@ -75,7 +75,7 @@ func play(t *testing.T, name string, d *driver.Drawing, w, h int, flipped bool) 
 	layer.Send(sel("setDelegate:"), layerDrawer)
 	layerDraw = func(lctx uintptr) {
 		DrawTopDown(lctx, float64(h), !MsgBool(layer, sel("contentsAreFlipped")), func(baseUp bool) {
-			Play(lctx, d.Ops, CanvasHost{Ratio: canvastest.Scale, BaseUp: baseUp})
+			Play(lctx, d, d.Ops, CanvasHost{Ratio: canvastest.Scale, BaseUp: baseUp})
 		})
 	}
 	layer.Send(sel("display"))
@@ -156,7 +156,7 @@ func BenchmarkPlayChart(b *testing.B) {
 	defer runtime.KeepAlive(img)
 	cgContextClipToRect(ctx, Rect(float64(x(n-1))-15, float64(y(n-1))-15, 31, 31))
 	for b.Loop() {
-		Play(ctx, d.Ops, CanvasHost{Ratio: canvastest.Scale})
+		Play(ctx, d, d.Ops, CanvasHost{Ratio: canvastest.Scale})
 	}
 	b.ReportMetric(float64(len(d.Ops)), "ops")
 }

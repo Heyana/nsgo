@@ -85,7 +85,8 @@ func TestDiagramImagesLoadAndFit(t *testing.T) {
 	}
 	app.WaitUntil(5*time.Second, func() bool { return len(images()) == 2 })
 	ops := images()
-	if ops[0].Image.URI != uri || ops[1].Image.URI != uri || math.Abs(float64(ops[0].W-80)) > 0.01 || math.Abs(float64(ops[0].H-40)) > 0.01 || math.Abs(float64(ops[1].W-80)) > 0.01 || math.Abs(float64(ops[1].H-80)) > 0.01 {
+	d := app.Find("id:images").Drawing
+	if d.Image(&ops[0]).URI != uri || d.Image(&ops[1]).URI != uri || math.Abs(float64(ops[0].W-80)) > 0.01 || math.Abs(float64(ops[0].H-40)) > 0.01 || math.Abs(float64(ops[1].W-80)) > 0.01 || math.Abs(float64(ops[1].H-80)) > 0.01 {
 		t.Fatalf("fit/stretch image operations: %+v", ops)
 	}
 	app.Screenshot("diagram-images")

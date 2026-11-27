@@ -364,6 +364,7 @@ func (s *surface) EnableCanvas() { apple.EnableCanvas() }
 
 // Mount implements engine.Platform.
 func (s *surface) Mount(b *driver.MountBatch) {
+	driver.RetainBatchDrawings(b)
 	if s.batches.Push(b) {
 		apple.OnMain(func() {
 			for _, b := range s.batches.Drain() {
@@ -562,6 +563,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 		}
 		v := s.view(it.ID)
 		if v == nil {
+			if it.Kind == driver.ItemCanvas {
+				it.Drawing.Release()
+			}
 			continue
 		}
 		switch it.Kind {
@@ -632,7 +636,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			s.touched(v)
 			s.redraw[v] = true
 		case driver.ItemCanvas:
+			was := v.drawing
 			v.drawing = it.Drawing
+			was.Release()
 			s.animator.BindCanvas(v.id, it.Drawing.Slots)
 			s.touched(v)
 			s.redraw[v] = true
@@ -736,6 +742,8 @@ func (s *surface) delete(v *view) {
 	v.deleted = true
 	v.layout.Release()
 	v.shown.Release()
+	v.drawing.Release()
+	v.drawing = nil
 	if v.image != nil {
 		v.image.Close()
 	}
@@ -906,7 +914,7 @@ func hostDraw(id uint32, ctx uintptr, w, h float64) {
 		host := apple.CanvasHost{Ratio: float64(s.env.PixelRatio), Owner: v, BaseUp: baseUp,
 			Redraw: func() { s.redraw[v] = true; s.flushSoon() }}
 		if len(v.back) > 0 {
-			apple.Play(ctx, v.back, host)
+			apple.Play(ctx, nil, v.back, host)
 		}
 		switch {
 		case v.layout != nil:
@@ -922,7 +930,7 @@ func hostDraw(id uint32, ctx uintptr, w, h float64) {
 			s.drawField(v, ctx, baseUp)
 		}
 		if len(v.front) > 0 {
-			apple.Play(ctx, v.front, host)
+			apple.Play(ctx, nil, v.front, host)
 		}
 	})
 }

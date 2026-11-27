@@ -60,7 +60,7 @@ func NewCanvasLayer(ctx uintptr, d *driver.Drawing, ops []driver.DrawOp, split d
 	cgContextTranslateCTM(lc, 0, float64(ph))
 	cgContextScaleCTM(lc, scale, -scale)
 	host.BaseUp = true
-	p := newPlayer(lc, ops[:split.At], driver.CanvasSplit{}, host)
+	p := newPlayer(lc, d, ops[:split.At], driver.CanvasSplit{}, host)
 	p.run()
 	if p.waited {
 		Release(ref)

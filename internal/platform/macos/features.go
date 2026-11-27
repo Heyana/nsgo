@@ -110,8 +110,10 @@ func (*surface) EnableCanvas() {
 	}
 	canvases.Store(&canvasOps{
 		apply: func(s *surface, v *view, d *driver.Drawing) {
+			v.drawMu.Lock()
 			was := v.drawing
 			v.drawing = d
+			v.drawMu.Unlock()
 			v.played = v.played[:0] // drawn whole first
 			v.restretch(was)
 			cp := v.canvasState()
@@ -120,6 +122,7 @@ func (*surface) EnableCanvas() {
 				v.canvas = cp
 			}
 			cp.set(d)
+			was.Release()
 			s.animator.BindCanvas(v.id, d.Slots)
 			v.setCanvasNodes(d.Nodes)
 			v.redraw()
@@ -127,10 +130,15 @@ func (*surface) EnableCanvas() {
 		paint:          (*view).paintCanvas,
 		redrawAnimated: (*view).redrawAnimated,
 		releaseView: func(v *view) {
+			v.drawMu.Lock()
+			was := v.drawing
+			v.drawing = nil
+			v.drawMu.Unlock()
 			if cp := v.canvasState(); cp != nil {
 				cp.set(nil)
 				v.canvas = nil
 			}
+			was.Release()
 			v.releaseCanvasNodes()
 		},
 		releaseSurface: func(s *surface) {

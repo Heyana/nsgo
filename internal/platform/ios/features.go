@@ -114,18 +114,23 @@ func (*surface) EnableCanvas() {
 			v.drawing = d
 			v.played = v.played[:0] // drawn whole first
 			v.restretch(was)
+			was.Release()
 			s.animator.BindCanvas(v.id, d.Slots)
 			v.setCanvasNodes(d.Nodes)
 			v.redraw()
 		},
 		paint: func(v *view, ctx uintptr, baseUp bool) {
 			ops := v.surface.animator.CanvasOps(v.id, v.drawing)
-			apple.Play(ctx, ops, apple.CanvasHost{
+			apple.Play(ctx, v.drawing, ops, apple.CanvasHost{
 				Ratio: v.contentScale(), Redraw: v.redraw, Owner: v, BaseUp: baseUp})
 			v.played = append(v.played[:0], ops...)
 		},
 		redrawAnimated: (*view).redrawAnimated,
-		releaseView:    (*view).releaseCanvasNodes,
+		releaseView: func(v *view) {
+			v.drawing.Release()
+			v.drawing = nil
+			v.releaseCanvasNodes()
+		},
 		releaseSurface: func(s *surface) {
 			apple.ReleaseCanvasImages(s)
 		},

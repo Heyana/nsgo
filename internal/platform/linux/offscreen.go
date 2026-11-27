@@ -113,7 +113,7 @@ func (w *window) offscreenSurface(v *view, off *driver.OffscreenCanvas) *offscre
 	if off.Drawing != nil {
 		ops = off.Drawing.Ops
 	}
-	waited := w.playCanvasOps(v, cr, rect{w: float64(off.Size.Width), h: float64(off.Size.Height)}, ops, driver.CanvasSplit{}, nil)
+	waited := w.playCanvasOps(v, off.Drawing, cr, rect{w: float64(off.Size.Width), h: float64(off.Size.Height)}, ops, driver.CanvasSplit{}, nil)
 	cairoDestroy(cr)
 	cairoSurfaceFlush(surf)
 

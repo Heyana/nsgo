@@ -144,7 +144,7 @@ func (p *painter) offscreenBitmap(v *view, off *driver.OffscreenCanvas) *offscre
 	op.setTransform(identity)
 	clearCol := colorF{}
 	dc.call(rtClear, uintptr(unsafe.Pointer(&clearCol)))
-	c := op.newCanvasPlayer(v, identity, float32(off.Size.Width), float32(off.Size.Height))
+	c := op.newCanvasPlayer(v, off.Drawing, identity, float32(off.Size.Width), float32(off.Size.Height))
 	c.off = bmp
 	if off.Drawing != nil {
 		c.playAll(off.Drawing.Ops)

@@ -84,12 +84,12 @@ func playAtlasMode(t *testing.T, d *driver.Drawing, w, h int, flipped, fast bool
 	layerDraw = func(lctx uintptr) {
 		DrawTopDown(lctx, float64(h), !MsgBool(layer, sel("contentsAreFlipped")), func(baseUp bool) {
 			if fast {
-				Play(lctx, d.Ops, CanvasHost{Ratio: canvastest.Scale, BaseUp: baseUp})
+				Play(lctx, d, d.Ops, CanvasHost{Ratio: canvastest.Scale, BaseUp: baseUp})
 				return
 			}
 			prev := disableAtlasFast
 			disableAtlasFast = true
-			Play(lctx, d.Ops, CanvasHost{Ratio: canvastest.Scale, BaseUp: baseUp})
+			Play(lctx, d, d.Ops, CanvasHost{Ratio: canvastest.Scale, BaseUp: baseUp})
 			disableAtlasFast = prev
 		})
 	}
@@ -341,10 +341,10 @@ func TestAtlasBitmapTargetDirectAndDamageClip(t *testing.T) {
 	cgContextClipToRect(ctx, damage)
 	cgContextClipToRect(ctxRef, damage)
 
-	Play(ctx, d.Ops, CanvasHost{Ratio: canvastest.Scale})
+	Play(ctx, d, d.Ops, CanvasHost{Ratio: canvastest.Scale})
 	prev := disableAtlasFast
 	disableAtlasFast = true
-	Play(ctxRef, d.Ops, CanvasHost{Ratio: canvastest.Scale})
+	Play(ctxRef, d, d.Ops, CanvasHost{Ratio: canvastest.Scale})
 	disableAtlasFast = prev
 
 	compareImages(t, "damage-clip", img, imgRef, 1, 0.0)
@@ -430,10 +430,10 @@ func BenchmarkCaveRunAtlas1000_Bitmap_Linear(b *testing.B) {
 	defer runtime.KeepAlive(img)
 	defer Release(ctx)
 	host := CanvasHost{Ratio: canvastest.Scale}
-	Play(ctx, d.Ops, host)
+	Play(ctx, d, d.Ops, host)
 	b.ResetTimer()
 	for b.Loop() {
-		Play(ctx, d.Ops, host)
+		Play(ctx, d, d.Ops, host)
 	}
 }
 
@@ -453,7 +453,7 @@ func benchmarkCaveRunCALayer(b *testing.B, nearest, forceScratch bool) {
 	layer.Send(sel("setDelegate:"), layerDrawer)
 	layerDraw = func(lctx uintptr) {
 		DrawTopDown(lctx, 720, !MsgBool(layer, sel("contentsAreFlipped")), func(baseUp bool) {
-			Play(lctx, d.Ops, CanvasHost{Ratio: 2, BaseUp: baseUp})
+			Play(lctx, d, d.Ops, CanvasHost{Ratio: 2, BaseUp: baseUp})
 		})
 	}
 	prev := forceAtlasScratch

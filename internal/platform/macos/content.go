@@ -62,7 +62,13 @@ func registerContent() {
 // down as a flipped view's drawRect: did.
 func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 	v := drawers[layer]
-	if v == nil || ctx == 0 || (v.layout == nil && v.drawing == nil) {
+	if v == nil || ctx == 0 {
+		return
+	}
+	v.drawMu.Lock()
+	hasDrawing := v.drawing != nil
+	v.drawMu.Unlock()
+	if v.layout == nil && !hasDrawing {
 		return
 	}
 	// The layer holds the view and the ink of its text past it, and a
@@ -73,7 +79,7 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 	}
 	apple.DrawTopDown(ctx, f.Size.Height, !apple.MsgBool(layer, selContentsAreFlipped), func(baseUp bool) {
 		apple.TranslateCTM(ctx, -f.Origin.X, -f.Origin.Y)
-		if v.drawing != nil {
+		if hasDrawing {
 			if ch := canvases.Load(); ch != nil {
 				ch.paint(v, ctx, layer, baseUp)
 			}
@@ -118,7 +124,7 @@ func (v *view) redrawAnimated() {
 		v.redraw()
 		return
 	}
-	area, whole := apple.Damaged(v.played, v.surface.animator.CanvasOps(v.id, v.drawing))
+	area, whole := apple.Damaged(v.drawing, v.played, v.surface.animator.CanvasOps(v.id, v.drawing))
 	switch {
 	case whole:
 		v.display()
@@ -378,20 +384,28 @@ func (v *view) canvasState() *canvasPaint {
 // context, over the layer of its static part where it keeps one, and
 // sets where the next paint happens.
 func (v *view) paintCanvas(ctx uintptr, layer objc.ID, baseUp bool) {
+	v.drawMu.Lock()
+	d := v.drawing
+	d.Retain()
+	v.drawMu.Unlock()
+	if d == nil {
+		return
+	}
+	defer d.Release()
 	c := v.canvasState()
 	if c == nil {
 		c = &canvasPaint{}
 		v.canvas = c
 	}
 	c.count(time.Now())
-	ops := v.surface.animator.CanvasOps(v.id, v.drawing)
+	ops := v.surface.animator.CanvasOps(v.id, d)
 	host := apple.CanvasHost{Ratio: v.contentScale(), Redraw: v.redraw, Owner: v, BaseUp: baseUp}
 	w, h := float64(v.frame.Size.Width), float64(v.frame.Size.Height)
-	if kept := v.staticLayer(ctx, ops, w, h, host); kept != nil {
+	if kept := v.staticLayer(ctx, d, ops, w, h, host); kept != nil {
 		kept.Draw(ctx, w, h)
-		apple.PlayOver(ctx, ops, c.split, host)
+		apple.PlayOver(ctx, d, ops, c.split, host)
 	} else {
-		apple.Play(ctx, ops, host)
+		apple.Play(ctx, d, ops, host)
 	}
 	v.played = append(v.played[:0], ops...)
 	if async := c.frequent && !c.keeps(); async != c.async {
@@ -402,14 +416,14 @@ func (v *view) paintCanvas(ctx uintptr, layer objc.ID, baseUp bool) {
 
 // staticLayer returns the layer of v's static part at its size, made
 // once the drawing was painted stablePaints times, or nil.
-func (v *view) staticLayer(ctx uintptr, ops []driver.DrawOp, w, h float64, host apple.CanvasHost) *apple.CanvasLayer {
+func (v *view) staticLayer(ctx uintptr, d *driver.Drawing, ops []driver.DrawOp, w, h float64, host apple.CanvasHost) *apple.CanvasLayer {
 	c := v.canvasState()
 	if c == nil || c.split.At == 0 || c.split.At >= len(ops) {
 		return nil
 	}
 	scale := v.contentScale()
 	pw, ph := int(math.Ceil(w*scale)), int(math.Ceil(h*scale))
-	if l := c.layer; l != nil && l.Drawing == v.drawing && l.Width == pw && l.Height == ph {
+	if l := c.layer; l != nil && l.Drawing == d && l.Width == pw && l.Height == ph {
 		return l
 	}
 	c.layer.Release()
@@ -420,6 +434,6 @@ func (v *view) staticLayer(ctx uintptr, ops []driver.DrawOp, w, h float64, host 
 	if c.painted <= stablePaints || c.async {
 		return nil
 	}
-	c.layer = apple.NewCanvasLayer(ctx, v.drawing, ops, c.split, w, h, scale, host)
+	c.layer = apple.NewCanvasLayer(ctx, d, ops, c.split, w, h, scale, host)
 	return c.layer
 }

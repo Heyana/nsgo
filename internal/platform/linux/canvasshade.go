@@ -41,7 +41,7 @@ func (*window) EnableCanvasShaders() {
 // shaded runs op through its program when it shades with one, reporting
 // whether it did; a false report draws an image op plain.
 func (p *canvasPlayer) shaded(op *driver.DrawOp) bool {
-	return shadeCanvas != nil && canvasshade.Shades(op) && shadeCanvas(p, op)
+	return shadeCanvas != nil && canvasshade.Shades(p.drawing, op) && shadeCanvas(p, op)
 }
 
 var (
@@ -390,7 +390,11 @@ func (p *canvasPlayer) shade(op *driver.DrawOp) bool {
 	var first *shadeSource
 	var size canvasshade.Image
 	if op.Kind != driver.DrawShader {
-		if first = p.shadeSource(*op.Image); first == nil {
+		imgSrc := p.drawing.Image(op)
+		if imgSrc == nil {
+			return false
+		}
+		if first = p.shadeSource(*imgSrc); first == nil {
 			return true
 		}
 		size = canvasshade.Image{W: float64(first.points.Width), H: float64(first.points.Height),
@@ -417,7 +421,7 @@ func (p *canvasPlayer) shade(op *driver.DrawOp) bool {
 		cx0, cy0, cx1, cy1 = min(cx0, x), min(cy0, y), max(cx1, x), max(cy1, y)
 	}
 	clip := image.Rect(int(math.Floor(cx0)), int(math.Floor(cy0)), int(math.Ceil(cx1)), int(math.Ceil(cy1)))
-	pass, ok := canvasshade.Plan(op, m, clip, size)
+	pass, ok := canvasshade.Plan(p.drawing, op, m, clip, size)
 	if !ok {
 		return true
 	}

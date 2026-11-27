@@ -64,5 +64,5 @@ func (s *surface) playCanvas(ctx uintptr, v *view, size driver.Size, host apple.
 		}
 		host.Ratio /= scale
 	}
-	apple.Play(ctx, ops, host)
+	apple.Play(ctx, v.drawing, ops, host)
 }

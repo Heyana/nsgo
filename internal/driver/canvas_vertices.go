@@ -49,7 +49,7 @@ func (d *Drawing) DrawVertices(img ImageSource, vertices []CanvasVertex) *Drawin
 	if len(list) == 0 {
 		return d
 	}
-	return d.op(DrawOp{Kind: DrawVertices, Image: &img, Mesh: &CanvasMesh{Vertices: list},
+	return d.op(DrawOp{Kind: DrawVertices, ImageIndex: d.addImage(img), Mesh: &CanvasMesh{Vertices: list},
 		X: float32(minX), Y: float32(minY), W: float32(maxX - minX), H: float32(maxY - minY)})
 }
 
@@ -106,6 +106,6 @@ func (op *DrawOp) ImageRect() (DrawOp, bool) {
 		uv[0].X < 0 || uv[0].Y < 0 || uv[3].X <= uv[0].X || uv[3].Y <= uv[0].Y {
 		return DrawOp{}, false
 	}
-	return DrawOp{Kind: DrawImage, Image: op.Image, Sampling: op.Sampling, X: op.X, Y: op.Y, W: op.W, H: op.H,
+	return DrawOp{Kind: DrawImage, ImageIndex: op.ImageIndex, Sampling: op.Sampling, X: op.X, Y: op.Y, W: op.W, H: op.H,
 		X1: float32(uv[0].X), Y1: float32(uv[0].Y), X2: float32(uv[3].X - uv[0].X), Y2: float32(uv[3].Y - uv[0].Y)}, true
 }

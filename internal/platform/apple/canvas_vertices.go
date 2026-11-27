@@ -11,7 +11,8 @@ import (
 )
 
 func (p *player) vertices(op *driver.DrawOp) {
-	if op.Image == nil {
+	imgSrc := p.drawing.Image(op)
+	if imgSrc == nil {
 		return
 	}
 	if draw, ok := op.ImageRect(); ok {
@@ -19,7 +20,7 @@ func (p *player) vertices(op *driver.DrawOp) {
 		return
 	}
 	var texture canvasmesh.Texture
-	switch src := *op.Image; {
+	switch src := *imgSrc; {
 	case src.Pixels != nil:
 		texture = canvasmesh.RGBA(src.Pixels, src.Size)
 	case src.Offscreen != nil:

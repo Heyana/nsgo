@@ -324,7 +324,7 @@ func fingers(list js.Value) []finger {
 }
 
 // canvasPainter holds paintDrawing once core constructs a Canvas or Icon, so mini programs that never draw a canvas drop internal/platform/canvas2d.
-var canvasPainter atomic.Pointer[func(*surface, driver.NodeID, []driver.DrawOp, driver.Size, float64, bool) string]
+var canvasPainter atomic.Pointer[func(*surface, driver.NodeID, *driver.Drawing, []driver.DrawOp, driver.Size, float64, bool) string]
 
 func (*surface) EnableCanvas() {
 	if canvasPainter.Load() != nil {
@@ -336,9 +336,9 @@ func (*surface) EnableCanvas() {
 
 // paint draws ops on the offscreen canvas and returns the picture as a
 // data URL, "" while an image they draw loads.
-func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size, scale float64, smooth bool) string {
+func (s *surface) paint(id driver.NodeID, d *driver.Drawing, ops []driver.DrawOp, size driver.Size, scale float64, smooth bool) string {
 	if fn := canvasPainter.Load(); fn != nil {
-		return (*fn)(s, id, ops, size, scale, smooth)
+		return (*fn)(s, id, d, ops, size, scale, smooth)
 	}
 	return ""
 }
@@ -346,7 +346,7 @@ func (s *surface) paint(id driver.NodeID, ops []driver.DrawOp, size driver.Size,
 // paintDrawing draws ops at the pixel ratio times scale, which <image>
 // stretches to the canvas's box smoothly; drawn below the pixel ratio to
 // their nearest, they are stretched to it on a second canvas first.
-func (s *surface) paintDrawing(id driver.NodeID, ops []driver.DrawOp, size driver.Size, scale float64, smooth bool) string {
+func (s *surface) paintDrawing(id driver.NodeID, d *driver.Drawing, ops []driver.DrawOp, size driver.Size, scale float64, smooth bool) string {
 	full := float64(s.env.PixelRatio)
 	if full <= 0 {
 		full = 2
@@ -364,6 +364,7 @@ func (s *surface) paintDrawing(id driver.NodeID, ops []driver.DrawOp, size drive
 	ctx.Call("scale", ratio, ratio)
 	waiting := false
 	p := canvas2d.NewPlayer(ctx, ratio, math.Hypot(w, h))
+	p.Drawing = d
 	p.Font = canvasFont
 	p.NewCanvas = func(width, height int) js.Value {
 		return s.api.Call("createOffscreenCanvas", map[string]any{"type": "2d", "width": width, "height": height})

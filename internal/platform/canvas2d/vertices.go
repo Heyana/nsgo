@@ -12,7 +12,8 @@ import (
 )
 
 func (p *Player) vertices(op *driver.DrawOp) {
-	if op.Image == nil {
+	imgSrc := p.Drawing.Image(op)
+	if imgSrc == nil {
 		return
 	}
 	if draw, ok := op.ImageRect(); ok {
@@ -22,7 +23,7 @@ func (p *Player) vertices(op *driver.DrawOp) {
 	if p.MeshCanvas == nil || p.Texture == nil {
 		return
 	}
-	tex := p.Texture(*op.Image)
+	tex := p.Texture(*imgSrc)
 	if len(tex.Pix) == 0 {
 		return
 	}

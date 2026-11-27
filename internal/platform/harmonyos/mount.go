@@ -242,7 +242,7 @@ func (m *mounter) applyAnimated() bool {
 	})
 	m.anim.ChangedCanvases(func(id driver.NodeID) {
 		if v := m.views[id]; v != nil && v.drawing != nil {
-			m.o.op("cv", id).str(encodeCanvas(m.anim.CanvasOps(id, v.drawing), m.packedAtlas))
+			m.o.op("cv", id).str(encodeCanvas(v.drawing, m.anim.CanvasOps(id, v.drawing), m.packedAtlas))
 			changed = true
 		}
 	})
@@ -332,7 +332,7 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem) {
 				ops = m.anim.CanvasOps(it.ID, it.Drawing)
 			}
 		}
-		m.o.op("cv", it.ID).str(encodeCanvas(ops, m.packedAtlas))
+		m.o.op("cv", it.ID).str(encodeCanvas(it.Drawing, ops, m.packedAtlas))
 	case driver.ItemImage:
 		src, fit, data, nearest := "", "cover", "", false
 		if it.Image != nil {

@@ -110,7 +110,7 @@ func ruleBitmap(t *testing.T, d *core.Drawing, ratio float32) *image.RGBA {
 	defer apple.Release(ctx)
 	scale(ctx, float64(ratio), float64(ratio))
 	apple.DrawTopDown(ctx, size, true, func(baseUp bool) {
-		apple.Play(ctx, d.Ops, apple.CanvasHost{Ratio: float64(ratio), BaseUp: baseUp})
+		apple.Play(ctx, d, d.Ops, apple.CanvasHost{Ratio: float64(ratio), BaseUp: baseUp})
 	})
 	runtime.KeepAlive(img)
 	return img

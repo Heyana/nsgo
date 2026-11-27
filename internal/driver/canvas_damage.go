@@ -20,11 +20,12 @@ import "math"
 // shape, an image at its natural size, or bounds that are not finite.
 // A platform that redraws the area replays the whole drawing clipped to
 // it, so the pixels are those of a full redraw.
-func CanvasDamage(before, after []DrawOp) (Bounds, bool) {
+func CanvasDamage(drawing *Drawing, before, after []DrawOp) (Bounds, bool) {
 	if len(before) != len(after) {
 		return Bounds{}, false
 	}
 	var d damageScan
+	d.drawing = drawing
 	d.reset()
 	for i := range after {
 		if !d.step(&before[i], &after[i], before[i] != after[i]) {
@@ -82,7 +83,8 @@ type damageState struct {
 
 // damageScan replays two ops lists side by side.
 type damageScan struct {
-	cur   [2]damageState
+	drawing *Drawing
+	cur     [2]damageState
 	saved [][2]damageState
 	// path is the current path's bounds in canvas points, per replay;
 	// pathMoved whether it differs between them.
@@ -182,7 +184,7 @@ func (d *damageScan) step(a, b *DrawOp, changed bool) bool {
 		if b.Kind == DrawImage && (b.W == 0 || b.H == 0 || a.W == 0 || a.H == 0) {
 			return false
 		}
-		return d.paint(func(i int) box { return d.cur[i].opBox(ops[i]) })
+		return d.paint(func(i int) box { return d.cur[i].opBox(d.drawing, ops[i]) })
 	}
 	return true
 }
@@ -258,7 +260,7 @@ func (s *damageState) strokeReach() float64 {
 }
 
 // opBox is what a text, clear or image op covers.
-func (s *damageState) opBox(op *DrawOp) box {
+func (s *damageState) opBox(d *Drawing, op *DrawOp) box {
 	b := noBox
 	rect := func(x0, y0, x1, y1 float32) {
 		for _, c := range [4]cpoint{{float64(x0), float64(y0)}, {float64(x1), float64(y0)},
@@ -268,15 +270,13 @@ func (s *damageState) opBox(op *DrawOp) box {
 	}
 	switch op.Kind {
 	case DrawAtlas:
-		if op.Atlas != nil {
-			for _, sprite := range *op.Atlas {
-				t := sprite.Transform
-				x, y := float64(t.SCos), float64(t.SSin)
-				m := s.m.then(canvasMatrix{a: x, b: y, c: -y, d: x, e: float64(t.TX), f: float64(t.TY)})
-				w, h := float64(sprite.Rect.Size.Width), float64(sprite.Rect.Size.Height)
-				for _, p := range [4]cpoint{{}, {w, 0}, {0, h}, {w, h}} {
-					b.add(m.apply(p))
-				}
+		for _, sprite := range d.AtlasSprites(op) {
+			t := sprite.Transform
+			x, y := float64(t.SCos), float64(t.SSin)
+			m := s.m.then(canvasMatrix{a: x, b: y, c: -y, d: x, e: float64(t.TX), f: float64(t.TY)})
+			w, h := float64(sprite.Rect.Size.Width), float64(sprite.Rect.Size.Height)
+			for _, p := range [4]cpoint{{}, {w, 0}, {0, h}, {w, h}} {
+				b.add(m.apply(p))
 			}
 		}
 	case DrawFillText, DrawStrokeText:

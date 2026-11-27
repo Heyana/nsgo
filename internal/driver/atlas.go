@@ -1,5 +1,7 @@
 package driver
 
+import "slices"
+
 // RSXform is a scaled rotation followed by a translation. The sprite's
 // local origin is its top-left corner. SCos and SSin are the cosine and
 // sine of the rotation multiplied by the scale. TX and TY are in canvas
@@ -25,13 +27,14 @@ type AtlasSprites []AtlasSprite
 // size. Alpha multiplies the drawing's alpha, defaulting to 1 for entries
 // absent from alphas. Rectangles and transforms are paired up to the shorter
 // slice. Invalid rectangles and transforms are skipped. The drawing keeps a
-// copy of the sprite data.
+// copy of the sprite data in its Sprites buffer.
 func (d *Drawing) DrawAtlas(img ImageSource, rects []Bounds, xforms []RSXform, alphas []float32) *Drawing {
 	n := min(len(rects), len(xforms))
 	if n == 0 || img.Empty() {
 		return d
 	}
-	sprites := make(AtlasSprites, 0, n)
+	start := len(d.Sprites)
+	d.Sprites = slices.Grow(d.Sprites, n)
 	for i, r := range rects[:n] {
 		t := xforms[i]
 		if r.Size.Width <= 0 || r.Size.Height <= 0 || t.SCos == 0 && t.SSin == 0 ||
@@ -44,10 +47,11 @@ func (d *Drawing) DrawAtlas(img ImageSource, rects []Bounds, xforms []RSXform, a
 		if i < len(alphas) && finite(float64(alphas[i])) {
 			alpha = min(max(alphas[i], 0), 1)
 		}
-		sprites = append(sprites, AtlasSprite{Rect: r, Transform: t, Alpha: alpha})
+		d.Sprites = append(d.Sprites, AtlasSprite{Rect: r, Transform: t, Alpha: alpha})
 	}
-	if len(sprites) == 0 {
+	count := len(d.Sprites) - start
+	if count == 0 {
 		return d
 	}
-	return d.op(DrawOp{Kind: DrawAtlas, Image: &img, Atlas: &sprites})
+	return d.op(DrawOp{Kind: DrawAtlas, ImageIndex: d.addImage(img), SpriteStart: int32(start), SpriteLen: int32(count)})
 }

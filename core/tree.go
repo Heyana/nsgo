@@ -237,9 +237,11 @@ type Tree struct {
 	// one would move to the heap at every restyle.
 	lscratch layout.Style
 	// lastItems is how many items the last commit sent, lastShared
-	// whether its batch was these items (CommitShared).
-	lastItems  int
-	lastShared bool
+	// whether its batch was these items (CommitShared), and sharedBatch
+	// the MountBatch header reused by CommitShared.
+	lastItems   int
+	lastShared  bool
+	sharedBatch driver.MountBatch
 	// highlights, while an UpdateHighlights is mounted, outlines what each commit changed.
 	highlights *highlights
 	// devSurface is this tree's devtools.Surface, shared between devtools.Register and devtools.MountOverlay.

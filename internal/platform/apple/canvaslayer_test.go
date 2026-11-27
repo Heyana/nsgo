@@ -33,7 +33,7 @@ func TestCanvasLayerDrawsWhatAFullReplayDoes(t *testing.T) {
 				DrawTopDown(ctx, h, true, func(baseUp bool) {
 					host := CanvasHost{Ratio: canvastest.Scale, BaseUp: baseUp}
 					if !over {
-						Play(ctx, d.Ops, host)
+						Play(ctx, d, d.Ops, host)
 						return
 					}
 					l := NewCanvasLayer(ctx, d, d.Ops, split, w, h, canvastest.Scale, host)
@@ -42,7 +42,7 @@ func TestCanvasLayerDrawsWhatAFullReplayDoes(t *testing.T) {
 					}
 					defer l.Release()
 					l.Draw(ctx, w, h)
-					PlayOver(ctx, d.Ops, split, host)
+					PlayOver(ctx, d, d.Ops, split, host)
 				})
 				return img
 			}
@@ -93,7 +93,7 @@ func TestStretchCanvasUpscalesAHalfResolution(t *testing.T) {
 			layerDraw = func(lctx uintptr) {
 				pw, ph = width(lctx), height(lctx)
 				DrawTopDown(lctx, side, !MsgBool(layer, sel("contentsAreFlipped")), func(baseUp bool) {
-					Play(lctx, d.Ops, CanvasHost{Ratio: scale, BaseUp: baseUp})
+					Play(lctx, d, d.Ops, CanvasHost{Ratio: scale, BaseUp: baseUp})
 				})
 			}
 			layer.Send(sel("display"))

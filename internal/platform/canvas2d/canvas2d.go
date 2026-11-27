@@ -23,7 +23,8 @@ var (
 // Player plays a drawing into a 2D context, which draws as NSGo's: the
 // context already does what the ops say, so most map one to one.
 type Player struct {
-	Ctx js.Value
+	Ctx     js.Value
+	Drawing *driver.Drawing
 	// Ratio is the canvas's pixels per point, and Size its diagonal in
 	// points, which repeating gradients cover.
 	Ratio, Size float64
@@ -314,11 +315,12 @@ func (p *Player) repeat(g *driver.CanvasGradient, x1, y1, x2, y2 float64) (float
 
 // image draws op's image once it has loaded.
 func (p *Player) image(op *driver.DrawOp) {
-	if op.Image == nil {
+	imgSrc := p.Drawing.Image(op)
+	if imgSrc == nil {
 		return
 	}
 	tinted := op.Tinted && op.Color != 0xffffffff
-	img, density, ok := p.Image(*op.Image, tinted)
+	img, density, ok := p.Image(*imgSrc, tinted)
 	if !ok {
 		return
 	}

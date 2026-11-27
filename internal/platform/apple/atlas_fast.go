@@ -93,7 +93,7 @@ var (
 	forceAtlasScratch bool
 )
 
-func (p *player) atlasFast(op *driver.DrawOp, im *loadedImage) bool {
+func (p *player) atlasFast(op *driver.DrawOp, imgSrc *driver.ImageSource, sprites driver.AtlasSprites, im *loadedImage) bool {
 	if disableAtlasFast {
 		return false
 	}
@@ -101,7 +101,6 @@ func (p *player) atlasFast(op *driver.DrawOp, im *loadedImage) bool {
 	if st.shadow || st.composite != driver.CompositeSourceOver {
 		return false
 	}
-	sprites := *op.Atlas
 	if len(sprites) == 0 {
 		return true
 	}
@@ -118,7 +117,7 @@ func (p *player) atlasFast(op *driver.DrawOp, im *loadedImage) bool {
 	// Tier 1: direct write into a compatible CGBitmapContext without canvas clip.
 	if !st.clipped && !forceAtlasScratch {
 		if dstPix, dstW, dstH, dstStride, dstBGRA, ok := atlasBitmapTarget(p.ctx); ok {
-			srcPix, srcW, srcH, srcStride, points, srcBGRA := atlasSourcePixels(op, im)
+			srcPix, srcW, srcH, srcStride, points, srcBGRA := atlasSourcePixels(imgSrc, im)
 			if len(srcPix) == 0 {
 				return false
 			}
@@ -136,12 +135,11 @@ func (p *player) atlasFast(op *driver.DrawOp, im *loadedImage) bool {
 	if !forceAtlasScratch && len(sprites) < atlasScratchMinSprites {
 		return false
 	}
-	return p.atlasScratch(op, im, ctm, st.alpha)
+	return p.atlasScratch(op, imgSrc, sprites, im, ctm, st.alpha)
 }
 
-func (p *player) atlasScratch(op *driver.DrawOp, im *loadedImage, ctm affine, stateAlpha float64) bool {
-	sprites := *op.Atlas
-	srcPix, srcW, srcH, srcStride, points, srcBGRA := atlasSourcePixels(op, im)
+func (p *player) atlasScratch(op *driver.DrawOp, imgSrc *driver.ImageSource, sprites driver.AtlasSprites, im *loadedImage, ctm affine, stateAlpha float64) bool {
+	srcPix, srcW, srcH, srcStride, points, srcBGRA := atlasSourcePixels(imgSrc, im)
 	if len(srcPix) == 0 {
 		return false
 	}
@@ -338,16 +336,16 @@ func atlasClipInTarget(ctx uintptr, ctm affine, dxMin, dyMax, w, h int) (x0, y0,
 	return x0, y0, x1, y1, x0 >= x1 || y0 >= y1
 }
 
-// atlasSourcePixels returns premultiplied source pixels for op.Image without
-// re-decoding: directly from op.Image.Pixels when present, or from im's cached
+// atlasSourcePixels returns premultiplied source pixels for imgSrc without
+// re-decoding: directly from imgSrc.Pixels when present, or from im's cached
 // BGRA pixel copy.
-func atlasSourcePixels(op *driver.DrawOp, im *loadedImage) (pix []byte, w, h, stride int, points driver.Size, bgra bool) {
-	if p := op.Image.Pixels; p != nil {
+func atlasSourcePixels(imgSrc *driver.ImageSource, im *loadedImage) (pix []byte, w, h, stride int, points driver.Size, bgra bool) {
+	if p := imgSrc.Pixels; p != nil {
 		w, h = p.Rect.Dx(), p.Rect.Dy()
 		if w <= 0 || h <= 0 || len(p.Pix) < (h-1)*p.Stride+w*4 {
 			return nil, 0, 0, 0, driver.Size{}, false
 		}
-		points = op.Image.Size
+		points = imgSrc.Size
 		if points.Width <= 0 || points.Height <= 0 {
 			points = driver.Size{Width: driver.Points(w), Height: driver.Points(h)}
 		}

@@ -185,16 +185,19 @@ func TestCanvasSpriteWorkload(t *testing.T) {
 			app := nsgotest.Start(t, func(cx *core.Scope) core.Node { return spriteCanvas(cx, count, nil) }, perfOptions()...)
 			check := func() []core.Point {
 				t.Helper()
-				ops := app.Find("id:" + spriteCanvasID).Ops
+				v := app.Find("id:" + spriteCanvasID)
+				ops := v.Ops
 				points := make([]core.Point, 0, count)
-				for _, op := range ops {
+				for i := range ops {
+					op := &ops[i]
 					if op.Kind != core.DrawImage {
 						continue
 					}
-					if op.Image == nil || op.Image.URI != spriteAtlasPath ||
+					img := v.Drawing.Image(op)
+					if img == nil || img.URI != spriteAtlasPath ||
 						op.X2 != spriteTile || op.Y2 != spriteTile ||
 						op.X1 < 0 || op.Y1 < 0 || op.X1+op.X2 > 1024 || op.Y1+op.Y2 > 1024 {
-						t.Fatalf("sprite has invalid atlas crop: %+v", op)
+						t.Fatalf("sprite has invalid atlas crop: %+v", *op)
 					}
 					points = append(points, core.Point{X: core.Points(op.X), Y: core.Points(op.Y)})
 				}
@@ -221,13 +224,14 @@ func TestCanvasMeshWorkload(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node { return meshCanvas(cx, nil) }, perfOptions()...)
 	check := func() []core.CanvasVertex {
 		t.Helper()
+		v := app.Find("id:" + spriteCanvasID)
 		var meshes []core.DrawOp
-		for _, op := range app.Find("id:" + spriteCanvasID).Ops {
+		for _, op := range v.Ops {
 			if op.Kind == core.DrawVertices {
 				meshes = append(meshes, op)
 			}
 		}
-		if len(meshes) != 1 || meshes[0].Image == nil || meshes[0].Image.URI != spriteAtlasPath {
+		if len(meshes) != 1 || v.Drawing.Image(&meshes[0]) == nil || v.Drawing.Image(&meshes[0]).URI != spriteAtlasPath {
 			t.Fatalf("drew %d meshes, want one of the atlas", len(meshes))
 		}
 		if n := len(meshes[0].Mesh.Vertices); n != meshTriangles*3 {

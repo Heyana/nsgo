@@ -17,7 +17,7 @@ func TestPlanShaderRectUnderTransform(t *testing.T) {
 	op := driver.DrawOp{Kind: driver.DrawShader, Shader: shader(), X: 10, Y: 20, W: 30, H: 40}
 	// Two pixels a point, then moved by (5, 6) pixels.
 	m := Affine{A: 2, D: 2, E: 5, F: 6}
-	p, ok := Plan(&op, m, image.Rect(0, 0, 1000, 1000), Image{})
+	p, ok := Plan(nil, &op, m, image.Rect(0, 0, 1000, 1000), Image{})
 	if !ok {
 		t.Fatal("planned nothing")
 	}
@@ -39,29 +39,31 @@ func TestPlanShaderRectUnderTransform(t *testing.T) {
 
 func TestPlanClipsAndSkips(t *testing.T) {
 	op := driver.DrawOp{Kind: driver.DrawShader, Shader: shader(), X: 0, Y: 0, W: 100, H: 100}
-	p, ok := Plan(&op, Affine{A: 1, D: 1}, image.Rect(10, 10, 20, 30), Image{})
+	p, ok := Plan(nil, &op, Affine{A: 1, D: 1}, image.Rect(10, 10, 20, 30), Image{})
 	if !ok || p.Bounds != image.Rect(10, 10, 20, 30) {
 		t.Fatalf("clipped to %v, %v", p.Bounds, ok)
 	}
 	if v := p.Vertices[0]; v.X != -10 || v.Y != -10 || v.PosX != 0 {
 		t.Fatalf("first corner %+v", v)
 	}
-	if _, ok := Plan(&op, Affine{A: 1, D: 1, E: 500}, image.Rect(0, 0, 100, 100), Image{}); ok {
+	if _, ok := Plan(nil, &op, Affine{A: 1, D: 1, E: 500}, image.Rect(0, 0, 100, 100), Image{}); ok {
 		t.Fatal("planned a pass outside the clip")
 	}
 	plain := driver.DrawOp{Kind: driver.DrawShader, X: 0, Y: 0, W: 10, H: 10}
-	if _, ok := Plan(&plain, Affine{A: 1, D: 1}, image.Rect(0, 0, 100, 100), Image{}); ok {
+	if _, ok := Plan(nil, &plain, Affine{A: 1, D: 1}, image.Rect(0, 0, 100, 100), Image{}); ok {
 		t.Fatal("planned an op with no shader")
 	}
 }
 
 func TestPlanAtlasSprites(t *testing.T) {
 	img := driver.ImageSource{URI: "atlas.png"}
-	sprites := driver.AtlasSprites{
-		{Rect: driver.Bounds{Origin: driver.Point{X: 8, Y: 0}, Size: driver.Size{Width: 8, Height: 4}}, Transform: driver.RSXform{SCos: 0, SSin: 2, TX: 50, TY: 10}, Alpha: 0.5},
-	}
-	op := driver.DrawOp{Kind: driver.DrawAtlas, Image: &img, Atlas: &sprites, Shader: shader()}
-	p, ok := Plan(&op, Affine{A: 1, D: 1}, image.Rect(0, 0, 200, 200), Image{W: 16, H: 4, PixelsW: 32, PixelsH: 8})
+	d := driver.NewDrawing(nil).SetShader(shader()).DrawAtlas(
+		img,
+		[]driver.Bounds{{Origin: driver.Point{X: 8, Y: 0}, Size: driver.Size{Width: 8, Height: 4}}},
+		[]driver.RSXform{{SCos: 0, SSin: 2, TX: 50, TY: 10}},
+		[]float32{0.5},
+	)
+	p, ok := Plan(d, &d.Ops[0], Affine{A: 1, D: 1}, image.Rect(0, 0, 200, 200), Image{W: 16, H: 4, PixelsW: 32, PixelsH: 8})
 	if !ok {
 		t.Fatal("planned nothing")
 	}
@@ -82,7 +84,7 @@ func TestPlanAtlasSprites(t *testing.T) {
 
 func TestPackFlipsForOpenGL(t *testing.T) {
 	op := driver.DrawOp{Kind: driver.DrawShader, Shader: shader(), X: 0, Y: 0, W: 10, H: 10}
-	p, _ := Plan(&op, Affine{A: 1, D: 1}, image.Rect(0, 0, 10, 10), Image{})
+	p, _ := Plan(nil, &op, Affine{A: 1, D: 1}, image.Rect(0, 0, 10, 10), Image{})
 	up, down := p.Pack(nil, false), p.Pack(nil, true)
 	if len(up) != 6*Floats || up[0] != -1 || up[1] != 1 || down[1] != -1 {
 		t.Fatalf("packed %v and %v", up[:2], down[:2])

@@ -51,17 +51,19 @@ ctx.globalAlpha = alpha;
 }
 
 func (p *Player) atlas(op *driver.DrawOp) {
-	if op.Image == nil || op.Atlas == nil {
+	imgSrc := p.Drawing.Image(op)
+	sprites := p.Drawing.AtlasSprites(op)
+	if imgSrc == nil || len(sprites) == 0 {
 		return
 	}
-	img, density, ok := p.Image(*op.Image, false)
+	img, density, ok := p.Image(*imgSrc, false)
 	if !ok {
 		return
 	}
 	p.Ctx.Set("imageSmoothingEnabled", op.Sampling != driver.ImageSamplingNearest)
 	if draw := atlasPlayer(); draw.Type() == js.TypeFunction {
-		data := make([]byte, 0, len(*op.Atlas)*36)
-		for _, sprite := range *op.Atlas {
+		data := make([]byte, 0, len(sprites)*36)
+		for _, sprite := range sprites {
 			b, t := sprite.Rect, sprite.Transform
 			for _, v := range [9]float32{float32(b.Origin.X), float32(b.Origin.Y), float32(b.Size.Width), float32(b.Size.Height),
 				t.SCos, t.SSin, t.TX, t.TY, sprite.Alpha} {
@@ -75,7 +77,7 @@ func (p *Player) atlas(op *driver.DrawOp) {
 	}
 	ctx := p.Ctx
 	alpha := ctx.Get("globalAlpha").Float()
-	for _, sprite := range *op.Atlas {
+	for _, sprite := range sprites {
 		b, t := sprite.Rect, sprite.Transform
 		w, h := float64(b.Size.Width), float64(b.Size.Height)
 		x, y := float64(b.Origin.X)*density, float64(b.Origin.Y)*density
