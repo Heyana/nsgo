@@ -102,6 +102,26 @@ func TestFeatureEnablersCalledOnDemand(t *testing.T) {
 		if tree.gpuSubmit == nil {
 			t.Fatal("the GPU submitter did not connect when a GPU view mounted")
 		}
+		tree.gpuSubmit(driver.GPUFrame{})
+		if spy.gpuSubmit != 1 {
+			t.Fatalf("gpuSubmit calls = %d, want 1", spy.gpuSubmit)
+		}
+	})
+
+	t.Run("gpu submitter preserves existing hook", func(t *testing.T) {
+		spy := &spyFeatures{}
+		root := testRoot(RootOptions{})
+		defer root.Dispose()
+		tree := NewTree(root, spy)
+		custom := 0
+		tree.SetGPUSubmitter(func(driver.GPUFrame) { custom++ })
+		tree.Resize(Size{Width: 100, Height: 100}, Geometry{})
+		tree.Mount(func(*Scope) Node { return GPUView{} })
+		tree.Commit()
+		tree.gpuSubmit(driver.GPUFrame{})
+		if custom != 1 || spy.gpuSubmit != 0 {
+			t.Fatalf("custom=%d spy=%d, want custom=1 spy=0", custom, spy.gpuSubmit)
+		}
 	})
 
 	t.Run("gpu view", func(t *testing.T) {

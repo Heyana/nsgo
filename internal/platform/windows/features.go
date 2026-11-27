@@ -80,10 +80,17 @@ type nativeOps struct {
 }
 
 type gpuOps struct {
-	configure func(*window, *view, driver.GPUViewConfig)
-	sync      func(*window, []*view, []*view)
-	process   func(*window)
-	release   func(*gpuView)
+	configure      func(*window, *view, driver.GPUViewConfig)
+	sync           func(*window, []*view, []*view)
+	resize         func(*window)
+	process        func(*window)
+	draw           func(*painter, *view, matrix, float32, float32, float32, bool)
+	composeAt      func(*gpuView, *placement)
+	composedPlaced func(*window, []composed, []int)
+	notifyLost     func(*window, uint32, string)
+	recover        func(*window)
+	release        func(*gpuView)
+	releaseAll     func(*window)
 }
 
 var (
@@ -100,10 +107,17 @@ func (*window) EnableGPU() {
 		return
 	}
 	gpus.Store(&gpuOps{
-		configure: (*window).configureGPU,
-		sync:      (*window).syncGPUViews,
-		process:   (*window).processGPUFrames,
-		release:   (*gpuView).release,
+		configure:      (*window).configureGPU,
+		sync:           (*window).syncGPUViews,
+		resize:         (*window).resizeGPUViews,
+		process:        (*window).processGPUFrames,
+		draw:           (*painter).drawGPU,
+		composeAt:      (*gpuView).composeAt,
+		composedPlaced: (*window).composedGPUPlaced,
+		notifyLost:     (*window).notifyGPUDeviceLost,
+		recover:        (*window).recoverGPUViews,
+		release:        (*gpuView).release,
+		releaseAll:     (*window).releaseAllGPUViews,
 	})
 }
 

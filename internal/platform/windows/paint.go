@@ -565,8 +565,8 @@ func (w *window) frame() {
 	}
 	if wh := webViews.Load(); wh != nil {
 		wh.composedPlaced(w, p.composed, layers)
-	} else if w.composition != nil {
-		w.composedGPUPlaced(p.composed, layers)
+	} else if g := gpus.Load(); g != nil && w.composition != nil {
+		g.composedPlaced(w, p.composed, layers)
 	}
 	if nh := natives.Load(); nh != nil {
 		nh.placeComponents(w, p.components)
@@ -600,9 +600,11 @@ func (w *window) composedPlaced(drawn []composed, layers []int) {
 				visuals = append(visuals, c.web.portal.outer)
 			}
 		} else if c.gpu != nil {
-			c.gpu.composeAt(&c.at)
-			if c.gpu.portal != nil {
-				visuals = append(visuals, c.gpu.portal.outer)
+			if g := gpus.Load(); g != nil {
+				g.composeAt(c.gpu, &c.at)
+				if c.gpu.portal != nil {
+					visuals = append(visuals, c.gpu.portal.outer)
+				}
 			}
 		}
 	}
@@ -629,8 +631,10 @@ func (w *window) composedGPUPlaced(drawn []composed, layers []int) {
 // lost drops the swap chains and the devices, and draws again on new
 // ones.
 func (w *window) lost() {
-	for _, other := range windows {
-		other.notifyGPUDeviceLost(dxgiHRErrDeviceRemoved, "Direct3D 11 device removed or reset")
+	if g := gpus.Load(); g != nil {
+		for _, other := range windows {
+			g.notifyLost(other, dxgiHRErrDeviceRemoved, "Direct3D 11 device removed or reset")
+		}
 	}
 	if w.swap != nil {
 		w.swap.release()
@@ -641,8 +645,11 @@ func (w *window) lost() {
 	}
 	deviceLost()
 	w.redrawAll()
-	for _, other := range windows {
-		other.post(other.recoverGPUViews)
+	if g := gpus.Load(); g != nil {
+		for _, other := range windows {
+			other := other
+			other.post(func() { g.recover(other) })
+		}
 	}
 }
 
@@ -851,7 +858,9 @@ func (p *painter) drawContent(v *view, s *driver.ViewStyle, world matrix) {
 			sh.drawShader(p, v, width, height)
 		}
 	case driver.KindGPU:
-		p.drawGPU(v, world, width, height, radius, s.Clip)
+		if g := gpus.Load(); g != nil {
+			g.draw(p, v, world, width, height, radius, s.Clip)
+		}
 	case driver.KindWeb:
 		if wh := webViews.Load(); wh != nil {
 			wh.draw(p, v, world, width, height, radius, s.Clip)

@@ -1802,8 +1802,11 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 				g.writeViewConfig(w, it.GPU)
 			} else {
 				// NsgoView.apply reads the payload whatever the enabler says: a
-				// defaulted one keeps the rest of the batch in step.
-				writeGPUViewConfig(w, nil)
+				// defaulted one keeps the rest of the batch in step without
+				// referencing writeGPUViewConfig directly.
+				w.byte(0)
+				w.byte(0)
+				w.u32(1)
 			}
 		case driver.ItemSetClipboard, driver.ItemAnnounce, driver.ItemTitle, driver.ItemAccessibilityLabel,
 			driver.ItemKeepImage, driver.ItemReleaseImage:

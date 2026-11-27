@@ -2037,7 +2037,9 @@ func (s *surface) mount(b *driver.MountBatch) {
 			s.requestGlassPaint()
 		}
 	}
-	s.initPendingGPUs()
+	if g := gpus.Load(); g != nil {
+		g.initPending(s)
+	}
 	if s.animator.Running() || len(s.shading) > 0 || len(s.transitions) > 0 {
 		s.startTicking()
 	}
@@ -2121,7 +2123,9 @@ func (s *surface) create(id driver.NodeID, kind driver.ViewKind) *view {
 			sh.create(s, v)
 		}
 	case driver.KindGPU:
-		s.createGPU(v)
+		if g := gpus.Load(); g != nil {
+			g.create(s, v)
+		}
 	case driver.KindScroll:
 		v.css().set1("overflow", "auto")
 		v.content = s.element("div")
@@ -2161,7 +2165,9 @@ func (s *surface) setViewStyle(v *view, vs *driver.ViewStyle) {
 				sh.shadeLater(s, v)
 			}
 		case driver.KindGPU:
-			s.resizeGPU(v)
+			if g := gpus.Load(); g != nil {
+				g.resize(s, v)
+			}
 		}
 		if v.kind != driver.KindScroll {
 			kids := v.el.Get("children")

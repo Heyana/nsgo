@@ -55,9 +55,11 @@ type nativeOps struct {
 }
 
 type gpuOps struct {
-	configure func(*surface, *view, driver.GPUViewConfig)
-	resize    func(*surface, *view)
-	release   func(*gpuView)
+	create      func(*surface, *view)
+	configure   func(*surface, *view, driver.GPUViewConfig)
+	resize      func(*surface, *view)
+	initPending func(*surface)
+	release     func(*gpuView)
 }
 
 var (
@@ -74,9 +76,11 @@ func (*surface) EnableGPU() {
 		return
 	}
 	gpus.Store(&gpuOps{
-		configure: (*surface).configureGPU,
-		resize:    (*surface).resizeGPU,
-		release:   (*gpuView).release,
+		create:      (*surface).createGPU,
+		configure:   (*surface).configureGPU,
+		resize:      (*surface).resizeGPU,
+		initPending: (*surface).initPendingGPUs,
+		release:     (*gpuView).release,
 	})
 }
 

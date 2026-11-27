@@ -296,6 +296,7 @@ func setSwitchInvalid(c driver.NativeComponent, invalid bool) {
 	}
 }
 
+// nsgo:allow-duplicate the two Apple backends install the same GPU table.
 func (*surface) EnableGPU() {
 	if gpus.Load() != nil {
 		return

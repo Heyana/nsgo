@@ -1838,8 +1838,8 @@ func (w *window) apply(b *driver.MountBatch) {
 			if v.kind == driver.KindGPU && it.GPU != nil {
 				if g := gpus.Load(); g != nil {
 					g.configure(w, v, *it.GPU)
+					gpuConfigured = append(gpuConfigured, v)
 				}
-				gpuConfigured = append(gpuConfigured, v)
 			}
 		case driver.ItemShaderTransition:
 			if sh := shaders.Load(); sh != nil {
@@ -2830,7 +2830,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		// Under per-monitor awareness Windows leaves the window its pixels: it takes the rect Windows suggests for the new DPI, unless the move is one of the window's own (setWindowPosAt), which chose its pixels already. Either way the engine then lays out the client area in the new points, whether or not a WM_SIZE came before this.
 		if dpi := uint32(wParam & 0xffff); dpi != 0 {
 			w.scale = float64(dpi) / 96
-			w.resizeGPUViews()
+			if g := gpus.Load(); g != nil {
+				g.resize(w)
+			}
 		}
 		if !w.placing && lParam != 0 {
 			r := *(**rect)(unsafe.Pointer(&lParam)) // the message's, valid while it is handled
@@ -3267,7 +3269,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if nh := natives.Load(); nh != nil {
 			nh.closeWindow(w)
 		}
-		w.releaseAllGPUViews()
+		if g := gpus.Load(); g != nil {
+			g.releaseAll(w)
+		}
 		if w.primary {
 			postQuitMessage.Call(0)
 			return 0

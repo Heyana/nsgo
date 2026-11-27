@@ -41,7 +41,7 @@ var unlinked = map[string][]string{
 	"linux":   {"archive/zip", "github.com/nsgo-dev/nsgo/internal/shaderir/glsl"},
 }
 
-// featureSymbols names each backend's entry points for shaders, canvases, videos, web views and native components. Minimal apps must link none of them; testdata/features must link all of them.
+// featureSymbols names each backend's entry points for shaders, canvases, videos, web views, native components and GPU views. Minimal apps must link none of them; testdata/features must link all of them.
 var featureSymbols = map[string][]string{
 	"darwin": {
 		"github.com/nsgo-dev/nsgo/internal/platform/apple.NewShaderLayer",
@@ -60,6 +60,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).setNative",
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).SubmitGPU",
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).configureGPU",
+		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*painter).drawGPU",
 	},
 	"linux": {
 		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).setShader",
@@ -86,7 +87,9 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).setWeb",
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).configureNative",
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).SubmitGPU",
+		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).createGPU",
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).configureGPU",
+		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).initPendingGPUs",
 	},
 }
 
@@ -186,7 +189,7 @@ func TestAutomationAppLinks(t *testing.T) {
 	}
 }
 
-// TestFeatureAppLinks verifies that an app constructing a shader, canvas, video, web view and native component links each backend's implementation for all of them.
+// TestFeatureAppLinks verifies that an app constructing a shader, canvas, video, web view, native component and GPU view links each backend's implementation for all of them.
 func TestFeatureAppLinks(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("needs the go command")
