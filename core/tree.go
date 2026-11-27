@@ -168,9 +168,14 @@ type Tree struct {
 	bumpAudit   func()
 	tickAudit   func()
 	// devDrawn tracks drawn geometry (transforms, animations, transitions, sticky shifts) while DevTools or their overlay read bounds; nil in release builds.
-	devDrawn  *devDrawn
-	devNative *devGeometryState
-	devSource func(func(driver.GeometrySnapshot))
+	devDrawn          *devDrawn
+	syncDevDrawnFn    func(time.Time)
+	devNative         *devGeometryState
+	devSource         func(func(driver.GeometrySnapshot))
+	webDispatch       func(*Tree, *node, driver.Event)
+	updateListsFn     func() bool
+	sizeHeadersFn     func() bool
+	emitHeaderViewsFn func()
 	// edgeBars are the views that are bars over a scroll view's side, and
 	// edgeScrolls the scroll views they last reached into.
 	edgeBars, edgeScrolls []*node
@@ -2572,8 +2577,8 @@ func (t *Tree) Dispatch(ev driver.Event) {
 		// The user's own input on n lets its owner move the focus until the commit after it (mayMoveFocus).
 		t.activated = n.owner
 	}
-	if n.web != nil && ev.Kind != driver.EventFocus && ev.Kind != driver.EventBlur {
-		t.dispatchWeb(n, ev)
+	if n.web != nil && t.webDispatch != nil && ev.Kind != driver.EventFocus && ev.Kind != driver.EventBlur {
+		t.webDispatch(t, n, ev)
 		return
 	}
 	if t.dispatchPictureInPicture(n, ev) {

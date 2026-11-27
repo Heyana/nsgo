@@ -1,4 +1,4 @@
-//go:build nsgo_steam
+//go:build nsgo_steam && ((darwin && !nsgoembed && !nsgowatch && !nsgotui) || (linux && !nsgotui) || (windows && !nsgotui) || android || nsgoandroidhost)
 
 package backend
 

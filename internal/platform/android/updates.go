@@ -42,6 +42,9 @@ func (s *surface) withoutUpdateChecks(id uint32, b *driver.MountBatch) *driver.M
 				}
 				continue
 			}
+			if c.Key != "" && !c.PageOnly {
+				updates.EnableDownload()
+			}
 			updates.Answer(it.Count, func(ctx context.Context) driver.Update { return updates.Find(ctx, c) },
 				func(ev driver.Event) { s.dispatchTo(id, ev) })
 		}

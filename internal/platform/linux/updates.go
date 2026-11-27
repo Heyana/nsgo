@@ -71,6 +71,9 @@ func configureUpdates(c updates.Config) updates.Config {
 // checkForUpdates reads the appcast off the main thread and selects the signed package matching this installation, or falls back to the release's page.
 func (w *window) checkForUpdates(id uint32) {
 	c := updateConfig
+	if c.Key != "" && !c.PageOnly {
+		updates.EnableDownload()
+	}
 	updates.Answer(id, func(ctx context.Context) driver.Update {
 		return updates.FindMatching(ctx, c, func(it updates.Item) bool {
 			return it.Download != "" && selfUpdatable(ctx, it.Download)

@@ -5,8 +5,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-
-	"go.yaml.in/yaml/v3"
 )
 
 // Tailwind is Tailwind CSS 4's default theme extended for the classes of
@@ -36,9 +34,16 @@ type Tailwind struct{ t *tailwindTheme }
 // Lengths are points; an unknown key is an error. JSON is YAML, so
 // NSH's tailwind object reads as it is.
 func ParseTailwind(data []byte) (*Tailwind, error) {
-	var root map[string]any
-	if err := yaml.Unmarshal(data, &root); err != nil {
+	raw, err := parseYAML(data)
+	if err != nil {
 		return nil, fmt.Errorf("core: tailwind: %w", err)
+	}
+	var root map[string]any
+	if raw != nil {
+		var ok bool
+		if root, ok = raw.(map[string]any); !ok {
+			return nil, fmt.Errorf("core: tailwind: expected a mapping")
+		}
 	}
 	t := defaultTailwind.clone()
 	if err := t.extend(root); err != nil {

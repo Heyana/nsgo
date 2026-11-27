@@ -56,8 +56,13 @@ func (t *Tree) commit(shared bool) *driver.MountBatch {
 	t.items = t.items[:0]
 	t.commits++
 	t.commitStart = t.rt.clock.Now()
-	if t.devSource == nil && (t.devDrawn != nil || devtools.Enabled || t.highlights != nil) {
-		t.ensureDevDrawn().beginCommit()
+	if t.devSource == nil {
+		if devtools.Enabled && t.devDrawn == nil {
+			t.ensureDevDrawn()
+		}
+		if t.devDrawn != nil {
+			t.devDrawn.beginCommit()
+		}
 	}
 	t.resetPace()
 	for round := 0; t.changed && round < maxRounds; round++ {
@@ -101,8 +106,8 @@ func (t *Tree) commit(shared bool) *driver.MountBatch {
 	if len(t.items) == 0 && (t.devNative == nil || !t.devNative.pending) {
 		return nil
 	}
-	if t.devDrawn != nil {
-		t.syncDevDrawn(t.commitStart)
+	if t.syncDevDrawnFn != nil {
+		t.syncDevDrawnFn(t.commitStart)
 	}
 	t.noteGeometryVersion(t.items)
 	if t.highlights != nil {
@@ -273,7 +278,7 @@ func (t *Tree) commitRound() {
 	t.timeLayout()
 	// Lists fill their windows from the layout, which may need another.
 	for range 4 {
-		if !t.updateLists() {
+		if t.updateListsFn == nil || !t.updateListsFn() {
 			break
 		}
 		t.updatePeerStyles()
@@ -287,7 +292,7 @@ func (t *Tree) commitRound() {
 	t.updateTooltipDescriptions()
 	// System headers cover what the stacks' places decide.
 	for range 2 {
-		if !t.sizeHeaders() {
+		if t.sizeHeadersFn == nil || !t.sizeHeadersFn() {
 			break
 		}
 		t.timeLayout()
@@ -308,7 +313,9 @@ func (t *Tree) commitRound() {
 	t.laidOut = t.laidOut[:0]
 	t.emitPictureInPictures()
 	t.emitAccessories()
-	t.emitHeaderViews()
+	if t.emitHeaderViewsFn != nil {
+		t.emitHeaderViewsFn()
+	}
 	t.checkPointerLock()
 	t.makeCommanded()
 	t.emit(t.view)
@@ -351,8 +358,8 @@ func (t *Tree) commitRound() {
 			t.within(n.owner, func() { n.h.layout(frame) })
 		}
 	}
-	if t.devDrawn != nil {
-		t.syncDevDrawn(t.commitStart)
+	if t.syncDevDrawnFn != nil {
+		t.syncDevDrawnFn(t.commitStart)
 	}
 	if t.bumpAudit != nil {
 		t.bumpAudit()

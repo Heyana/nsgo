@@ -1,10 +1,6 @@
 package cldr
 
-import (
-	"strings"
-
-	"golang.org/x/text/language"
-)
+import "strings"
 
 // Regional is how a locale's region reads weeks, times and measures,
 // as CLDR 48's supplemental data has it, Intl's names for its values:
@@ -22,10 +18,10 @@ type Regional struct {
 // sets (-u-fw-, -u-hc-, -u-ms-, -u-mu-), else its region's, likely or
 // given, else its language's hours.
 func RegionalOf(locale string) Regional {
-	t, _ := language.Parse(strings.ReplaceAll(locale, "_", "-"))
-	region, _ := t.Region()
-	r := Regional{FirstDayOfWeek: firstDayOf(region.String()), HourCycle: cycleOf(hourLetter(dataAt(find(locale)))),
-		MeasurementSystem: measurementOf(region.String()), TemperatureUnit: temperatureOf(region.String())}
+	t, _ := ParseTag(locale)
+	region := t.CanonicalRegion()
+	r := Regional{FirstDayOfWeek: firstDayOf(region), HourCycle: cycleOf(hourLetter(dataAt(find(locale)))),
+		MeasurementSystem: measurementOf(region), TemperatureUnit: temperatureOf(region)}
 	if fw := weekdays[t.TypeForKey("fw")]; fw > 0 {
 		r.FirstDayOfWeek = fw
 	}

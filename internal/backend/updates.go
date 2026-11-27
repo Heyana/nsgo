@@ -1,3 +1,5 @@
+//go:build (darwin && !nsgoembed && !nsgowatch && !nsgotui) || (linux && !nsgotui) || (windows && !nsgotui) || android || nsgoandroidhost
+
 package backend
 
 import (

@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/html"
 
@@ -31,34 +32,51 @@ const (
 	maxColSpan = 64
 )
 
-func set(names ...string) map[string]bool {
-	m := make(map[string]bool, len(names))
-	for _, n := range names {
-		m[n] = true
-	}
-	return m
-}
-
-var (
-	// blockElements are read in block context, and make an unknown
-	// element holding them a container.
-	blockElements = set("address", "article", "aside", "blockquote", "center", "dd", "details", "dialog", "dir",
+// isBlockElement reports whether name is read in block context and makes an
+// unknown element holding it a container.
+func isBlockElement(name string) bool {
+	switch name {
+	case "address", "article", "aside", "blockquote", "center", "dd", "details", "dialog", "dir",
 		"div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6",
 		"header", "hgroup", "hr", "legend", "li", "main", "menu", "nav", "ol", "p", "pre", "search", "section",
-		"summary", "table", "ul")
-	// droppedElements never show their content: metadata, scripts, form
-	// controls and embedded objects with no text of their own.
-	droppedElements = set("audio", "base", "canvas", "colgroup", "datalist", "embed", "head", "iframe", "input",
+		"summary", "table", "ul":
+		return true
+	}
+	return false
+}
+
+// isDroppedElement reports whether name never shows its content: metadata,
+// scripts, form controls and embedded objects with no text of their own.
+func isDroppedElement(name string) bool {
+	switch name {
+	case "audio", "base", "canvas", "colgroup", "datalist", "embed", "head", "iframe", "input",
 		"link", "meta", "noscript", "object", "option", "param", "script", "select", "source", "style", "svg",
-		"template", "textarea", "title", "track", "video")
-	// voidElements have no closing tag.
-	voidElements = set("area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
-		"track", "wbr")
-	// formattingElements hold Markdown between their tags in a Markdown
-	// paragraph, as gpui-kit pairs them: <strong>b *c*</strong>.
-	formattingElements = set("a", "b", "cite", "del", "dfn", "em", "i", "ins", "mark", "s", "small", "strike",
-		"strong", "sub", "sup", "u", "var")
-)
+		"template", "textarea", "title", "track", "video":
+		return true
+	}
+	return false
+}
+
+// isVoidElement reports whether name has no closing tag.
+func isVoidElement(name string) bool {
+	switch name {
+	case "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
+		"track", "wbr":
+		return true
+	}
+	return false
+}
+
+// isFormattingElement reports whether name holds Markdown between its tags in
+// a Markdown paragraph, as gpui-kit pairs them: <strong>b *c*</strong>.
+func isFormattingElement(name string) bool {
+	switch name {
+	case "a", "b", "cite", "del", "dfn", "em", "i", "ins", "mark", "s", "small", "strike",
+		"strong", "sub", "sup", "u", "var":
+		return true
+	}
+	return false
+}
 
 // ParseHTML reads HTML into a document: a fragment, or a whole page's
 // body. Elements a reader does not show are skipped (metadata, scripts,
@@ -87,7 +105,7 @@ func htmlInlines(source string, ext []Extension) []Inline {
 	for last != nil && isBlank(last) {
 		last = last.PrevSibling
 	}
-	if last != nil && last.Type == html.ElementNode && blockElements[last.Data] && len(out) > 0 {
+	if last != nil && last.Type == html.ElementNode && isBlockElement(last.Data) && len(out) > 0 {
 		if _, ok := out[len(out)-1].(Break); ok {
 			out = out[:len(out)-1]
 		}
@@ -131,16 +149,17 @@ func closeExtensionTags(source string, ext []Extension) string {
 	for _, e := range ext {
 		if e.Tag == anyTag {
 			// Every element, as MDX writes them, but HTML's void ones.
-			source = anySelfClosing.ReplaceAllStringFunc(source, func(m string) string {
-				sub := anySelfClosing.FindStringSubmatch(m)
-				if voidElements[strings.ToLower(sub[1])] {
+			re := getAnySelfClosing()
+			source = re.ReplaceAllStringFunc(source, func(m string) string {
+				sub := re.FindStringSubmatch(m)
+				if isVoidElement(strings.ToLower(sub[1])) {
 					return m
 				}
 				return "<" + sub[1] + sub[2] + "></" + sub[1] + ">"
 			})
 			continue
 		}
-		if e.Tag == "" || voidElements[strings.ToLower(e.Tag)] {
+		if e.Tag == "" || isVoidElement(strings.ToLower(e.Tag)) {
 			continue
 		}
 		re := regexp.MustCompile(`(?i)<(` + regexp.QuoteMeta(e.Tag) + `)((?:\s[^<>]*?)?)\s*/>`)
@@ -149,7 +168,17 @@ func closeExtensionTags(source string, ext []Extension) string {
 	return source
 }
 
-var anySelfClosing = regexp.MustCompile(`<([A-Za-z][\w.:-]*)((?:\s[^<>]*?)?)\s*/>`)
+var (
+	anySelfClosingOnce sync.Once
+	anySelfClosingVal  *regexp.Regexp
+)
+
+func getAnySelfClosing() *regexp.Regexp {
+	anySelfClosingOnce.Do(func() {
+		anySelfClosingVal = regexp.MustCompile(`<([A-Za-z][\w.:-]*)((?:\s[^<>]*?)?)\s*/>`)
+	})
+	return anySelfClosingVal
+}
 
 // htmlReader is one walk of a tree.
 type htmlReader struct {
@@ -204,7 +233,7 @@ func (r *htmlReader) blockNode(n *html.Node, f *flow, depth int) {
 		f.run = pushText(f.run, n.Data)
 		return
 	}
-	if n.Type != html.ElementNode || isHidden(n) || droppedElements[n.Data] {
+	if n.Type != html.ElementNode || isHidden(n) || isDroppedElement(n.Data) {
 		return
 	}
 	if e, ok := r.extension(n.Data); ok {
@@ -271,7 +300,7 @@ func (r *htmlReader) blockNode(n *html.Node, f *flow, depth int) {
 			}
 		}
 		r.push(f, Blockquote{Children: r.blocksOf(n, depth, title), Alert: alertOf(n)})
-	case blockElements[name] || (depth < maxDepth && containsBlock(n, depth)):
+	case isBlockElement(name) || (depth < maxDepth && containsBlock(n, depth)):
 		// A container: its children are blocks among the others.
 		r.flush(f)
 		if depth < maxDepth {
@@ -466,7 +495,7 @@ func (r *htmlReader) inlineNode(n *html.Node, out []Inline, depth int) []Inline 
 	if n.Type == html.TextNode {
 		return pushText(out, n.Data)
 	}
-	if n.Type != html.ElementNode || isHidden(n) || droppedElements[n.Data] || n == r.checkbox {
+	if n.Type != html.ElementNode || isHidden(n) || isDroppedElement(n.Data) || n == r.checkbox {
 		return out
 	}
 	if e, ok := r.extension(n.Data); ok {
@@ -538,7 +567,7 @@ func (r *htmlReader) inlineNode(n *html.Node, out []Inline, depth int) []Inline 
 	case "hr":
 		return append(out, Break{})
 	}
-	if blockElements[n.Data] {
+	if isBlockElement(n.Data) {
 		// A block in inline context: its content on lines of its own.
 		if len(out) > 0 && !endsWithBreak(out) {
 			out = append(out, Break{})
@@ -824,7 +853,7 @@ func isBlank(n *html.Node) bool {
 // in its parent: a block itself rather than inline content.
 func isStandalone(n *html.Node) bool {
 	isBlock := func(s *html.Node) bool {
-		return s == nil || s.Type == html.ElementNode && (blockElements[s.Data] || s.Data == "br")
+		return s == nil || s.Type == html.ElementNode && (isBlockElement(s.Data) || s.Data == "br")
 	}
 	before, after := n.PrevSibling, n.NextSibling
 	for before != nil && isBlank(before) {
@@ -842,7 +871,7 @@ func containsBlock(n *html.Node, depth int) bool {
 		return false
 	}
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode && blockElements[c.Data] || containsBlock(c, depth+1) {
+		if c.Type == html.ElementNode && isBlockElement(c.Data) || containsBlock(c, depth+1) {
 			return true
 		}
 	}
@@ -863,7 +892,7 @@ func textContent(n *html.Node) string {
 				b.WriteString(c.Data)
 			case isElement(c, "br"):
 				b.WriteByte('\n')
-			case c.Type == html.ElementNode && !droppedElements[c.Data]:
+			case c.Type == html.ElementNode && !isDroppedElement(c.Data):
 				walk(c, depth+1)
 			}
 		}

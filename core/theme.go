@@ -5,8 +5,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-
-	"go.yaml.in/yaml/v3"
 )
 
 // Palette is a theme's colors in one appearance. Its roles are NSGo's;
@@ -228,37 +226,52 @@ var shadcnDark = map[string]Color{
 // Tokens, radius and font-sans and font-mono setting Radius, Sans and
 // Mono too.
 func ParseTheme(data []byte) (*Theme, error) {
-	var f struct {
-		Radius  *float32          `yaml:"radius"`
-		Sans    string            `yaml:"sans"`
-		Mono    string            `yaml:"mono"`
-		Light   map[string]string `yaml:"light"`
-		Dark    map[string]string `yaml:"dark"`
-		CSSVars struct {
-			Theme map[string]string `yaml:"theme"`
-			Light map[string]string `yaml:"light"`
-			Dark  map[string]string `yaml:"dark"`
-		} `yaml:"cssVars"`
-	}
-	if err := yaml.Unmarshal(data, &f); err != nil {
+	raw, err := parseYAML(data)
+	if err != nil {
 		return nil, fmt.Errorf("core: theme: %w", err)
 	}
+	var root map[string]any
+	if raw != nil {
+		var ok bool
+		if root, ok = raw.(map[string]any); !ok {
+			return nil, fmt.Errorf("core: theme: expected a mapping")
+		}
+	}
 	t := DefaultTheme()
-	if f.Radius != nil {
-		t.Radius = Points(*f.Radius)
+	if v, ok := root["radius"]; ok && v != nil {
+		r, err := twNumber[Points](v, "radius")
+		if err != nil {
+			return nil, fmt.Errorf("core: theme: %w", err)
+		}
+		t.Radius = r
 	}
-	if f.Sans != "" {
-		t.Sans = f.Sans
+	if v, ok := root["sans"]; ok && v != nil {
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("core: theme: sans must be a string")
+		}
+		if s != "" {
+			t.Sans = s
+		}
 	}
-	if f.Mono != "" {
-		t.Mono = f.Mono
+	if v, ok := root["mono"]; ok && v != nil {
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("core: theme: mono must be a string")
+		}
+		if s != "" {
+			t.Mono = s
+		}
 	}
 	for _, m := range []struct {
-		p      *Palette
-		colors map[string]string
-		name   string
-	}{{&t.Light, f.Light, "light"}, {&t.Dark, f.Dark, "dark"}} {
-		for name, v := range m.colors {
+		p    *Palette
+		name string
+	}{{&t.Light, "light"}, {&t.Dark, "dark"}} {
+		colors, err := yamlStringMap(root[m.name], m.name)
+		if err != nil {
+			return nil, fmt.Errorf("core: theme: %w", err)
+		}
+		for name, v := range colors {
 			c, err := ParseColor(v)
 			if err != nil {
 				return nil, fmt.Errorf("core: theme: %s.%s: %w", m.name, name, err)
@@ -266,9 +279,27 @@ func ParseTheme(data []byte) (*Theme, error) {
 			m.p.SetColor(name, c)
 		}
 	}
-	if v := f.CSSVars; len(v.Theme)+len(v.Light)+len(v.Dark) > 0 {
-		if err := t.readVars(v.Theme, v.Light, v.Dark); err != nil {
-			return nil, err
+	if cv := root["cssVars"]; cv != nil {
+		vars, ok := cv.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("core: theme: cssVars must be a map")
+		}
+		themeVars, err := yamlStringMap(vars["theme"], "cssVars.theme")
+		if err != nil {
+			return nil, fmt.Errorf("core: theme: %w", err)
+		}
+		lightVars, err := yamlStringMap(vars["light"], "cssVars.light")
+		if err != nil {
+			return nil, fmt.Errorf("core: theme: %w", err)
+		}
+		darkVars, err := yamlStringMap(vars["dark"], "cssVars.dark")
+		if err != nil {
+			return nil, fmt.Errorf("core: theme: %w", err)
+		}
+		if len(themeVars)+len(lightVars)+len(darkVars) > 0 {
+			if err := t.readVars(themeVars, lightVars, darkVars); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return t, nil

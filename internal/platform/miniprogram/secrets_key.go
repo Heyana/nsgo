@@ -1,10 +1,11 @@
 package miniprogram
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"strings"
+
+	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
 // secretStoragePrefix keeps secrets disjoint from plain storage's "nsgo:<id>:"
@@ -14,13 +15,12 @@ const secretStoragePrefix = "nsgo-secret:"
 // secretStorageKey names (service, account) in encrypted mini program storage
 // without collisions across delimiters or length boundaries.
 func secretStorageKey(service, account string) string {
-	var n [4]byte
-	binary.BigEndian.PutUint32(n[:], uint32(len(service)))
-	h := sha256.New()
-	h.Write(n[:])
-	h.Write([]byte(service))
-	h.Write([]byte(account))
-	return secretStoragePrefix + hex.EncodeToString(h.Sum(nil))
+	buf := make([]byte, 4+len(service)+len(account))
+	binary.BigEndian.PutUint32(buf[:4], uint32(len(service)))
+	copy(buf[4:], service)
+	copy(buf[4+len(service):], account)
+	sum := driver.Sum256(buf)
+	return secretStoragePrefix + hex.EncodeToString(sum[:])
 }
 
 // isStorageNotFound reports whether a mini program storage failure means no

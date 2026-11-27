@@ -3,7 +3,6 @@ package driver
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -744,7 +743,7 @@ func (m MenuIcon) Key() string {
 	case m.SVG != nil:
 		return fmt.Sprintf("svg:%p:t:%v", m.SVG, m.IsTemplate())
 	case len(m.Data) > 0:
-		return fmt.Sprintf("data:%x:t:%v", sha256.Sum256(m.Data), m.Template)
+		return fmt.Sprintf("data:%x:t:%v", Sum256(m.Data), m.Template)
 	case !m.Source.Empty():
 		return fmt.Sprintf("src:%s:t:%v", m.Source.Key(), m.Template)
 	default:

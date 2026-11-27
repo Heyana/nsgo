@@ -1,4 +1,4 @@
-// Command hello is the smallest app worth packaging: it greets the name typed into it and counts its greetings, in English and Chinese, and its App Clip (clip) greets the name a link gives. Build it for every target to try the packages and installers (go tool nsgo build examples/hello); mini programs do not take it, as its module is past their 2 MB, and examples/gallery-miniprogram is the app for them.
+// Command hello is the smallest app worth packaging: it greets the name typed into it and counts its greetings, in English and Chinese, and its App Clip (clip) greets the name a link gives. Build it for every target to try the packages and installers (go tool nsgo build examples/hello), mini programs included.
 package main
 
 import (

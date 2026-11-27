@@ -1,9 +1,9 @@
 package core
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -74,7 +74,7 @@ func (cx *Scope) Download(req DownloadRequest, destination string, opts Download
 			return "", errors.New("invalid download header")
 		}
 	}
-	task := DownloadTask(rand.Text())
+	task := DownloadTask(fmt.Sprintf("%016x%016x", rand.Uint64(), rand.Uint64()))
 	if err := driver.SendDownload(driver.DownloadCommand{
 		Op: "start", ID: string(task), URL: u.String(), Path: filepath.Clean(destination),
 		CertificatePEM: opts.CertificatePEM, Headers: req.Headers,

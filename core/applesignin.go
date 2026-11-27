@@ -1,7 +1,6 @@
 package core
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -87,7 +86,7 @@ func (cx *Scope) SignInWithApple(opts AppleSignInOptions, done func(AppleCredent
 	}
 	r := driver.AppleSignInRequest{FullName: opts.FullName, Email: opts.Email}
 	if opts.Nonce != "" {
-		sum := sha256.Sum256([]byte(opts.Nonce))
+		sum := driver.Sum256([]byte(opts.Nonce))
 		r.Nonce = hex.EncodeToString(sum[:])
 	}
 	t.request(cx, driver.MountItem{Kind: driver.ItemSignInWithApple, AppleSignIn: &r}, func(ev driver.Event) {

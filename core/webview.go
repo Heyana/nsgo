@@ -1,11 +1,11 @@
 package core
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"maps"
+	"math/rand/v2"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -140,8 +140,10 @@ type webNode struct {
 	// refused is the source Access refused last.
 	refused string
 	// evals are the Evaluates waiting for their pages' answers, by the
-	// marker their answers start with.
-	evals map[string]func(string, error)
+	// marker their answers start with. The closure decodes raw with
+	// driver.WebEvaluateAnswer when err is nil, so encoding/json links
+	// only into apps that call Ref.Evaluate.
+	evals map[string]func(raw string, err error)
 }
 
 func cloneWebHeaders(headers map[string]string) map[string]string {
@@ -153,6 +155,7 @@ func cloneWebHeaders(headers map[string]string) map[string]string {
 
 func (t *Tree) mountWebView(cx *Scope, parent *node, w WebView) {
 	t.enableWebView()
+	t.webDispatch = (*Tree).dispatchWeb
 	n := t.newNode(driver.KindWeb, parent, cx)
 	t.setClasses(n, w.Class)
 	t.bindStyle(cx, n, w.Style, w.StyleFunc)
@@ -503,17 +506,18 @@ func (r *Ref) Evaluate(script string, done func(json string, err error)) {
 		done("", errors.New("nsgo: the web view runs no JavaScript"))
 		return
 	}
-	var key [8]byte
-	_, _ = rand.Read(key[:])
-	marker := evalMarker + hex.EncodeToString(key[:]) + ":"
+	marker := fmt.Sprintf("%s%016x%016x:", evalMarker, rand.Uint64(), rand.Uint64())
 	if wn.evals == nil {
 		wn.evals = map[string]func(string, error){}
 		r.t.touch(n)
 	}
 	t := r.t
-	wn.evals[marker] = func(json string, err error) {
+	wn.evals[marker] = func(raw string, err error) {
+		if err == nil {
+			raw, err = driver.WebEvaluateAnswer(raw)
+		}
 		if !n.owner.disposed {
-			t.within(n.owner, func() { done(json, err) })
+			t.within(n.owner, func() { done(raw, err) })
 		}
 	}
 	r.webCommand(driver.WebInjectJavaScript, driver.WebEvaluateScript(script, marker))
@@ -540,7 +544,7 @@ func (t *Tree) answerEval(n *node, text string) bool {
 		wn.evals = nil
 		t.touch(n)
 	}
-	done(driver.WebEvaluateAnswer(text[len(marker):]))
+	done(text[len(marker):], nil)
 	return true
 }
 

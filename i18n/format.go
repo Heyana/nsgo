@@ -4,16 +4,10 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/cldr"
-
-	"golang.org/x/text/feature/plural"
-	"golang.org/x/text/language"
-	"golang.org/x/text/message"
-	"golang.org/x/text/number"
 )
 
 // Category is a number's plural category in a language, by CLDR's
@@ -36,81 +30,194 @@ func (c Category) String() string {
 
 // Cardinal returns the plural category of n in lang, as FormatNumber
 // writes it: 1.0004 is written 1, whose category in English is one.
-func Cardinal(lang string, n float64) Category { return category(plural.Cardinal, lang, n) }
+func Cardinal(lang string, n float64) Category { return cardinalCategory(lang, n) }
 
 // Ordinal returns the ordinal category of n in lang: one, two, few and
 // other in English (1st, 2nd, 3rd, 4th).
-func Ordinal(lang string, n float64) Category { return category(plural.Ordinal, lang, n) }
+func Ordinal(lang string, n float64) Category { return ordinalCategory(lang, n) }
 
-func category(rules *plural.Rules, lang string, n float64) Category {
-	s := strconv.FormatFloat(math.Abs(n), 'f', 3, 64)
-	s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
-	whole, frac, _ := strings.Cut(s, ".")
-	i, err := strconv.Atoi(whole)
-	if err != nil {
-		// Beyond int's range: a million's multiple, as the rules see it.
-		i = 1_000_000_000
-	}
-	f, _ := strconv.Atoi(frac)
-	v := len(frac)
-	return Category(rules.MatchPlural(tag(lang), i, v, v, f, f))
+type numberSymbols struct {
+	decimal     string
+	group       string
+	minGroup    int // minimum integer digits before inserting grouping (4 means group at >= 1000, 5 at >= 10000)
+	indianGroup bool
+	percentPre  string
+	percentPost string
 }
 
-var tags, printers sync.Map // string → language.Tag, *message.Printer
-
-func tag(lang string) language.Tag {
-	if t, ok := tags.Load(lang); ok {
-		return t.(language.Tag)
+func symbolsFor(lang string) numberSymbols {
+	t, ok := cldr.ParseTag(lang)
+	base, region := "", ""
+	if ok {
+		base, region = t.Lang, t.Region
+	} else {
+		base = langBase(lang)
 	}
-	t := language.Make(lang)
-	tags.Store(lang, t)
-	return t
+	// Defaults match root / en.
+	s := numberSymbols{decimal: ".", group: ",", minGroup: 4, percentPost: "%"}
+	switch base {
+	case "de":
+		if region == "CH" || region == "LI" {
+			s.decimal, s.group, s.percentPost = ".", "\u2019", "\u00a0%"
+		} else {
+			s.decimal, s.group, s.percentPost = ",", ".", "\u00a0%"
+		}
+	case "fr":
+		s.decimal, s.group, s.percentPost = ",", "\u00a0", "\u00a0%"
+	case "es":
+		if region == "MX" || region == "US" || region == "PR" || region == "DO" || region == "GT" || region == "HN" || region == "NI" || region == "PA" || region == "SV" || region == "PE" {
+			s.decimal, s.group, s.percentPost = ".", ",", "\u00a0%"
+		} else {
+			s.decimal, s.group, s.minGroup, s.percentPost = ",", ".", 5, "\u00a0%"
+		}
+	case "it":
+		if region == "CH" {
+			s.decimal, s.group, s.percentPost = ".", "\u2019", "%"
+		} else {
+			s.decimal, s.group, s.percentPost = ",", ".", "%"
+		}
+	case "nl", "pt", "da", "el", "ro", "id", "vi", "ca", "gl", "eu", "is", "hr", "sr", "bs", "sl", "mk":
+		s.decimal, s.group = ",", "."
+		if base == "da" || base == "el" || base == "sl" || base == "hr" {
+			s.percentPost = "\u00a0%"
+		}
+	case "tr":
+		s.decimal, s.group, s.percentPre, s.percentPost = ",", ".", "%", ""
+	case "pl", "cs", "sk", "fi", "sv", "nb", "nn", "no", "ru", "uk", "be", "bg", "hu", "lt", "lv", "et", "kk", "ky", "uz", "az", "ka", "hy", "sq":
+		s.decimal, s.group = ",", "\u00a0"
+		if base == "pl" || base == "bg" || base == "et" {
+			s.minGroup = 5
+		}
+		if base == "cs" || base == "sk" || base == "fi" || base == "sv" || base == "nb" || base == "nn" || base == "no" || base == "lt" || base == "ka" {
+			s.percentPost = "\u00a0%"
+		}
+	case "hi", "bn", "gu", "kn", "ml", "mr", "or", "pa", "ta", "te", "as":
+		s.indianGroup = true
+	case "en":
+		if region == "IN" {
+			s.indianGroup = true
+		}
+	}
+	return s
 }
 
-func printer(lang string) *message.Printer {
-	if p, ok := printers.Load(lang); ok {
-		return p.(*message.Printer)
+func formatDecimal(lang string, n float64, minFrac, maxFrac int, group, percent bool) string {
+	if math.IsNaN(n) {
+		return "NaN"
 	}
-	p := message.NewPrinter(tag(lang))
-	printers.Store(lang, p)
-	return p
+	if math.IsInf(n, 1) {
+		return "∞"
+	}
+	if math.IsInf(n, -1) {
+		return "-∞"
+	}
+	sym := symbolsFor(lang)
+	if percent {
+		n *= 100
+	}
+	neg := math.Signbit(n)
+	abs := math.Abs(n)
+	raw := strconv.FormatFloat(abs, 'f', maxFrac, 64)
+	whole, frac, hasFrac := strings.Cut(raw, ".")
+	if hasFrac {
+		for len(frac) > minFrac && frac[len(frac)-1] == '0' {
+			frac = frac[:len(frac)-1]
+		}
+	}
+	if whole == "0" && frac == "" {
+		neg = false
+	}
+	if group && len(whole) >= sym.minGroup {
+		whole = insertGrouping(whole, sym.group, sym.indianGroup)
+	}
+	var b strings.Builder
+	if neg {
+		b.WriteByte('-')
+	}
+	if percent && sym.percentPre != "" {
+		b.WriteString(sym.percentPre)
+	}
+	b.WriteString(whole)
+	if len(frac) > 0 {
+		b.WriteString(sym.decimal)
+		b.WriteString(frac)
+	}
+	if percent && sym.percentPost != "" {
+		b.WriteString(sym.percentPost)
+	}
+	return b.String()
+}
+
+func insertGrouping(whole, sep string, indian bool) string {
+	n := len(whole)
+	if n <= 3 {
+		return whole
+	}
+	var parts []string
+	end := n
+	first := 3
+	step := 3
+	if indian {
+		step = 2
+	}
+	if end > first {
+		parts = append(parts, whole[end-first:end])
+		end -= first
+		for end > step {
+			parts = append(parts, whole[end-step:end])
+			end -= step
+		}
+	}
+	if end > 0 {
+		parts = append(parts, whole[:end])
+	}
+	var b strings.Builder
+	for i := len(parts) - 1; i >= 0; i-- {
+		if i < len(parts)-1 {
+			b.WriteString(sep)
+		}
+		b.WriteString(parts[i])
+	}
+	return b.String()
 }
 
 // FormatNumber writes n in lang's way, with up to three fraction digits
 // and grouped: 1,234.5 in English, 1.234,5 in German.
-func FormatNumber(lang string, n float64) string { return printer(lang).Sprint(number.Decimal(n)) }
+func FormatNumber(lang string, n float64) string { return formatDecimal(lang, n, 0, 3, true, false) }
 
 // FormatInteger writes n rounded to an integer in lang's way.
-func FormatInteger(lang string, n float64) string {
-	return printer(lang).Sprint(number.Decimal(n, number.MaxFractionDigits(0)))
-}
+func FormatInteger(lang string, n float64) string { return formatDecimal(lang, n, 0, 0, true, false) }
 
 // FormatPercent writes n, a fraction, as a percentage in lang's way: 25%
 // in English for 0.25, 25 % in German.
-func FormatPercent(lang string, n float64) string { return printer(lang).Sprint(number.Percent(n)) }
+func FormatPercent(lang string, n float64) string { return formatDecimal(lang, n, 0, 0, true, true) }
 
 // FormatNumberSkeleton writes n in lang's way by an ICU number skeleton,
 // as a message's {n, number, ::.00} does: of its stems percent, integer,
 // the fraction digits (.00 two, .0# one or two) and group-off.
 func FormatNumberSkeleton(lang string, n float64, skeleton string) string {
-	var opts []number.Option
 	percent := false
+	group := true
+	minFrac, maxFrac := 0, 3
+	setFrac := false
 	for _, stem := range strings.Fields(skeleton) {
 		switch {
 		case stem == "percent":
 			percent = true
+			if !setFrac {
+				maxFrac = 0
+			}
 		case stem == "integer", stem == "precision-integer":
-			opts = append(opts, number.MaxFractionDigits(0))
+			minFrac, maxFrac, setFrac = 0, 0, true
 		case stem == "group-off":
-			opts = append(opts, number.NoSeparator())
+			group = false
 		case strings.HasPrefix(stem, "."):
-			opts = append(opts, number.MinFractionDigits(strings.Count(stem, "0")), number.MaxFractionDigits(len(stem)-1))
+			minFrac = strings.Count(stem, "0")
+			maxFrac = len(stem) - 1
+			setFrac = true
 		}
 	}
-	if percent {
-		return printer(lang).Sprint(number.Percent(n, opts...))
-	}
-	return printer(lang).Sprint(number.Decimal(n, opts...))
+	return formatDecimal(lang, n, minFrac, maxFrac, group, percent)
 }
 
 // Style is the length of a date or a time as CLDR's patterns write it.

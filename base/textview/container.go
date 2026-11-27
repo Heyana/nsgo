@@ -1,48 +1,27 @@
 package textview
 
-import (
-	"strings"
+import "strings"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
-)
-
-// container is a :::name block of an Extension's: its blocks are parsed
-// as the document's are. goldmark has no such syntax.
-type container struct {
-	ast.BaseBlock
-	name   string
-	attrs  map[string]string
-	colons int
-}
-
-var kindContainer = ast.NewNodeKind("Container")
-
-func (n *container) Kind() ast.NodeKind { return kindContainer }
-
-func (n *container) Dump(src []byte, level int) {
-	ast.DumpHelper(n, src, level, map[string]string{"Name": n.name}, nil)
-}
-
-// containerParser opens containers of its names: three or more colons, the
-// name, an optional [label] and {attributes}. A line of at least as many
-// colons closes one.
-type containerParser struct{ names map[string]string } // container → node name
-
-func (p *containerParser) Trigger() []byte { return []byte{':'} }
-
-func (p *containerParser) Open(_ ast.Node, reader text.Reader, pc parser.Context) (ast.Node, parser.State) {
-	line, _ := reader.PeekLine()
-	pos := pc.BlockOffset()
-	if pos < 0 {
-		return nil, parser.NoChildren
+// parseContainerOpen checks whether line opens a :::name container registered
+// in names (container keyword → Custom.Name). Returns the Custom name, parsed
+// attributes, colon count and true on match.
+func parseContainerOpen(line string, names map[string]string) (name string, attrs map[string]string, colons int, ok bool) {
+	if len(names) == 0 {
+		return "", nil, 0, false
 	}
-	rest := strings.TrimRight(string(line[pos:]), " \t\r\n")
-	colons := len(rest) - len(strings.TrimLeft(rest, ":"))
+	trimmed := strings.TrimRight(line, " \t\r\n")
+	// Up to 3 leading spaces.
+	lead := 0
+	for lead < len(trimmed) && lead < 4 && trimmed[lead] == ' ' {
+		lead++
+	}
+	if lead >= 4 {
+		return "", nil, 0, false
+	}
+	rest := trimmed[lead:]
+	colons = len(rest) - len(strings.TrimLeft(rest, ":"))
 	if colons < 3 {
-		return nil, parser.NoChildren
+		return "", nil, 0, false
 	}
 	rest = rest[colons:]
 	end := strings.IndexFunc(rest, func(c rune) bool {
@@ -51,36 +30,40 @@ func (p *containerParser) Open(_ ast.Node, reader text.Reader, pc parser.Context
 	if end < 0 {
 		end = len(rest)
 	}
-	name, ok := p.names[rest[:end]]
+	name, ok = names[rest[:end]]
 	if !ok {
-		return nil, parser.NoChildren
+		return "", nil, 0, false
 	}
-	n := &container{name: name, colons: colons}
+	set := func(k, v string) {
+		if attrs == nil {
+			attrs = map[string]string{}
+		}
+		attrs[k] = v
+	}
 	rest = rest[end:]
 	if strings.HasPrefix(rest, "[") {
 		if close := strings.IndexByte(rest, ']'); close > 0 {
-			n.set("label", rest[1:close])
+			set("label", rest[1:close])
 			rest = rest[close+1:]
 		}
 	}
 	if strings.HasPrefix(rest, "{") {
 		if close := strings.IndexByte(rest, '}'); close > 0 {
-			n.parseAttrs(rest[1:close])
+			parseContainerAttrs(rest[1:close], set, func(k string) string { return attrs[k] })
 		}
 	}
-	reader.AdvanceToEOL()
-	return n, parser.HasChildren
+	return name, attrs, colons, true
 }
 
-func (n *container) set(k, v string) {
-	if n.attrs == nil {
-		n.attrs = map[string]string{}
-	}
-	n.attrs[k] = v
+// isContainerClose reports whether line closes a container opened with colons
+// colons (a line of at least colons colons and optional surrounding spaces).
+func isContainerClose(line string, colons int) bool {
+	trimmed := strings.TrimSpace(line)
+	return len(trimmed) >= colons && len(strings.Trim(trimmed, ":")) == 0
 }
 
-// parseAttrs reads key=value, key="quoted value", .class and #id.
-func (n *container) parseAttrs(s string) {
+// parseContainerAttrs reads key=value, key="quoted value", .class and #id.
+func parseContainerAttrs(s string, set func(k, v string), get func(k string) string) {
 	for {
 		if s = strings.TrimLeft(s, " \t"); s == "" {
 			return
@@ -95,7 +78,7 @@ func (n *container) parseAttrs(s string) {
 			} else {
 				s = ""
 			}
-			n.set(key, value)
+			set(key, value)
 			continue
 		}
 		if end < 0 {
@@ -105,25 +88,11 @@ func (n *container) parseAttrs(s string) {
 		s = s[end:]
 		switch {
 		case strings.HasPrefix(word, "."):
-			n.set("class", strings.TrimSpace(n.attrs["class"]+" "+word[1:]))
+			set("class", strings.TrimSpace(get("class")+" "+word[1:]))
 		case strings.HasPrefix(word, "#"):
-			n.set("id", word[1:])
+			set("id", word[1:])
 		default:
-			n.set(word, "")
+			set(word, "")
 		}
 	}
 }
-
-func (p *containerParser) Continue(node ast.Node, reader text.Reader, _ parser.Context) parser.State {
-	line, _ := reader.PeekLine()
-	trimmed := util.TrimRightSpace(util.TrimLeftSpace(line))
-	if len(trimmed) >= node.(*container).colons && len(strings.Trim(string(trimmed), ":")) == 0 {
-		reader.AdvanceToEOL()
-		return parser.Close
-	}
-	return parser.Continue | parser.HasChildren
-}
-
-func (p *containerParser) Close(ast.Node, text.Reader, parser.Context) {}
-func (p *containerParser) CanInterruptParagraph() bool                 { return true }
-func (p *containerParser) CanAcceptIndentedLine() bool                 { return false }

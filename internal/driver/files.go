@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"mime"
 	"os"
 	"path/filepath"
 	"slices"
@@ -392,7 +391,7 @@ func mimeForExtension(ext string) string {
 	if t := mimeinfo.ForExtension(ext); t != "" {
 		return t
 	}
-	t, _, _ := strings.Cut(mime.TypeByExtension("."+strings.ToLower(ext)), ";")
+	t, _, _ := strings.Cut(sysTypeByExtension("."+strings.ToLower(ext)), ";")
 	return strings.TrimSpace(t)
 }
 
@@ -445,8 +444,7 @@ func (r FilesRequest) Extensions() (exts []string, any bool) {
 			add(ext)
 		}
 		if !wild {
-			sys, _ := mime.ExtensionsByType(t)
-			for _, e := range sys {
+			for _, e := range sysExtensionsByType(t) {
 				add(strings.TrimPrefix(e, "."))
 			}
 		}

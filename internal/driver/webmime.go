@@ -3,7 +3,6 @@ package driver
 import (
 	"bytes"
 	"encoding/binary"
-	"mime"
 	"path/filepath"
 )
 
@@ -11,7 +10,7 @@ import (
 // trusts the URL's extension, then applies the small signature set browsers
 // use for responses without one. The fallback is always a valid media type.
 func WebMIME(path string, body []byte) string {
-	if typ := mime.TypeByExtension(filepath.Ext(path)); typ != "" {
+	if typ := sysTypeByExtension(filepath.Ext(path)); typ != "" {
 		return typ
 	}
 	if len(body) > webSniffLen {

@@ -1,7 +1,6 @@
 package driver
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"image"
 	"strconv"
@@ -1381,7 +1380,7 @@ func (s ImageSource) Key() string {
 		return fmt.Sprintf("pixels:%p:%d", s.Pixels, s.Version)
 	}
 	if len(s.Data) > 0 {
-		return fmt.Sprintf("data:%x", sha256.Sum256(s.Data))
+		return fmt.Sprintf("data:%x", Sum256(s.Data))
 	}
 	return s.URI
 }

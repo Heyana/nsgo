@@ -2,7 +2,6 @@ package core
 
 import (
 	"cmp"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"sync/atomic"
@@ -333,7 +332,7 @@ func (cx *Scope) LoadSound(src AudioSource, done func(*Sound, error)) {
 	}
 	key := soundKey{tree: t, source: "uri:" + src.URI, restricted: restricted}
 	if len(src.Data) > 0 {
-		sum := sha256.Sum256(src.Data)
+		sum := driver.Sum256(src.Data)
 		key.source = "sha256:" + hex.EncodeToString(sum[:])
 	}
 	b := st.buffers[key]

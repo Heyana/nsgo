@@ -12,7 +12,6 @@ import (
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/cldr"
-	"golang.org/x/text/language"
 )
 
 // Catalog is the languages a package's messages are written in: its
@@ -21,7 +20,6 @@ import (
 type Catalog struct {
 	mu      sync.RWMutex
 	langs   []string
-	matcher language.Matcher
 	matched map[string]string
 }
 
@@ -50,7 +48,7 @@ func (c *Catalog) Add(lang string) {
 		}
 	}
 	c.langs = append(c.langs, lang)
-	c.matcher, c.matched = nil, nil
+	c.matched = nil
 }
 
 // Match returns the catalog's language that suits locale best, as
@@ -68,19 +66,10 @@ func (c *Catalog) Match(locale string) string {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.matcher == nil {
-		tags := make([]language.Tag, len(c.langs))
-		for i, l := range c.langs {
-			tags[i] = language.Make(l)
-		}
-		c.matcher, c.matched = language.NewMatcher(tags), map[string]string{}
+	if c.matched == nil {
+		c.matched = map[string]string{}
 	}
-	lang = c.langs[0]
-	if t, err := language.Parse(locale); err == nil {
-		if _, i, conf := c.matcher.Match(t); conf >= language.High {
-			lang = c.langs[i]
-		}
-	}
+	lang = cldr.MatchCatalog(c.langs, locale)
 	c.matched[locale] = lang
 	return lang
 }
@@ -117,12 +106,7 @@ func Parent(lang string) string {
 	if p, ok := parents.Load(lang); ok {
 		return p.(string)
 	}
-	p := ""
-	if t, err := language.Parse(lang); err == nil {
-		if t = t.Parent(); !t.IsRoot() {
-			p = t.String()
-		}
-	}
+	p := cldr.ParentLocale(lang)
 	parents.Store(lang, p)
 	return p
 }

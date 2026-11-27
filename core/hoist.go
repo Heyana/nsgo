@@ -13,10 +13,14 @@ import (
 // native views go into their host: the nearest modal around them, or the
 // root view. Each is a layout root of its own at its host's size.
 
+// overlaySpec and modalSpec hold Overlay's and Modal's fields without their Node methods so hoistNode does not keep their mountIn methods live when unused.
+type overlaySpec Overlay
+type modalSpec Modal
+
 type hoistNode struct {
 	host    *node
-	overlay *Overlay // nil for a modal or a fixed view
-	modal   *Modal
+	overlay *overlaySpec // nil for a modal or a fixed view
+	modal   *modalSpec
 	// fixed is a view hoisted while its position is Fixed.
 	fixed  bool
 	placed OverlayPosition
@@ -300,7 +304,8 @@ func (h *hoistNode) topmost() bool { return h.overlay != nil && h.overlay.Topmos
 
 func (t *Tree) mountOverlay(cx *Scope, parent *node, o Overlay) {
 	n := t.newNode(driver.KindView, parent, cx)
-	h := &hoistNode{overlay: &o}
+	spec := overlaySpec(o)
+	h := &hoistNode{overlay: &spec}
 	t.hoist(n, h)
 	t.bindClasses(cx, n, o.Class, o.ClassFunc)
 	t.bindStyle(cx, n, o.Style, o.StyleFunc)
@@ -340,7 +345,8 @@ func (t *Tree) mountModal(cx *Scope, parent *node, m Modal) {
 	for s := n.owner; s != nil; s = s.parent {
 		owners = append(owners, s)
 	}
-	t.hoist(n, &hoistNode{modal: &m, reported: NewSignal[*modalSize](cx, nil), owners: owners})
+	spec := modalSpec(m)
+	t.hoist(n, &hoistNode{modal: &spec, reported: NewSignal[*modalSize](cx, nil), owners: owners})
 	// What it covers leaves the keymap (keyActive).
 	t.keysChanged = true
 	t.setClasses(n, m.Class)
@@ -694,7 +700,7 @@ func (t *Tree) syncPosition(n *node) {
 }
 
 // anchorRect returns ref's bounds in host's coordinates.
-func (t *Tree) anchorRect(o *Overlay, host *node) (Bounds, bool) {
+func (t *Tree) anchorRect(o *overlaySpec, host *node) (Bounds, bool) {
 	ref := o.Anchor
 	if ref == nil || ref.n == nil || ref.n.deleted {
 		return Bounds{}, false
@@ -991,7 +997,7 @@ func (t *Tree) pressOutside(n *node, at Point) {
 		return
 	}
 	// Its anchor's whole box, what a press on it reaches.
-	if a, ok := t.anchorRect(&Overlay{Anchor: n.hoist.overlay.Anchor}, t.view); ok && a.Contains(at) {
+	if a, ok := t.anchorRect(&overlaySpec{Anchor: n.hoist.overlay.Anchor}, t.view); ok && a.Contains(at) {
 		return
 	}
 	// Above n are the overlays and modals after it in its host, and in each view around it that hosts some, those after the one it is in, or all of them around a frame's views, as the root view's Topmost overlays are above every modal, up to a sheet the platform presents, which shows above all its host holds.

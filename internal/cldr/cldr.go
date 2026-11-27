@@ -12,23 +12,33 @@ import (
 	"io"
 	"strings"
 	"sync"
-
-	"golang.org/x/text/language"
 )
 
-// tables are the generated tables, inflated on first use.
-var tables = sync.OnceValue(func() (t struct {
+type cldrTables struct {
 	names   []string
 	records []string
-}) {
-	t.names = strings.Split(localeNames, " ")
-	data, err := io.ReadAll(flate.NewReader(strings.NewReader(packedLocales)))
-	if err != nil {
-		panic("cldr: the tables do not inflate: " + err.Error())
-	}
-	t.records = strings.Split(string(data), "\x1d")
-	return t
-})
+}
+
+var (
+	tablesOnce sync.Once
+	tablesVal  cldrTables
+)
+
+// tables returns the generated tables, inflated on first use. Built inside a
+// function rather than a package-level sync.OnceValue so apps that only use
+// i18n message catalogs or pseudolocalization leave packedLocales and
+// compress/flate unlinked.
+func tables() cldrTables {
+	tablesOnce.Do(func() {
+		tablesVal.names = strings.Split(localeNames, " ")
+		data, err := io.ReadAll(flate.NewReader(strings.NewReader(packedLocales)))
+		if err != nil {
+			panic("cldr: the tables do not inflate: " + err.Error())
+		}
+		tablesVal.records = strings.Split(string(data), "\x1d")
+	})
+	return tablesVal
+}
 
 // localeData is a locale's entries, its parents' included (see
 // internal/gen for the keys).
@@ -88,22 +98,19 @@ func search(locale string) int {
 		}
 		return -1
 	}
-	t, err := language.Parse(strings.ReplaceAll(locale, "_", "-"))
-	if err == nil {
-		base, _ := t.Base()
-		script, _ := t.Script()
-		region, rconf := t.Region()
-		b, s := base.String(), script.String()
-		likely, _ := language.Make(b).Script()
+	if t, ok := ParseTag(locale); ok {
+		b := t.Lang
+		s := t.CanonicalScript()
+		likely := LikelyScript(b, "")
 		var candidates []string
-		if rconf == language.Exact {
-			candidates = append(candidates, b+"-"+s+"-"+region.String())
-			if likely == script {
-				candidates = append(candidates, b+"-"+region.String())
+		if t.Region != "" {
+			candidates = append(candidates, b+"-"+s+"-"+t.Region)
+			if likely == s {
+				candidates = append(candidates, b+"-"+t.Region)
 			}
 		}
 		candidates = append(candidates, b+"-"+s)
-		if likely == script {
+		if likely == s {
 			candidates = append(candidates, b)
 		}
 		for _, c := range candidates {

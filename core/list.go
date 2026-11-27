@@ -230,8 +230,11 @@ func (p ListRow) First() bool { return p.index.Get() == 0 }
 // Last reports whether the row is the last.
 func (p ListRow) Last() bool { return p.index.Get() == p.count.Get()-1 }
 
+// listSpec holds List's fields without its Node methods so listNode does not keep List.mountIn live when an app never uses List.
+type listSpec List
+
 type listNode struct {
-	spec  List
+	spec  listSpec
 	owner *Scope
 	// view is the scroll view, or in its parent's viewport the plain view
 	// that clips the cells.
@@ -335,7 +338,8 @@ type listCommand struct {
 }
 
 func (t *Tree) mountList(cx *Scope, parent *node, l List) {
-	ln := &listNode{spec: l, owner: cx, byIndex: map[int]*listCell{}, loadAt: -1, loadAtStart: -1, st: newListState(),
+	t.updateListsFn = t.updateLists
+	ln := &listNode{spec: listSpec(l), owner: cx, byIndex: map[int]*listCell{}, loadAt: -1, loadAtStart: -1, st: newListState(),
 		viewable: [2]int{-1, -1}, latest: [2]int{-1, -1}}
 	if ln.spec.EstimatedSize <= 0 {
 		ln.spec.EstimatedSize = 50

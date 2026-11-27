@@ -3,7 +3,6 @@ package ui
 import (
 	"github.com/nsgo-dev/nsgo/base"
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/icons/lucide"
 )
 
 // Checkbox is checked, unchecked or indeterminate, with Text or the app's
@@ -43,8 +42,23 @@ func (c Checkbox) Render(cx *core.Scope) core.Node {
 		on(gs, &core.Style{Display: core.DisplayFlex})
 		return core.Style{Display: core.DisplayNone, GroupStyle: gs}
 	}
+	checkSize := core.Points(iconSize - 4)
 	check := core.View{Style: shown(func(gs *core.GroupStyle, s *core.Style) { gs.Checked = s }),
-		Children: []core.Node{Icon(lucide.Check, iconSize-4, colors.OnAccent)}}
+		Children: []core.Node{core.Canvas{
+			Style: core.Style{Width: core.Pt(checkSize), Height: core.Pt(checkSize)},
+			Draw: func(d *core.Drawing, s core.Size) {
+				scale := float32(min(s.Width, s.Height)) / 24
+				var p core.Path
+				p.MoveTo(20*scale, 6*scale)
+				p.LineTo(9*scale, 17*scale)
+				p.LineTo(4*scale, 12*scale)
+				d.SetStrokeColor(colors.OnAccent())
+				d.SetLineWidth(2 * scale)
+				d.SetLineCap(core.CapRound)
+				d.SetLineJoin(core.JoinRound)
+				d.StrokePath(&p)
+			},
+		}}}
 	dash := core.View{Style: core.Style{Width: core.Pt(iconSize / 2), Height: core.Pt(2), CornerRadius: 1}.
 		Merge(shown(func(gs *core.GroupStyle, s *core.Style) { gs.Indeterminate = s })), StyleFunc: Filled(colors.OnAccent)}
 	box := core.Style{Width: core.Pt(iconSize), Height: core.Pt(iconSize), CornerRadius: RadiusSmall, BorderWidth: 1,

@@ -26,18 +26,24 @@ var unlinked = map[string][]string{
 		"testing", "github.com/nsgo-dev/nsgo/nsgotest", "github.com/nsgo-dev/nsgo/internal/automation",
 		// Only builds tagged nsgotui (nsgo -target tui) link the terminal backend and its cell library.
 		"github.com/nsgo-dev/nsgo/internal/platform/tui", "github.com/gdamore/tcell/v3",
+		// Markdown and i18n formatting use NSGo's own compact implementations instead of goldmark and golang.org/x/text's plural/message/number tables.
+		"github.com/yuin/goldmark",
+		"golang.org/x/text/feature/plural", "golang.org/x/text/message", "golang.org/x/text/number",
 	},
-	// The page decodes and encodes images with the browser's codecs, and links its 2D canvas player only when an app draws a canvas or icon.
+	// The page decodes and encodes images with the browser's codecs, and links its 2D canvas player only when an app draws a canvas or icon. Web and mini-program builds also keep YAML, regexp, SVG/XML, updates/ed25519, mime and x/text unlinked when unused.
 	"js": {
 		"image/png", "image/jpeg", "image/gif", "golang.org/x/image/webp", "golang.org/x/image/draw",
 		"github.com/nsgo-dev/nsgo/internal/platform/canvas2d",
 		"github.com/nsgo-dev/nsgo/internal/shaderir/glsl",
+		"go.yaml.in/yaml/v3", "regexp", "crypto/ed25519",
+		"github.com/nsgo-dev/nsgo/internal/platform/updates",
+		"encoding/xml", "golang.org/x/text/language", "mime",
 	},
 	// Android's DNS resolver links only when an app uses Go networking of its own.
-	"android": {"net", "github.com/nsgo-dev/nsgo/internal/shaderir/glsl"},
-	// Only Android reads its resources from a zip, the APK.
-	"darwin":  {"archive/zip", "github.com/nsgo-dev/nsgo/internal/shaderir/msl"},
-	"windows": {"archive/zip", "github.com/nsgo-dev/nsgo/internal/shaderir/hlsl"},
+	"android": {"net", "github.com/nsgo-dev/nsgo/internal/shaderir/glsl", "go.yaml.in/yaml/v3"},
+	// Only Android reads its resources from a zip, the APK. macOS and Windows verify updates through Sparkle/WinSparkle rather than Go's ed25519.
+	"darwin":  {"archive/zip", "github.com/nsgo-dev/nsgo/internal/shaderir/msl", "go.yaml.in/yaml/v3", "crypto/ed25519"},
+	"windows": {"archive/zip", "github.com/nsgo-dev/nsgo/internal/shaderir/hlsl", "go.yaml.in/yaml/v3", "crypto/ed25519"},
 	"linux":   {"archive/zip", "github.com/nsgo-dev/nsgo/internal/shaderir/glsl"},
 }
 
@@ -117,9 +123,76 @@ func TestTextViewAppLinks(t *testing.T) {
 	for pkg := range linked {
 		if strings.HasPrefix(pkg, "github.com/caelyreth/untie") || pkg == "github.com/nsgo-dev/nsgo/base/formula" ||
 			strings.HasPrefix(pkg, "github.com/firede/limu") || pkg == "github.com/nsgo-dev/nsgo/base/diagram" ||
-			pkg == "github.com/nsgo-dev/nsgo/base/internal/emoji" {
+			pkg == "github.com/nsgo-dev/nsgo/base/internal/emoji" || pkg == "github.com/yuin/goldmark" {
 			t.Errorf("an app showing a text view without formulas, diagrams or emoji picker links %s", pkg)
 		}
+	}
+}
+
+// TestUIAppLinks verifies that an app of common ui controls (Button, Input,
+// Switch, Checkbox, Badge, Avatar) links no YAML parser, goldmark, SVG/XML
+// parser, CLDR date tables, golang.org/x/text or unused updater crypto.
+func TestUIAppLinks(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("needs the go command")
+	}
+	for _, tc := range []struct {
+		name, goos, goarch, tags   string
+		unlinkedPkgs, unlinkedSyms []string
+	}{
+		{
+			name: "darwin_arm64", goos: "darwin", goarch: "arm64",
+			unlinkedPkgs: []string{
+				"go.yaml.in/yaml/v3",
+				"crypto/ed25519",
+				"github.com/yuin/goldmark",
+				"golang.org/x/text/language",
+				"golang.org/x/text/feature/plural",
+				"golang.org/x/text/message",
+				"golang.org/x/text/number",
+			},
+			unlinkedSyms: []string{
+				"github.com/nsgo-dev/nsgo/core.MustParseSVG",
+				"github.com/nsgo-dev/nsgo/internal/cldr.tables",
+			},
+		},
+		{
+			name: "miniprogram", goos: "js", goarch: "wasm", tags: "nsgominiprogram,nsgo_noshader",
+			unlinkedPkgs: []string{
+				"go.yaml.in/yaml/v3",
+				"regexp",
+				"crypto/ed25519",
+				"github.com/nsgo-dev/nsgo/internal/platform/updates",
+				"github.com/yuin/goldmark",
+				"encoding/xml",
+				"github.com/nsgo-dev/nsgo/internal/cldr",
+				"golang.org/x/text/language",
+				"golang.org/x/text/feature/plural",
+				"golang.org/x/text/message",
+				"golang.org/x/text/number",
+				"mime",
+			},
+			unlinkedSyms: []string{
+				"github.com/nsgo-dev/nsgo/internal/driver.ParseSVG",
+				"github.com/nsgo-dev/nsgo/core.MustParseSVG",
+				"github.com/nsgo-dev/nsgo/internal/cldr.tables",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			linked, syms := linkedPackagesAndSymbolsOf(t, moduleRoot+"/testdata/uicommon", tc.goos, tc.goarch, tc.tags)
+			for _, pkg := range tc.unlinkedPkgs {
+				if linked[pkg] {
+					t.Errorf("common ui app links %s", pkg)
+				}
+			}
+			for _, sym := range tc.unlinkedSyms {
+				if syms[sym] {
+					t.Errorf("common ui app links %s", sym)
+				}
+			}
+		})
 	}
 }
 
@@ -239,7 +312,19 @@ func TestDevBuildsLink(t *testing.T) {
 	t.Run("miniprogram_release", func(t *testing.T) {
 		t.Parallel()
 		linked := linkedPackages(t, "js", "wasm", "nsgominiprogram,nsgo_noshader")
-		for _, pkg := range []string{"net/http", "github.com/nsgo-dev/nsgo/internal/dev/locales"} {
+		for _, pkg := range []string{
+			"net/http",
+			"github.com/nsgo-dev/nsgo/internal/dev/locales",
+			"go.yaml.in/yaml/v3",
+			"regexp",
+			"crypto/ed25519",
+			"github.com/nsgo-dev/nsgo/internal/platform/updates",
+			"github.com/yuin/goldmark",
+			"encoding/xml",
+			"github.com/nsgo-dev/nsgo/internal/cldr",
+			"golang.org/x/text/language",
+			"mime",
+		} {
 			if linked[pkg] {
 				t.Errorf("a release mini program links %s", pkg)
 			}

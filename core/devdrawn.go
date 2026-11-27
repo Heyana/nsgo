@@ -126,6 +126,7 @@ func (t *Tree) ensureDevDrawn() *devDrawn {
 		d.views[n.id] = v
 	}
 	t.devDrawn = d
+	t.syncDevDrawnFn = t.syncDevDrawn
 	return d
 }
 

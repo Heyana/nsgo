@@ -1,82 +1,73 @@
 package textview
 
 import (
-	"bytes"
 	"strings"
 	"unicode"
-
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
 )
 
 // Formulas are read as markdown-rs reads them (math_text and math_flow):
 // dollars around TeX in text ($x$, $$x$$), and a block between fences of
-// two or more dollars on lines of their own. goldmark has no such syntax.
+// two or more dollars on lines of their own.
 
-// mathInline is a formula in text.
-type mathInline struct {
-	ast.BaseInline
-	tex string
+// parseInlineMath reads an inline $...$ or $$...$$ formula starting at src[pos].
+// As in code spans, a line ending is a space, one space inside each end is
+// dropped, and backslashes are TeX's. A pair of single dollars is prose
+// ("costs $5 and $10") unless, as NSH decides, its TeX neither starts nor ends
+// with a space once padded, and the second is not before a digit.
+func parseInlineMath(src string, pos int) (tex string, end int, ok bool) {
+	// A run starts at its first dollar, not inside a run that opened nothing.
+	if pos > 0 && src[pos-1] == '$' && (pos < 2 || src[pos-2] != '\\') {
+		return "", 0, false
+	}
+	n := dollarsStr(src, pos)
+	if n == 0 {
+		return "", 0, false
+	}
+	for i := pos + n; i < len(src); {
+		if src[i] != '$' {
+			i++
+			continue
+		}
+		m := dollarsStr(src, i)
+		if m != n {
+			i += m
+			continue
+		}
+		value := padding(src[pos+n : i])
+		if n == 1 && (value == "" || isSpaceByte(value[0]) || isSpaceByte(value[len(value)-1]) ||
+			i+m < len(src) && isDigit(src[i+m])) {
+			return "", 0, false
+		}
+		return value, i + m, true
+	}
+	return "", 0, false
 }
 
-var kindMathInline = ast.NewNodeKind("MathInline")
-
-func (n *mathInline) Kind() ast.NodeKind { return kindMathInline }
-
-func (n *mathInline) Dump(src []byte, level int) {
-	ast.DumpHelper(n, src, level, map[string]string{"TeX": n.tex}, nil)
+// parseMathBlockOpen reports whether line opens a $$+ display math block.
+// Returns the leading indent, fence dollar count, and true on match.
+func parseMathBlockOpen(line string) (indent, fence int, ok bool) {
+	indent = leadingSpaces(line)
+	if indent >= 4 {
+		return 0, 0, false
+	}
+	rest := line[indent:]
+	n := dollarsStr(rest, 0)
+	if n < 2 || strings.IndexByte(rest[n:], '$') >= 0 {
+		return 0, 0, false
+	}
+	return indent, n, true
 }
 
-// mathInlineParser reads a run of dollars, the TeX, then a run of as many
-// dollars. As in code spans, a line ending is a space, one space inside
-// each end is dropped, and backslashes are TeX's. A pair of single
-// dollars is prose ("costs $5 and $10") unless, as NSH decides, its TeX
-// neither starts nor ends with a space once padded, and the second is not
-// before a digit.
-type mathInlineParser struct{}
-
-func (p *mathInlineParser) Trigger() []byte { return []byte{'$'} }
-
-func (p *mathInlineParser) Parse(_ ast.Node, block text.Reader, _ parser.Context) ast.Node {
-	line, seg := block.PeekLine()
-	src := block.Source()
-	// A run starts at its first dollar, not inside a run that opened
-	// nothing.
-	if at := seg.Start; at > 0 && src[at-1] == '$' && (at < 2 || src[at-2] != '\\') {
-		return nil
+// isMathBlockClose reports whether line closes a display math block with at
+// least fence dollars and only trailing whitespace.
+func isMathBlockClose(line string, fence int) bool {
+	indent := leadingSpaces(line)
+	if indent >= 4 {
+		return false
 	}
-	n := dollars(line, 0)
-	block.Advance(n)
-	var tex []byte
-	for {
-		line, _ := block.PeekLine()
-		if line == nil {
-			return nil
-		}
-		for i := 0; i < len(line); {
-			if line[i] != '$' {
-				i++
-				continue
-			}
-			m := dollars(line, i)
-			if m != n {
-				i += m
-				continue
-			}
-			tex = append(tex, line[:i]...)
-			value := padding(string(tex))
-			if n == 1 && (value == "" || isSpaceByte(value[0]) || isSpaceByte(value[len(value)-1]) ||
-				i+m < len(line) && isDigit(line[i+m])) {
-				return nil
-			}
-			block.Advance(i + m)
-			return &mathInline{tex: value}
-		}
-		tex = append(tex, line...)
-		block.AdvanceLine()
-	}
+	rest := line[indent:]
+	n := dollarsStr(rest, 0)
+	return n >= fence && strings.TrimSpace(rest[n:]) == ""
 }
 
 // padding returns a formula's TeX with its line endings as spaces, and
@@ -89,8 +80,8 @@ func padding(tex string) string {
 	return tex
 }
 
-// dollars counts the dollars from at on.
-func dollars(line []byte, at int) int {
+// dollarsStr counts the dollars from at on.
+func dollarsStr(line string, at int) int {
 	n := 0
 	for at+n < len(line) && line[at+n] == '$' {
 		n++
@@ -99,68 +90,6 @@ func dollars(line []byte, at int) int {
 }
 
 func isSpaceByte(c byte) bool { return c < 0x80 && unicode.IsSpace(rune(c)) }
-
-// mathBlock is a formula on lines of its own, between fences of dollars.
-type mathBlock struct {
-	ast.BaseBlock
-	indent, fence int
-}
-
-var kindMathBlock = ast.NewNodeKind("MathBlock")
-
-func (n *mathBlock) Kind() ast.NodeKind { return kindMathBlock }
-func (n *mathBlock) IsRaw() bool        { return true }
-
-func (n *mathBlock) Dump(src []byte, level int) { ast.DumpHelper(n, src, level, nil, nil) }
-
-// mathBlockParser opens a formula at two or more dollars; what follows
-// them on the line may hold no dollar, else they are text ($$x$$). A
-// line of at least as many dollars closes it; else it runs to the end of
-// its container, as a fenced code block does.
-type mathBlockParser struct{}
-
-func (p *mathBlockParser) Trigger() []byte { return []byte{'$'} }
-
-func (p *mathBlockParser) Open(_ ast.Node, reader text.Reader, pc parser.Context) (ast.Node, parser.State) {
-	line, _ := reader.PeekLine()
-	pos := pc.BlockOffset()
-	if pos < 0 || line[pos] != '$' {
-		return nil, parser.NoChildren
-	}
-	n := dollars(line, pos)
-	if n < 2 || bytes.IndexByte(line[pos+n:], '$') >= 0 {
-		return nil, parser.NoChildren
-	}
-	reader.AdvanceToEOL()
-	return &mathBlock{indent: pos, fence: n}, parser.NoChildren
-}
-
-func (p *mathBlockParser) Continue(node ast.Node, reader text.Reader, _ parser.Context) parser.State {
-	line, segment := reader.PeekLine()
-	m := node.(*mathBlock)
-	if w, pos := util.IndentWidth(line, reader.LineOffset()); w < 4 {
-		n := dollars(line, pos)
-		if n >= m.fence && util.IsBlank(line[pos+n:]) {
-			reader.AdvanceToEOL()
-			return parser.Close
-		}
-	}
-	// The fence's indentation is dropped from the formula's lines.
-	pos, padding := util.IndentPositionPadding(line, reader.LineOffset(), segment.Padding, m.indent)
-	if pos < 0 {
-		pos = max(0, util.FirstNonSpacePosition(line)) - segment.Padding
-		padding = 0
-	}
-	seg := text.NewSegmentPadding(segment.Start+pos, segment.Stop, padding)
-	seg.ForceNewline = true
-	node.Lines().Append(seg)
-	reader.AdvanceToEOL()
-	return parser.Continue | parser.NoChildren
-}
-
-func (p *mathBlockParser) Close(ast.Node, text.Reader, parser.Context) {}
-func (p *mathBlockParser) CanInterruptParagraph() bool                 { return true }
-func (p *mathBlockParser) CanAcceptIndentedLine() bool                 { return false }
 
 // rewriteTeX rewrites TeX's own delimiters, which AI models often write
 // formulas with, as dollars: \(…\) and \[…\] in text as $$…$$ (a pair

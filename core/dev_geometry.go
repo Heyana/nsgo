@@ -7,12 +7,13 @@ import (
 )
 
 type devGeometryState struct {
-	requested  bool
-	pending    bool
-	cleanup    bool
-	generation uint64
-	birth      map[NodeID]uint64
-	snapshot   driver.GeometrySnapshot
+	requested      bool
+	pending        bool
+	cleanup        bool
+	generation     uint64
+	birth          map[NodeID]uint64
+	snapshot       driver.GeometrySnapshot
+	onSourceChange func(*Tree)
 }
 
 // SetDevGeometrySource connects internal/devtools to the platform's displayed geometry. The engine installs it; observation starts only when bounds are read and ends when the tree goes. Callbacks may arrive on the native thread.
@@ -24,15 +25,15 @@ func (t *Tree) SetDevGeometrySource(watch func(func(driver.GeometrySnapshot))) {
 	t.devSource = watch
 	if watch != nil {
 		t.devDrawn = nil
+		t.syncDevDrawnFn = nil
 	}
 	if state == nil {
 		return
 	}
 	state.generation++
 	state.snapshot = driver.GeometrySnapshot{}
-	if state.requested {
-		t.requestDevGeometry()
-		t.observeDevGeometry()
+	if state.requested && state.onSourceChange != nil {
+		state.onSourceChange(t)
 	}
 }
 
@@ -163,6 +164,10 @@ func (t *Tree) devGeometryFrame() driver.GeometrySnapshot {
 			if n != nil && !n.deleted {
 				state.birth[n.id] = 1
 			}
+		}
+		state.onSourceChange = func(t *Tree) {
+			t.requestDevGeometry()
+			t.observeDevGeometry()
 		}
 		t.requestDevGeometry()
 		t.observeDevGeometry()

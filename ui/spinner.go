@@ -1,9 +1,7 @@
 package ui
 
 import (
-	"fmt"
-	"strings"
-	"sync"
+	"math"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/base"
@@ -56,22 +54,28 @@ func (s Spinner) Render(cx *core.Scope) core.Node {
 	if tint == nil {
 		tint = ColorsOf(cx).Muted
 	}
+	draw := func(d *core.Drawing, sz core.Size) {
+		dia := float32(min(sz.Width, sz.Height))
+		if dia <= 0 {
+			return
+		}
+		color := tint()
+		scale := dia / 100
+		cx, cy := float32(sz.Width)/2, float32(sz.Height)/2
+		r0, r1 := 24*scale, 44*scale
+		d.SetLineWidth(9 * scale).SetLineCap(core.CapRound)
+		// Twelve spokes fading behind the one at twelve o'clock, as MyGo's indicator draws them.
+		for i := range 12 {
+			age := (12 - i) % 12
+			angle := float64(i) * math.Pi / 6
+			sin, cos := float32(math.Sin(angle)), float32(math.Cos(angle))
+			opacity := 1 - float32(age)/12*0.85
+			d.BeginPath().MoveTo(cx+r0*sin, cy-r0*cos).LineTo(cx+r1*sin, cy-r1*cos).
+				SetStrokeColor(Alpha(color, opacity)).Stroke()
+		}
+	}
 	return base.Progress{TestID: s.TestID, Label: s.Label, LabelFunc: s.LabelFunc, Indeterminate: func() bool { return true }, TrackStyle: core.Style{Display: core.DisplayNone},
 		Style:     core.Style{Width: core.Pt(size), Height: core.Pt(size), FlexShrink: 0}.Merge(s.Style),
 		StyleFunc: func() core.Style { return core.Style{Animated: &core.AnimatedStyle{Rotate: turn}} },
-		Children: []core.Node{core.Icon{SVG: spokes(), Style: core.Style{Width: core.Pct(100), Height: core.Pct(100)},
-			StyleFunc: Colored(tint)}}}
+		Children:  []core.Node{core.Canvas{Draw: draw, Style: core.Style{FlexGrow: 1}}}}
 }
-
-// spokes are the twelve spokes, fading behind the one at twelve o'clock,
-// as MyGo's indicator draws them.
-var spokes = sync.OnceValue(func() *core.SVG {
-	var svg strings.Builder
-	svg.WriteString(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round">`)
-	for i := range 12 {
-		age := (12 - i) % 12
-		fmt.Fprintf(&svg, `<path d="M0 -24V-44" transform="rotate(%d)" stroke-opacity="%g"/>`, i*30, 1-float32(age)/12*0.85)
-	}
-	svg.WriteString(`</svg>`)
-	return core.MustParseSVG([]byte(svg.String()))
-})
