@@ -81,6 +81,14 @@ func openLibs() error {
 				}
 			}()
 			bind()
+			// GStreamer 1.28's decodebin3 aborts the process on stream-start
+			// without a collection (gstdecodebin3.c:mq_slot_handle_stream_start);
+			// keep GstPlay/GtkMediaFile on classic playbin (decodebin2) unless
+			// the caller explicitly sets GST_PLAY_USE_PLAYBIN3 (#2489).
+			initUILang()
+			if gSetenv != nil {
+				gSetenv(cstr("GST_PLAY_USE_PLAYBIN3"), cstr("0"), 0)
+			}
 		}()
 	})
 	return libsErr
