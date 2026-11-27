@@ -166,6 +166,28 @@ func TestTextViewFormulaSelectionCopiesMathMLAndTeX(t *testing.T) {
 	}, nsgotest.Size(360, 400), nsgotest.Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}))
 	waitForFont(app, r, "label:E equals m c squared", "label:x squared")
 
+	// Verify both inline and display formula spans carry CopyItem on every target.
+	inlineText := app.Find("text:Energy ￼.")
+	if len(inlineText.Spans) < 2 || inlineText.Spans[1].Copy != "$E=mc^2$" || inlineText.Spans[1].CopyItem == nil {
+		t.Fatalf("inline span = %+v, want Copy and CopyItem", inlineText.Spans)
+	}
+	if reps := repMap(*inlineText.Spans[1].CopyItem); reps["text/plain"] != "$E=mc^2$" || reps[MIMETeX] != "E=mc^2" || !strings.Contains(reps[MIMEMathML], `display="inline"`) {
+		t.Errorf("inline span CopyItem = %#v", reps)
+	}
+	displayText := app.Find("id:doc >> text:￼ >> nth=1")
+	if len(displayText.Spans) != 1 || displayText.Spans[0].Copy != "$$\nx^2\n$$" || displayText.Spans[0].CopyItem == nil {
+		t.Fatalf("display span = %+v, want Copy and CopyItem", displayText.Spans)
+	}
+	if reps := repMap(*displayText.Spans[0].CopyItem); reps["text/plain"] != "$$\nx^2\n$$" || reps[MIMETeX] != "x^2" || !strings.Contains(reps[MIMEMathML], `display="block"`) {
+		t.Errorf("display span CopyItem = %#v", reps)
+	}
+
+	// SelectTextRange + Key("mod+c") into App.Clipboard is modelled headless;
+	// native DOM/pasteboard copy paths are covered by platform copy tests.
+	if nsgotest.Target() != "" {
+		return
+	}
+
 	// 1. Selecting only the inline formula copies plain TeX plus MathML and text/x-tex.
 	// In "Energy \uFFFC.", \uFFFC sits at UTF-16 offset 7..8.
 	app.SelectTextRange("id:doc", "text:Energy ￼.", 7, "text:Energy ￼.", 8)
