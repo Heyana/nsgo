@@ -64,6 +64,7 @@ func (s *surface) container(host *view) objc.ID {
 			host.input != nil && (sub == host.input.host || sub == host.input.label)
 	})
 	host.content = c
+	host.holderFit = false
 	if host.contentLayer != 0 {
 		host.attachContentLayer(host.contentLayer)
 	}
@@ -110,9 +111,11 @@ func (v *view) holdClip(vs *driver.ViewStyle) bool {
 		v.surface.container(v)
 	}
 	if (held || v.clipHeld || v.sc == nil) && v.content != v.native {
-		clip := *vs
-		clip.Clip = held
-		v.fitHolder(&clip)
+		if !v.holderFit || !v.styled || held != v.clipHeld || !apple.SameClipStyle(&v.drawn, vs) {
+			clip := *vs
+			clip.Clip = held
+			v.fitHolder(&clip)
+		}
 	}
 	v.clipHeld = held
 	return held
@@ -120,6 +123,7 @@ func (v *view) holdClip(vs *driver.ViewStyle) bool {
 
 // fitHolder fits v's holder to v's bounds and clips it as vs says, nil for not at all; a scroll view sizes its container itself.
 func (v *view) fitHolder(vs *driver.ViewStyle) {
+	v.holderFit = true
 	if v.sc == nil {
 		v.content.Send(selSetFrame, objc.Send[apple.CGRect](v.native, selBounds))
 	} else if vs != nil && v.sc.zoomed > 0 && v.sc.zoomed != 1 {

@@ -80,10 +80,12 @@ type view struct {
 	id      driver.NodeID
 	kind    driver.ViewKind
 	native  objc.ID
+	layer   objc.ID // cached backing layer of native
 	content objc.ID // where children go: native, or a holder or a scroll view's container
 	// clipHeld says content clips the children in place of the view's own layer, which keeps its shadow and outline (clipsInHolder).
-	clipHeld bool
-	events   driver.EventMask
+	clipHeld  bool
+	holderFit bool
+	events    driver.EventMask
 	// over says the view reported the mouse over it: in its tracking
 	// area, and no view above covers it there.
 	over bool
@@ -153,6 +155,7 @@ type view struct {
 	// animated values and a layout animation draw over.
 	frame       driver.Bounds
 	framed      bool
+	layerGeom   apple.TransformGeometry
 	shift       driver.Point // a sticky cell's, from frame
 	style       driver.ViewStyle
 	animated    driver.AnimatedValues
@@ -678,7 +681,7 @@ func makeBackingLayer(self objc.ID, cmd objc.SEL) objc.ID {
 // holdTransforms gives a backing layer the class that keeps its
 // transform.
 func holdTransforms(layer objc.ID) {
-	if layer.Class() == layerBase {
+	if apple.ClassOf(layer) == layerBase {
 		objectSetClass(layer, classLayer)
 	}
 }
@@ -2824,8 +2827,9 @@ func (s *surface) delete(v *view, kept bool) {
 			nh.close(v)
 		}
 	}
-	apple.ForgetTransform(v.native.Send(selLayer))
-	apple.ForgetDecor(v.native.Send(selLayer))
+	layer := objc.ID(apple.Msg(v.native, selLayer))
+	apple.ForgetTransform(layer)
+	apple.ForgetDecor(layer)
 	v.forgetContent()
 	if ch := canvases.Load(); ch != nil {
 		ch.releaseView(v)

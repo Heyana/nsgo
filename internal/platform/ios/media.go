@@ -17,7 +17,10 @@ import (
 // graph and the layout animations once a display frame while either
 // runs.
 
-var selTick = sel("nsgoTick:")
+var (
+	selTick     = sel("nsgoTick:")
+	selDuration = sel("duration")
+)
 
 func (s *surface) clock() time.Duration {
 	if s.epoch.IsZero() {
@@ -151,7 +154,7 @@ func surfaceTick(self objc.ID, _ objc.SEL, _ objc.ID) {
 func (s *surface) tick() {
 	defer s.reportGeometry()
 	if s.perf != nil {
-		s.perf.Vsync(time.Now(), time.Duration(objc.Send[float64](s.link, sel("duration"))*float64(time.Second)))
+		s.perf.Vsync(time.Now(), time.Duration(apple.MsgFloat64(s.link, selDuration)*float64(time.Second)))
 		defer s.measuring(s.animator.Running() || len(s.motions) > 0 || len(s.transitions) > 0 || len(s.ghosts) > 0 || s.frameWanted.Load())()
 	}
 	now := s.clock()
@@ -317,14 +320,18 @@ func (v *view) styleLayer(vs *driver.ViewStyle, bound uint16) {
 	if v.styled || v.born != v.surface.batch {
 		shown = &v.drawn
 	}
-	layer := v.native.Send(selLayer)
+	if v.layer == 0 {
+		v.layer = objc.ID(apple.Msg(v.native, selLayer))
+	}
+	layer := v.layer
 	if added := bound &^ v.bound; added != 0 {
 		apple.ClearBoundAnimations(layer, added)
 	}
 	v.bound = bound
-	apple.RestyleLayer(layer, shown, &drawn, 0, bound)
-	// RestyleLayer may create per-side rings after setBackdrop ran; move them above the backdrop now that they exist.
-	apple.MoveBorders(layer, v.borderHost())
+	if apple.RestyleLayerGeometry(layer, shown, &drawn, 0, bound, &v.layerGeom) {
+		// RestyleLayer may create per-side rings after setBackdrop ran; move them above the backdrop now that they exist.
+		apple.MoveBorders(layer, v.borderHost())
+	}
 	v.drawn, v.styled = drawn, true
 }
 
@@ -360,6 +367,11 @@ func (s *surface) setFrame(v *view, it *driver.MountItem, lb *layoutBatch) {
 func (v *view) place(f driver.Bounds) {
 	resized := f.Size != v.frame.Size
 	v.frame, v.framed = f, true
+	if v.surface.accessories[v.id] == nil {
+		v.layerGeom.SetSize(f.Size)
+	} else {
+		v.layerGeom.ClearSize()
+	}
 	transformed := v.styled && v.drawn.Transform != (driver.Transform{})
 	if !transformed && v.bar == nil && v.kind != driver.KindScroll {
 		v.native.Send(selSetFrame, apple.Rect(float64(f.Origin.X+v.shift.X), float64(f.Origin.Y+v.shift.Y),
@@ -371,11 +383,15 @@ func (v *view) place(f driver.Bounds) {
 		v.native.Send(sel("setCenter:"), apple.CGPoint{X: float64(f.Origin.X + v.shift.X + f.Size.Width/2),
 			Y: float64(f.Origin.Y + v.shift.Y + f.Size.Height/2)})
 	}
+	if v.layer == 0 {
+		v.layer = objc.ID(apple.Msg(v.native, selLayer))
+	}
+	layer := v.layer
 	if transformed {
 		// Its origin is a point of the old size.
-		apple.SetTransform(v.native.Send(selLayer), v.drawn.Transform)
+		apple.SetTransformGeometry(layer, v.drawn.Transform, &v.layerGeom)
 	}
-	apple.LayoutDecor(v.native.Send(selLayer))
+	apple.LayoutDecor(layer)
 	if resized && v.container != 0 {
 		// As last drawn, animated corners and all: only the view's own layer leaves the clip out. The perspective's centre follows the size too.
 		held := v.drawn
@@ -533,6 +549,7 @@ func (s *surface) setAccessory(v *view, id driver.NodeID) {
 		bar = s.views[id].native
 		const flexibleWidth = 2
 		bar.Send(sel("setAutoresizingMask:"), uint(flexibleWidth))
+		s.views[id].layerGeom.ClearSize()
 		s.accessories[id] = v
 	}
 	v.input.setBar(bar)

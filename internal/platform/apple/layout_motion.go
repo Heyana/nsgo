@@ -23,6 +23,7 @@ type LayoutGhost struct {
 	opacity float32
 	tr      *driver.LayoutTransition
 	start   time.Duration
+	geom    TransformGeometry
 }
 
 var (
@@ -36,17 +37,23 @@ var (
 
 // NewLayoutGhost takes the caller's retain on native and records its opacity.
 func NewLayoutGhost(native objc.ID, transition *driver.LayoutTransition, start time.Duration) *LayoutGhost {
-	return &LayoutGhost{
+	layer := objc.ID(Msg(native, layoutLayer))
+	g := &LayoutGhost{
 		native:  native,
-		opacity: objc.Send[float32](native.Send(layoutLayer), layoutOpacity),
+		opacity: objc.Send[float32](layer, layoutOpacity),
 		tr:      transition,
 		start:   start,
 	}
+	if transition != nil && transition.Property == driver.LayoutScale {
+		size, anchor := resolveTransformGeometry(layer, nil)
+		g.geom = TransformGeometry{Size: size, Anchor: anchor, SizeKnown: true, AnchorKnown: true}
+	}
+	return g
 }
 
 // Release takes g's native view away and lets go of it, at the end of its exit or as its surface closes.
 func (g *LayoutGhost) Release() {
-	ForgetTransform(g.native.Send(layoutLayer))
+	ForgetTransform(objc.ID(Msg(g.native, layoutLayer)))
 	g.native.Send(layoutRemove)
 	g.native.Send(layoutRelease)
 }
@@ -98,11 +105,11 @@ func StepLayoutMotions[V comparable](now time.Duration, motions map[V]*LayoutMot
 	live := ghosts[:0]
 	for _, g := range ghosts {
 		p, end := g.tr.At(now - g.start)
-		layer := g.native.Send(layoutLayer)
+		layer := objc.ID(Msg(g.native, layoutLayer))
 		if g.tr.Property == driver.LayoutScale {
-			SetTransform(layer, driver.Transform{Scale: float32(max(1-p, 0.0001))})
+			SetTransformGeometry(layer, driver.Transform{Scale: float32(max(1-p, 0.0001))}, &g.geom)
 		} else {
-			layer.Send(layoutSetOpacity, g.opacity*float32(1-p))
+			setLayerOpacity(layer, g.opacity*float32(1-p))
 		}
 		if end {
 			g.Release()

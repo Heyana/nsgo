@@ -16,21 +16,25 @@ import (
 )
 
 var (
-	dispatchAsyncF   func(queue, context, work uintptr)
-	machTime         func() uint64
-	poolPush         func() uintptr
-	poolPop          func(uintptr)
-	mainQueue        uintptr
-	mainWork         uintptr
-	msgSend          uintptr
-	setQOS           func(class uint32, priority int32) int32
-	mainMu           sync.Mutex
-	mainFuncs        []func()
-	selAddObserver   = sel("addObserverForName:object:queue:usingBlock:")
-	selMainQueue     = sel("mainQueue")
-	selCount         = sel("count")
-	selObjectAtIndex = sel("objectAtIndex:")
-	selObjectForKey  = sel("objectForKey:")
+	dispatchAsyncF       func(queue, context, work uintptr)
+	machTime             func() uint64
+	poolPush             func() uintptr
+	poolPop              func(uintptr)
+	mainQueue            uintptr
+	mainWork             uintptr
+	msgSend              uintptr
+	setQOS               func(class uint32, priority int32) int32
+	mainMu               sync.Mutex
+	mainFuncs            []func()
+	selAddObserver       = sel("addObserverForName:object:queue:usingBlock:")
+	selMainQueue         = sel("mainQueue")
+	selCount             = sel("count")
+	selObjectAtIndex     = sel("objectAtIndex:")
+	selObjectForKey      = sel("objectForKey:")
+	selBegin             = sel("begin")
+	selSetDisableActions = sel("setDisableActions:")
+	selCommit            = sel("commit")
+	classCATransaction   objc.ID
 )
 
 func loadSystem() {
@@ -43,6 +47,7 @@ func loadSystem() {
 	purego.RegisterLibFunc(&poolPush, runtimeLib, "objc_autoreleasePoolPush")
 	purego.RegisterLibFunc(&poolPop, runtimeLib, "objc_autoreleasePoolPop")
 	msgSend = symbol(runtimeLib, "objc_msgSend")
+	objectGetClass = symbol(runtimeLib, "object_getClass")
 	purego.RegisterLibFunc(&setQOS, lib, "pthread_set_qos_class_self_np")
 }
 
@@ -112,11 +117,15 @@ func withPool(fn func()) {
 // WithoutAnimation runs fn with Core Animation's implicit animations off,
 // so layers a backend adds itself change at once.
 func WithoutAnimation(fn func()) {
-	tx := objc.ID(Class("CATransaction"))
-	tx.Send(sel("begin"))
-	tx.Send(sel("setDisableActions:"), true)
+	tx := classCATransaction
+	if tx == 0 {
+		tx = objc.ID(Class("CATransaction"))
+		classCATransaction = tx
+	}
+	Msg(tx, selBegin)
+	Msg(tx, selSetDisableActions, 1)
 	fn()
-	tx.Send(sel("commit"))
+	Msg(tx, selCommit)
 }
 
 // Observe calls fn on the main thread each time center posts name, until

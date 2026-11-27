@@ -57,6 +57,7 @@ func (s *surface) container(host *view) objc.ID {
 			host.sc != nil && sub == host.sc.zoom
 	})
 	host.container = c
+	host.holderFit = false
 	if host.contentLayer != 0 {
 		host.attachContentLayer(host.contentLayer)
 	}
@@ -101,9 +102,11 @@ func (v *view) holdClip(vs *driver.ViewStyle) bool {
 		v.surface.container(v)
 	}
 	if v.container != 0 {
-		clip := *vs
-		clip.Clip = held
-		v.fitHolder(&clip)
+		if !v.holderFit || !v.styled || held != v.clipHeld || !apple.SameClipStyle(&v.drawn, vs) {
+			clip := *vs
+			clip.Clip = held
+			v.fitHolder(&clip)
+		}
 	}
 	v.clipHeld = held
 	return held
@@ -111,6 +114,7 @@ func (v *view) holdClip(vs *driver.ViewStyle) bool {
 
 // fitHolder fits v's holder to v's bounds and clips it as vs says, nil for not at all.
 func (v *view) fitHolder(vs *driver.ViewStyle) {
+	v.holderFit = true
 	bounds := objc.Send[apple.CGRect](v.native, selBounds)
 	v.container.Send(selSetFrame, bounds)
 	if v.sc != nil {

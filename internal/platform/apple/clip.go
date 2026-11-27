@@ -28,6 +28,19 @@ func NeedsClipHolder(vs *driver.ViewStyle) bool {
 	return false
 }
 
+// SameClipStyle reports whether a and b describe the same holder clip and child
+// perspective, so an animated frame changing only opacity or transform can skip
+// refitting the clip holder. Callers compare Clip separately because a view's
+// own drawn style clears Clip while its holder clips in its place.
+func SameClipStyle(a, b *driver.ViewStyle) bool {
+	return a.ChildPerspective == b.ChildPerspective &&
+		a.CornerRadius == b.CornerRadius &&
+		a.Corners == b.Corners &&
+		a.ContinuousCorners == b.ContinuousCorners &&
+		a.BorderWidth == b.BorderWidth &&
+		a.Borders == b.Borders
+}
+
 // ShapedCorners reports whether vs's rounded corners differ in radius, which a layer's own corner radius cannot draw and a shape mask does.
 func ShapedCorners(vs *driver.ViewStyle) bool {
 	// Fitting to a box scales every radius alike, so an unbounded box answers for all.

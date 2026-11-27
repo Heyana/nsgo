@@ -306,11 +306,11 @@ func (v *view) setBackdrop(vs *driver.ViewStyle) {
 func (v *view) borderHost() objc.ID {
 	switch v.backdropKind {
 	case backdropGlass:
-		return v.backdrop.Send(selLayer)
+		return objc.ID(apple.Msg(v.backdrop, selLayer))
 	case backdropFiltered:
-		return v.tintView.Send(selLayer)
+		return objc.ID(apple.Msg(v.tintView, selLayer))
 	case backdropMaterial:
-		return v.backdrop.Send(sel("contentView")).Send(selLayer)
+		return objc.ID(apple.Msg(objc.ID(apple.Msg(v.backdrop, sel("contentView"))), selLayer))
 	}
 	return 0
 }

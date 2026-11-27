@@ -44,6 +44,7 @@ type view struct {
 	id      driver.NodeID
 	kind    driver.ViewKind
 	native  objc.ID
+	layer   objc.ID // cached backing layer of native
 	events  driver.EventMask
 	// contentLayer draws a text's or a canvas's content.
 	contentLayer objc.ID
@@ -93,7 +94,8 @@ type view struct {
 	gpu        *apple.GPULayer // a GPU view's (gpu.go)
 	container  objc.ID         // what holds its children under an effect or for its clip, once it has one
 	clipHeld   bool            // whether container clips the children in place of the view's own layer, which keeps its shadow and outline (clipsInHolder)
-	web        *apple.Web      // a web view's
+	holderFit  bool
+	web        *apple.Web // a web view's
 	pip        *apple.PictureInPicture
 	video      *apple.Video // a video's
 
@@ -128,6 +130,7 @@ type view struct {
 	// animated values and a layout animation draw over.
 	frame       driver.Bounds
 	framed      bool
+	layerGeom   apple.TransformGeometry
 	shift       driver.Point // a sticky cell's, from frame
 	style       driver.ViewStyle
 	animated    driver.AnimatedValues
@@ -1930,8 +1933,9 @@ func (s *surface) delete(v *view, kept bool) {
 	if v.accessory != 0 {
 		s.setAccessory(v, 0)
 	}
-	apple.ForgetTransform(v.native.Send(selLayer))
-	apple.ForgetDecor(v.native.Send(selLayer))
+	layer := objc.ID(apple.Msg(v.native, selLayer))
+	apple.ForgetTransform(layer)
+	apple.ForgetDecor(layer)
 	v.forgetContent()
 	forgetGate(v.pan)
 	v.layout.Release()

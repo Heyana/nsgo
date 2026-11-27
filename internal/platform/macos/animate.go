@@ -215,8 +215,8 @@ func surfaceStallTick(self objc.ID, _ objc.SEL, _ objc.ID) {
 // framePeriod is the display link's period, or 60 Hz where there is none.
 func (s *surface) framePeriod() time.Duration {
 	if s.link != 0 {
-		stamp := objc.Send[float64](s.link, selTimestamp)
-		target := objc.Send[float64](s.link, selTargetTimestamp)
+		stamp := apple.MsgFloat64(s.link, selTimestamp)
+		target := apple.MsgFloat64(s.link, selTargetTimestamp)
 		if target > stamp {
 			return time.Duration((target - stamp) * float64(time.Second))
 		}
@@ -423,14 +423,18 @@ func (v *view) styleLayer(vs *driver.ViewStyle, bound uint16) {
 	if v.styled || v.born != v.surface.batch {
 		shown = &v.drawn
 	}
-	layer := v.native.Send(selLayer)
+	if v.layer == 0 {
+		v.layer = objc.ID(apple.Msg(v.native, selLayer))
+	}
+	layer := v.layer
 	if added := bound &^ v.bound; added != 0 {
 		apple.ClearBoundAnimations(layer, added)
 	}
 	v.bound = bound
-	apple.RestyleLayer(layer, shown, vs, v.native, bound)
-	// RestyleLayer may create per-side rings after setBackdrop ran; move them above the backdrop now that they exist.
-	apple.MoveBorders(layer, v.borderHost())
+	if apple.RestyleLayerGeometry(layer, shown, vs, v.native, bound, &v.layerGeom) {
+		// RestyleLayer may create per-side rings after setBackdrop ran; move them above the backdrop now that they exist.
+		apple.MoveBorders(layer, v.borderHost())
+	}
 	v.drawn, v.styled = *vs, true
 	v.transform = vs.Transform
 	if vs.Transform != (driver.Transform{}) || vs.Animation.Keyframes != 0 {
@@ -465,14 +469,19 @@ func (s *surface) setFrame(v *view, it *driver.MountItem, lb *layoutBatch) {
 func (v *view) place(f driver.Bounds) {
 	resized := f.Size != v.frame.Size
 	v.frame, v.framed = f, true
+	v.layerGeom.SetSize(f.Size)
 	f.Origin.X += v.shift.X
 	f.Origin.Y += v.shift.Y
 	v.native.Send(selSetFrame, apple.Rect(float64(f.Origin.X), float64(f.Origin.Y),
 		float64(f.Size.Width), float64(f.Size.Height)))
-	if v.transform != (driver.Transform{}) {
-		apple.SetTransform(v.native.Send(selLayer), v.transform)
+	if v.layer == 0 {
+		v.layer = objc.ID(apple.Msg(v.native, selLayer))
 	}
-	apple.LayoutDecor(v.native.Send(selLayer))
+	layer := v.layer
+	if v.transform != (driver.Transform{}) {
+		apple.SetTransformGeometry(layer, v.transform, &v.layerGeom)
+	}
+	apple.LayoutDecor(layer)
 	if v.backdrop != 0 && !v.glass {
 		v.fitBackdrop(&v.style)
 	}

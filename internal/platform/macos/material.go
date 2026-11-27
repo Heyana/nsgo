@@ -165,9 +165,9 @@ func (v *view) borderHost() objc.ID {
 	case v.backdrop == 0:
 		return 0
 	case v.glass:
-		return v.glassContent.Send(selLayer)
+		return objc.ID(apple.Msg(v.glassContent, selLayer))
 	case v.tint != 0:
-		return v.tint.Send(selLayer)
+		return objc.ID(apple.Msg(v.tint, selLayer))
 	}
 	return 0
 }
@@ -261,5 +261,5 @@ func (v *view) styleTint(vs *driver.ViewStyle) {
 	if v.tint == 0 {
 		return
 	}
-	v.tintState.Style(v.tint.Send(selLayer), vs, v.animated.Has(driver.PropBackground))
+	v.tintState.Style(objc.ID(apple.Msg(v.tint, selLayer)), vs, v.animated.Has(driver.PropBackground))
 }

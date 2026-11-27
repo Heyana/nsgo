@@ -474,9 +474,7 @@ func (d *decor) layoutShape(layer objc.ID, w, h float64, radii driver.Corners) {
 
 // paintCover colors the cover layer.
 func (d *decor) paintCover(color driver.Color) {
-	c := CGColor(color)
-	d.cover.Send(selSetBackgroundColor, c)
-	Release(c)
+	setLayerColor(d.cover, selSetBackgroundColor, color)
 }
 
 // layoutShadows draws the box shadows: outer ones under the box, masked

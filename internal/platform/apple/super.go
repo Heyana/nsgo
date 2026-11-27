@@ -23,6 +23,7 @@ var (
 	msgSendSuper2Stret uintptr
 	objectGetClass     uintptr
 	superPoint         func(super *objcSuper, cmd objc.SEL, x, y float64) objc.ID
+	selSubviews        = sel("subviews")
 )
 
 type objcSuper struct {
@@ -77,16 +78,20 @@ func duplicateSelector(methods []objc.MethodDef) (objc.SEL, bool) {
 	return 0, false
 }
 
+// ClassOf returns the runtime class of self without purego reflection.
+func ClassOf(self objc.ID) objc.Class {
+	c, _, _ := purego.SyscallN(objectGetClass, uintptr(self))
+	return objc.Class(c)
+}
+
 // ownClass returns the nearest class of self's that NSGo registered.
 func ownClass(self objc.ID) objc.Class {
-	loadSuper()
-	c, _, _ := purego.SyscallN(objectGetClass, uintptr(self))
-	for k := objc.Class(c); k != 0; k = k.SuperClass() {
+	for k := ClassOf(self); k != 0; k = k.SuperClass() {
 		if ownClasses[k] {
 			return k
 		}
 	}
-	return objc.Class(c)
+	return ClassOf(self)
 }
 
 // SendSuper sends cmd to the superclass of the NSGo class self is an
@@ -121,11 +126,11 @@ func Super(self objc.ID, cmd objc.SEL, args ...any) { SendSuper[objc.ID](self, c
 
 // Subviews returns a view's subviews, back to front.
 func Subviews(view objc.ID) []objc.ID {
-	arr := view.Send(objc.RegisterName("subviews"))
-	n := objc.Send[uint](arr, selCount)
+	arr := objc.ID(Msg(view, selSubviews))
+	n := uint(Msg(arr, selCount))
 	out := make([]objc.ID, n)
 	for i := range n {
-		out[i] = arr.Send(selObjectAtIndex, i)
+		out[i] = objc.ID(Msg(arr, selObjectAtIndex, uintptr(i)))
 	}
 	return out
 }

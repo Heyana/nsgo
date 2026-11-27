@@ -49,6 +49,10 @@ func StyleLayer(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID) {
 
 // StyleLayerBound draws vs with layer like StyleLayer, skipping Core Animation transitions for properties named in bound (AnimatedValues.Set) so bound animated values keep moving immediately while unbound properties run vs.Transition.
 func StyleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bound uint16) {
+	styleLayerBound(layer, was, vs, view, bound, nil)
+}
+
+func styleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bound uint16, geom *TransformGeometry) {
 	tr := vs.Transition
 	var keys []string
 	var from []objc.ID
@@ -104,7 +108,7 @@ func StyleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bou
 	}
 	setBorders(layer, vs, &tr, bound)
 	applyDecor(layer, vs, bound)
-	SetTransform(layer, vs.Transform)
+	SetTransformGeometry(layer, vs.Transform, geom)
 	for i, k := range keys {
 		to := layer.Send(selValueForKey, NSString(k))
 		if from[i] == to || (from[i] != 0 && objc.Send[bool](from[i], sel("isEqual:"), to)) {
@@ -117,7 +121,7 @@ func StyleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bou
 		}
 		var anim objc.ID
 		if k == "transform" {
-			anim = moveAnimation(layer, was, vs)
+			anim = moveAnimation(layer, was, vs, geom)
 		}
 		if anim == 0 {
 			anim = objc.ID(Class("CABasicAnimation")).Send(sel("animationWithKeyPath:"), NSString(k))
@@ -175,26 +179,38 @@ func ClearBoundAnimations(layer objc.ID, bound uint16) {
 
 // RestyleLayer draws vs with a layer that shows shown, the style StyleLayer last drew there; with none it draws vs at once. When the two differ only in opacity and transform, as an animation's frames do, it sets just those: drawing every property again remade its colors, shadow, filters and gradients each frame, and the window server drew them all again. bound names the properties currently driven by animated values or appearance motions, whose transitions are skipped.
 func RestyleLayer(layer objc.ID, shown, vs *driver.ViewStyle, view objc.ID, bound uint16) {
+	RestyleLayerGeometry(layer, shown, vs, view, bound, nil)
+}
+
+// RestyleLayerGeometry is RestyleLayer using geom for layer's bounds size and
+// anchor point when known. It reports whether the full style path ran (rather
+// than the opacity/transform fast path), so callers need only rehome per-side
+// borders when borders could have been created.
+func RestyleLayerGeometry(layer objc.ID, shown, vs *driver.ViewStyle, view objc.ID, bound uint16, geom *TransformGeometry) bool {
 	if shown == nil && vs.Transition.Duration > 0 {
 		// A view's first style shows at once, as CSS transitions none.
 		first := *vs
 		first.Transition = driver.Transition{}
-		StyleLayerBound(layer, nil, &first, view, bound)
-		return
+		styleLayerBound(layer, nil, &first, view, bound, geom)
+		return true
 	}
-	if shown == nil || vs.Transition.Duration > 0 || !onlyMoves(shown, vs) {
-		StyleLayerBound(layer, shown, vs, view, bound)
-		return
+	if shown == nil || vs.Transition.Duration > 0 || (!onlyMoves(shown, vs) && !onlyMovesOrRecolors(shown, vs)) {
+		styleLayerBound(layer, shown, vs, view, bound, geom)
+		return true
+	}
+	if vs.Background != shown.Background {
+		recolorLayer(layer, vs.Background)
 	}
 	if vs.Opacity != shown.Opacity {
-		layer.Send(selSetOpacity, vs.Opacity)
+		setLayerOpacity(layer, vs.Opacity)
 	}
 	if vs.Transform != shown.Transform {
-		SetTransform(layer, vs.Transform)
+		SetTransformGeometry(layer, vs.Transform, geom)
 	}
 	if d := decors[layer]; d != nil {
-		d.vs.Opacity, d.vs.Transform = vs.Opacity, vs.Transform
+		d.vs.Background, d.vs.Opacity, d.vs.Transform = vs.Background, vs.Opacity, vs.Transform
 	}
+	return false
 }
 
 // onlyMoves reports whether b differs from a in its opacity and transform alone (ignoring Transition, which RestyleLayer checks before calling it). An opacity under filters is drawn with them on iOS (layoutFilters).
@@ -207,6 +223,55 @@ func onlyMoves(a, b *driver.ViewStyle) bool {
 	}
 	x.Opacity, y.Opacity = 0, 0
 	return x == y
+}
+
+// onlyMovesOrRecolors reports whether b differs from a only in opacity,
+// transform and background color without crossing the opaque/translucent or
+// transparent/visible boundaries or involving a rimmed border, so RestyleLayer
+// can repaint the fill color without rebuilding shadows, corners or filters.
+func onlyMovesOrRecolors(a, b *driver.ViewStyle) bool {
+	if (a.Background&0xff == 0xff) != (b.Background&0xff == 0xff) ||
+		(a.Background&0xff == 0) != (b.Background&0xff == 0) {
+		return false
+	}
+	if _, _, rimA := a.Rim(); rimA {
+		return false
+	}
+	if _, _, rimB := b.Rim(); rimB {
+		return false
+	}
+	x, y := *a, *b
+	x.Background, y.Background = 0, 0
+	return onlyMoves(&x, &y)
+}
+
+func setLayerColor(layer objc.ID, s objc.SEL, c driver.Color) {
+	if c == 0 {
+		Msg(layer, s, 0)
+		return
+	}
+	ref := CGColor(c)
+	Msg(layer, s, ref)
+	Release(ref)
+}
+
+// recolorLayer updates only layer's background fill (or its decor fill/cover
+// sublayer) when onlyMovesOrRecolors took the fast path.
+func recolorLayer(layer objc.ID, c driver.Color) {
+	if d := decors[layer]; d != nil {
+		switch {
+		case d.shaped && d.fill != 0:
+			setLayerColor(d.fill, selSetFill, c)
+			return
+		case !d.shaped && d.cover != 0:
+			d.paintCover(c)
+			d.covers = c
+			return
+		default:
+			d.covers = c
+		}
+	}
+	setLayerColor(layer, selSetBackgroundColor, c)
 }
 
 // layerShadow returns the shadow a view's layer casts of what it draws:
@@ -304,38 +369,125 @@ type transform3D struct {
 	M11, M12, M13, M14, M21, M22, M23, M24, M31, M32, M33, M34, M41, M42, M43, M44 float64
 }
 
-// layerTransform is layer's transform for t around the transform origin
-// offset from its center, and that origin's distance from the anchor
-// point. It works from wherever the anchor point is, since AppKit keeps
-// its layers' at their corner.
-func layerTransform(layer objc.ID, t driver.Transform, offset driver.Point, z float64) (transform3D, float64) {
-	bindTransforms()
-	size := layerBounds(layer, selBounds).Size
-	anchor := layerAnchor(layer, selAnchorPoint)
+// TransformGeometry holds a CALayer's bounds size and anchor point so animated
+// frames compute transforms from Go state without reading structs through
+// purego reflection every frame. Unset fields fall back to reading the layer;
+// when a non-nil pointer is passed, Anchor is cached on the first read.
+type TransformGeometry struct {
+	Size        CGSize
+	Anchor      CGPoint
+	SizeKnown   bool
+	AnchorKnown bool
+	imp         setTransformImp
+	impLayer    objc.ID
+}
+
+// SetSize records the layer's bounds size in points.
+func (g *TransformGeometry) SetSize(size driver.Size) {
+	g.Size = CGSize{Width: float64(size.Width), Height: float64(size.Height)}
+	g.SizeKnown = true
+}
+
+// ClearSize forgets the recorded bounds size so the next transform reads it
+// from the layer.
+func (g *TransformGeometry) ClearSize() { g.SizeKnown = false }
+
+// identityTransform3D is CATransform3DIdentity.
+var identityTransform3D = transform3D{M11: 1, M22: 1, M33: 1, M44: 1}
+
+// pureTranslation reports whether t only translates in the view's plane, so its
+// matrix does not depend on the layer's size, anchor point or transform origin.
+func pureTranslation(t driver.Transform) bool {
+	if t.Perspective != 0 || t.Rotate != 0 || t.RotateX != 0 || t.RotateY != 0 || t.RotateZ != 0 ||
+		t.SkewX != 0 || t.SkewY != 0 || t.Then != (driver.Matrix3D{}) {
+		return false
+	}
+	sx, sy := t.Scales()
+	return sx == 1 && sy == 1
+}
+
+// resolveTransformGeometry returns layer's bounds size and anchor point from geom
+// when known, reading any missing field from Core Animation and caching Anchor
+// on geom when non-nil.
+func resolveTransformGeometry(layer objc.ID, geom *TransformGeometry) (CGSize, CGPoint) {
+	var size CGSize
+	var anchor CGPoint
+	needSize := geom == nil || !geom.SizeKnown
+	needAnchor := geom == nil || !geom.AnchorKnown
+	if needSize || needAnchor {
+		bindTransforms()
+	}
+	if needSize {
+		size = layerBounds(layer, selBounds).Size
+		layerBoundsReads++
+	} else {
+		size = geom.Size
+	}
+	if needAnchor {
+		anchor = layerAnchor(layer, selAnchorPoint)
+		layerAnchorReads++
+		if geom != nil {
+			geom.Anchor = anchor
+			geom.AnchorKnown = true
+		}
+	} else {
+		anchor = geom.Anchor
+	}
+	return size, anchor
+}
+
+// transformForGeometry is the transform for t around the transform origin
+// offset from the center of a layer with size and anchor, and that origin's
+// distance from the anchor point. It works from wherever the anchor point is,
+// since AppKit keeps its layers' at their corner.
+func transformForGeometry(size CGSize, anchor CGPoint, t driver.Transform, offset driver.Point, z float64) (transform3D, float64) {
 	ax, ay := anchor.X*size.Width, anchor.Y*size.Height
 	origin := driver.Point{X: driver.Points(size.Width/2) + offset.X, Y: driver.Points(size.Height/2) + offset.Y}
 	m := driver.Translate3D(-ax, -ay, z).Mul(t.Matrix(origin)).Mul(driver.Translate3D(ax, ay, -z))
 	return toCA(m), math.Hypot(float64(origin.X)-ax, float64(origin.Y)-ay)
 }
 
+// layerTransform is layer's transform for t around the transform origin
+// offset from its center, and that origin's distance from the anchor
+// point.
+func layerTransform(layer objc.ID, t driver.Transform, offset driver.Point, z float64) (transform3D, float64) {
+	size, anchor := resolveTransformGeometry(layer, nil)
+	return transformForGeometry(size, anchor, t, offset, z)
+}
+
 // SetTransform sets a layer's transform to t around its transform
 // origin: its center, moved by its style's Origin.
 func SetTransform(layer objc.ID, t driver.Transform) {
-	var offset driver.Point
-	var z float64
-	if d := decors[layer]; d != nil {
-		offset, z = d.vs.Origin, float64(d.vs.OriginZ)
+	SetTransformGeometry(layer, t, nil)
+}
+
+// SetTransformGeometry is SetTransform using geom for layer's bounds size and
+// anchor point when known.
+func SetTransformGeometry(layer objc.ID, t driver.Transform, geom *TransformGeometry) {
+	var m transform3D
+	if pureTranslation(t) {
+		m = transform3D{M11: 1, M22: 1, M33: 1, M44: 1, M41: float64(t.TranslateX), M42: float64(t.TranslateY)}
+	} else {
+		var offset driver.Point
+		var z float64
+		if d := decors[layer]; d != nil {
+			offset, z = d.vs.Origin, float64(d.vs.OriginZ)
+		}
+		size, anchor := resolveTransformGeometry(layer, geom)
+		m, _ = transformForGeometry(size, anchor, t, offset, z)
 	}
-	m, _ := layerTransform(layer, t, offset, z)
-	if m == (transform3D{M11: 1, M22: 1, M33: 1, M44: 1}) {
+	if m == identityTransform3D {
 		delete(held, layer)
 	} else {
-		if HoldTransforms != nil {
+		if _, already := held[layer]; !already && HoldTransforms != nil {
 			HoldTransforms(layer)
+			if geom != nil {
+				geom.impLayer = 0
+			}
 		}
 		held[layer] = m
 	}
-	setLayerTransform(layer, m)
+	setLayerTransform(layer, m, geom)
 }
 
 // PointerMatrix returns the transform currently drawn by layer, around its top left. Presentation values include style transitions and additive keyframes, which a view's layout coordinates do not know.
@@ -363,12 +515,20 @@ var (
 	selAnchorPoint, selSetTransform objc.SEL
 	layerBounds                     func(objc.ID, objc.SEL) CGRect
 	layerAnchor                     func(objc.ID, objc.SEL) CGPoint
+	msgSendSetFloat32               func(objc.ID, objc.SEL, float32)
 	classGetMethodImplementation    func(objc.Class, objc.SEL) uintptr
 	// setTransforms are the setTransform: implementations SetTransform
 	// calls, by the layer's class.
 	setTransforms = map[objc.Class]setTransformImp{}
-	// transformArg is the matrix setLayerTransform passes by address.
-	transformArg transform3D
+	// transformArg and transformCall hold the matrix and syscall arguments
+	// setLayerTransform passes on the main thread, avoiding a per-frame slice
+	// allocation from purego.SyscallN's uintptrescapes variadic parameter.
+	transformArg  transform3D
+	transformCall [3]uintptr
+	// layerBoundsReads and layerAnchorReads count Core Animation struct reads
+	// made when cached geometry is absent, for tests verifying the fast path.
+	layerBoundsReads uint64
+	layerAnchorReads uint64
 )
 
 // setTransformImp is a class's setTransform: implementation: its address,
@@ -393,7 +553,15 @@ func bindTransforms() {
 	}
 	purego.RegisterLibFunc(&layerBounds, lib, rect)
 	purego.RegisterLibFunc(&layerAnchor, lib, "objc_msgSend")
+	purego.RegisterLibFunc(&msgSendSetFloat32, lib, "objc_msgSend")
 	purego.RegisterLibFunc(&classGetMethodImplementation, lib, "class_getMethodImplementation")
+}
+
+// setLayerOpacity sets layer's opacity through a typed registration so animated
+// fades do not box float32 into ID.Send's variadic interface slice.
+func setLayerOpacity(layer objc.ID, opacity float32) {
+	bindTransforms()
+	msgSendSetFloat32(layer, selSetOpacity, opacity)
 }
 
 // setLayerTransform sets layer's transform to m. On a layer of an NSGo
@@ -402,22 +570,32 @@ func bindTransforms() {
 // override's call back into Go and its message to the superclass each
 // passed the 128-byte matrix through reflection, most of what animating a
 // layer cost.
-func setLayerTransform(layer objc.ID, m transform3D) {
-	bindTransforms()
-	c := layer.Class()
-	imp, ok := setTransforms[c]
-	if !ok {
-		k := ownClass(layer)
-		if ownClasses[k] {
-			k = k.SuperClass()
-		} else {
-			k = c
+func setLayerTransform(layer objc.ID, m transform3D, geom *TransformGeometry) {
+	var imp setTransformImp
+	if geom != nil && geom.impLayer == layer {
+		imp = geom.imp
+	} else {
+		bindTransforms()
+		c := ClassOf(layer)
+		var ok bool
+		imp, ok = setTransforms[c]
+		if !ok {
+			k := ownClass(layer)
+			if ownClasses[k] {
+				k = k.SuperClass()
+			} else {
+				k = c
+			}
+			imp.imp = classGetMethodImplementation(k, selSetTransform)
+			if runtime.GOARCH != "arm64" {
+				purego.RegisterFunc(&imp.fn, imp.imp)
+			}
+			setTransforms[c] = imp
 		}
-		imp.imp = classGetMethodImplementation(k, selSetTransform)
-		if runtime.GOARCH != "arm64" {
-			purego.RegisterFunc(&imp.fn, imp.imp)
+		if geom != nil {
+			geom.imp = imp
+			geom.impLayer = layer
 		}
-		setTransforms[c] = imp
 	}
 	if imp.fn != nil {
 		imp.fn(layer, selSetTransform, m)
@@ -426,7 +604,10 @@ func setLayerTransform(layer objc.ID, m transform3D) {
 	// arm64 passes a struct of over 16 bytes that is no homogeneous
 	// aggregate of four floats or fewer as the address of a copy.
 	transformArg = m
-	purego.SyscallN(imp.imp, uintptr(layer), uintptr(selSetTransform), uintptr(unsafe.Pointer(&transformArg)))
+	transformCall[0] = uintptr(layer)
+	transformCall[1] = uintptr(selSetTransform)
+	transformCall[2] = uintptr(unsafe.Pointer(&transformArg))
+	purego.SyscallN(imp.imp, transformCall[:]...)
 }
 
 // move is a transform transition on a layer, from one style to another
@@ -447,7 +628,7 @@ var moves = map[objc.ID]*move{}
 // matrices Core Animation moves the anchor point in a straight line, so
 // a turn around any other point, as all of AppKit's layers make, would
 // swing off that point on the way.
-func moveAnimation(layer objc.ID, was, vs *driver.ViewStyle) objc.ID {
+func moveAnimation(layer objc.ID, was, vs *driver.ViewStyle, geom *TransformGeometry) objc.ID {
 	if was == nil {
 		delete(moves, layer)
 		return 0
@@ -463,11 +644,12 @@ func moveAnimation(layer objc.ID, was, vs *driver.ViewStyle) objc.ID {
 	tr := vs.Transition
 	moves[layer] = &move{from: from, to: *vs, begin: now + tr.Delay.Seconds(), duration: tr.Duration.Seconds(), curve: tr.Easing}
 	values := objc.ID(Class("NSMutableArray")).Send(sel("array"))
-	_, radius := layerTransform(layer, vs.Transform, vs.Origin, float64(vs.OriginZ))
+	size, anchor := resolveTransformGeometry(layer, geom)
+	_, radius := transformForGeometry(size, anchor, vs.Transform, vs.Origin, float64(vs.OriginZ))
 	n := max(int(math.Ceil(turned(from.Transform, vs.Transform)/turnStep(radius))), 1)
 	for i := range n + 1 {
 		s := driver.MixStyles(from, *vs, float64(i)/float64(n), driver.TransitionTransform)
-		m, _ := layerTransform(layer, s.Transform, s.Origin, float64(vs.OriginZ))
+		m, _ := transformForGeometry(size, anchor, s.Transform, s.Origin, float64(vs.OriginZ))
 		values.Send(selAddObject, objc.ID(Class("NSValue")).Send(sel("valueWithCATransform3D:"), m))
 	}
 	anim := objc.ID(Class("CAKeyframeAnimation")).Send(selAnimationWithPath, NSString("transform"))
@@ -551,6 +733,13 @@ func (r CAFrameRateRange) Clamped(screen float32) CAFrameRateRange {
 	screen = max(screen, 1)
 	return CAFrameRateRange{Minimum: min(max(1, r.Minimum), screen), Maximum: min(max(1, r.Maximum), screen),
 		Preferred: min(max(1, r.Preferred), screen)}
+}
+
+// MsgFloat64 sends a zero-argument Objective-C message returning float64
+// through a function registered once instead of objc.Send's per-call
+// registration.
+func MsgFloat64(id objc.ID, sel objc.SEL) float64 {
+	return msgSendFloat64(id, sel)
 }
 
 // LinkFrameTime returns when the frame of a display link (a CADisplayLink, or the one an NSView makes) will show, its targetTimestamp, on time.Now's base: a frame's time for engine.Engine.FrameAt, from within the link's callback.
