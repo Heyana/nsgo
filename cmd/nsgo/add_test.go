@@ -861,10 +861,10 @@ components:
   controls: ui/controls
   player-bar: ui/playerbar
 `,
-			"player/player.go":         "package player\n",
-			"player/ui/ui.go":          "package ui\n",
-			"ui/controls/controls.go":  "package controls\n",
-			"ui/playerbar/bar.go":      "package playerbar\n",
+			"player/player.go":        "package player\n",
+			"player/ui/ui.go":         "package ui\n",
+			"ui/controls/controls.go": "package controls\n",
+			"ui/playerbar/bar.go":     "package playerbar\n",
 		})
 	offlineAdd(t, proxy)
 	dir := nsgoApp(t)

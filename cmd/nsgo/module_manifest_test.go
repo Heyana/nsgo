@@ -172,12 +172,12 @@ components:
 			wantErr: "version: 1 is required",
 		},
 		{
-			name:    "unsupported version with same NSGo",
-			yaml:    "version: 2\n",
-			modPath: "github.com/acme/lib",
+			name:         "unsupported version with same NSGo",
+			yaml:         "version: 2\n",
+			modPath:      "github.com/acme/lib",
 			requiredNSGo: "v0.4.0",
 			currentNSGo:  "v0.4.0",
-			wantErr: "version is 2",
+			wantErr:      "version is 2",
 		},
 		{
 			name:         "unsupported version with newer NSGo names required version",
