@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	"github.com/ebitengine/purego"
 
@@ -17,7 +18,9 @@ import (
 )
 
 var (
-	fontconfig struct {
+	fontGeneration atomic.Uint64
+	fontconfig     struct {
+		mu      sync.Mutex
 		once    sync.Once
 		err     error
 		addFile func(config uintptr, file *byte) int32
@@ -61,11 +64,12 @@ func registerFonts(paths []string) {
 	}
 }
 
-// RegisterFont implements driver.FontRegistrar, on the engine thread:
-// fontconfig takes a file, so the font is written to the user's cache
-// first; the engine's Pango contexts are made again with it, and the
-// main thread's font map is told fontconfig's fonts changed.
-func (w *window) RegisterFont(data []byte) error {
+// registerFontData adds font bytes to fontconfig's application fonts and
+// advances fontGeneration so windowless text engines refresh their font maps.
+func registerFontData(data []byte) error {
+	if len(data) == 0 {
+		return errors.New("linux: empty font data")
+	}
 	if err := loadFontconfig(); err != nil {
 		return err
 	}
@@ -84,8 +88,28 @@ func (w *window) RegisterFont(data []byte) error {
 			return err
 		}
 	}
-	if fontconfig.addFile(0, cstr(file)) == 0 {
+	fontconfig.mu.Lock()
+	ok := fontconfig.addFile(0, cstr(file))
+	fontconfig.mu.Unlock()
+	if ok == 0 {
 		return errors.New("fontconfig cannot read it")
+	}
+	fontGeneration.Add(1)
+	return nil
+}
+
+// RegisterFont registers font data with fontconfig for the process.
+func RegisterFont(data []byte) error {
+	return registerFontData(data)
+}
+
+// RegisterFont implements driver.FontRegistrar, on the engine thread:
+// fontconfig takes a file, so the font is written to the user's cache
+// first; the engine's Pango contexts are made again with it, and the
+// main thread's font map is told fontconfig's fonts changed.
+func (w *window) RegisterFont(data []byte) error {
+	if err := registerFontData(data); err != nil {
+		return err
 	}
 	w.releaseTextContexts()
 	if pangoFcFontMapConfigChanged == nil {

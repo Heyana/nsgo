@@ -427,6 +427,8 @@ const (
 	// Value (Directory.Token). EventFiles answers Count with Text empty on
 	// success or the reason for failure.
 	ItemReleaseDirectory
+	// ItemRenderDrawing plays RenderDrawing into an offscreen bitmap. EventFiles answers Count with *image.RGBA in Data.
+	ItemRenderDrawing
 )
 
 // EditAction is an editing action of an input's touch edit menu (ItemEditMenu, EventEditAction).
@@ -694,6 +696,8 @@ type MountItem struct {
 	OffscreenID uint64
 	// Bytes is ItemImageCacheLimit's memory budget in bytes.
 	Bytes int64
+	// RenderDrawing is ItemRenderDrawing's request.
+	RenderDrawing *RenderDrawingRequest
 }
 
 // QuickLookRequest is an ItemQuickLook's files, regular files the core checked, and the index of the one shown first, within them.

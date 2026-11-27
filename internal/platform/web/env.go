@@ -233,6 +233,7 @@ func (s *surface) environment() driver.Environment {
 		// AudioBufferSourceNode.start(when) schedules on the output context's clock.
 		AudioSchedule:         webAudioAvailable(),
 		CanLockPointer:        webCanLockPointer(s.doc),
+		CanRenderDrawings:     true,
 		AudioPlaybackControls: webAudioAvailable(),
 		HapticPatterns:        hapticPatternsAvailable(g.Get("navigator")),
 		GPU:                   webGPUAvailable(),

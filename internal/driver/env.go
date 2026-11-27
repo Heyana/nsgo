@@ -160,6 +160,8 @@ type Environment struct {
 	CanReadFrontmostApp bool
 	// CustomCursor says the platform shows image-based custom cursors (Style.CursorImage): true on macOS, Windows, Linux and the web; false on touch platforms.
 	CustomCursor bool
+	// CanRenderDrawings says ItemRenderDrawing plays a drawing into pixels off the screen here.
+	CanRenderDrawings bool
 }
 
 // ThermalState is the system's current thermal pressure.

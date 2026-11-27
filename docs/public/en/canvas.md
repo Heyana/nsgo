@@ -161,6 +161,10 @@ d.ClearShader()
 
 `core.ShaderEffect` draws its children through WGSL and `core.ScreenEffect` covers the surface. `core.ShaderTransition` and `core.ScreenTransition` sample the pictures before and after `Value` changes. `core.TransitionShader` does this for navigation and dialogs. On Android, capturing views for effects requires Android 10 or later and OpenGL ES 3.0 with external texture support. `core.Canvas` and `core.Shader` both take `Label` and their children draw over them.
 
+## Exporting a drawing
+
+Call `cx.RenderDrawing(d, size, scale, done)` to rasterize a recorded `*core.Drawing` off the screen into an `image.Image` (`*image.RGBA`) without opening a window, ready for `image/png` export or thumbnailing. `cx.Env().CanRenderDrawings()` reports whether the target supports it (macOS, iOS, tvOS, watchOS, Windows, Linux and the web); elsewhere `RenderDrawing` calls `done` with `core.CodeUnavailable`. `size` is in points, `scale` is pixels per point (both finite and positive, up to 16 Mi pixels), and animation slots and view paints must already be resolved.
+
 ## Next
 
 - [Images and icons](images.md): the pictures a canvas draws.

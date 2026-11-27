@@ -24,7 +24,7 @@ func (p *canvasPlayer) vertices(op *driver.DrawOp) {
 	case src.Pixels != nil:
 		texture = canvasmesh.RGBA(src.Pixels, src.Size)
 	case src.Offscreen != nil:
-		e := p.w.offscreenSurface(p.v, src.Offscreen)
+		e := p.offscreenSurface(src.Offscreen)
 		if e == nil || e.surface == 0 {
 			return
 		}
@@ -35,7 +35,7 @@ func (p *canvasPlayer) vertices(op *driver.DrawOp) {
 		texture = canvasmesh.Texture{Pix: unsafe.Slice((*byte)(cPointer(data)), stride*e.height), Width: e.width, Height: e.height,
 			Stride: stride, Points: offscreenPoints(src, e), BGRA: true}
 	default:
-		slot := p.w.canvasImage(src, p.v)
+		slot := p.canvasImage(src)
 		if slot == nil || slot.pic == nil {
 			p.waited = p.waited || (slot != nil && slot.load != nil)
 			return

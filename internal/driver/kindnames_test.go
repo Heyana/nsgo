@@ -13,6 +13,7 @@ func TestKindNames(t *testing.T) {
 		{ItemMiniProgramSignIn.String(), "ItemMiniProgramSignIn"},
 		{EventMiniProgramSignIn.String(), "EventMiniProgramSignIn"},
 		{ItemCreate.String(), "ItemCreate"},
+		{ItemRenderDrawing.String(), "ItemRenderDrawing"},
 		{EventPress.String(), "EventPress"},
 		{EventKeyUp.String(), "EventKeyUp"},
 		{EventMouseUp.String(), "EventMouseUp"},

@@ -292,7 +292,7 @@ type shadeSource struct {
 // shadeSource returns what src shows, or nil while it loads.
 func (p *canvasPlayer) shadeSource(src driver.ImageSource) *shadeSource {
 	if src.Offscreen != nil {
-		e := p.w.offscreenSurface(p.v, src.Offscreen)
+		e := p.offscreenSurface(src.Offscreen)
 		if e == nil || e.surface == 0 {
 			return nil
 		}
@@ -308,7 +308,7 @@ func (p *canvasPlayer) shadeSource(src driver.ImageSource) *shadeSource {
 		}
 		return &shadeSource{pix: pix, w: e.width, h: e.height, points: offscreenPoints(src, e)}
 	}
-	s := p.w.canvasImage(src, p.v)
+	s := p.canvasImage(src)
 	if s == nil || s.pic == nil {
 		p.waited = p.waited || (s != nil && s.load != nil)
 		return nil

@@ -74,9 +74,10 @@ type Env struct {
 
 	launchedAtLogin *Signal[bool]
 	// frontmost is the application in front, and canReadFrontmost says the platform follows it, which only Scope.FrontmostApp and Scope.CanReadFrontmostApp read, as Access holds them.
-	frontmost        *Signal[FrontmostAppInfo]
-	canReadFrontmost *Signal[bool]
-	customCursor     *Signal[bool]
+	frontmost         *Signal[FrontmostAppInfo]
+	canReadFrontmost  *Signal[bool]
+	customCursor      *Signal[bool]
+	canRenderDrawings *Signal[bool]
 	// systemDark is the system's appearance, which a forced one hides.
 	systemDark   bool
 	material     *Signal[WindowMaterial]
@@ -101,81 +102,82 @@ type displayList struct{ values []DisplayInfo }
 // app sets for all of them with the first's, app.
 func newEnv(cx *Scope, app *Env) *Env {
 	e := &Env{
-		deviceName:       NewSignal(cx, ""),
-		deviceModel:      NewSignal(cx, ""),
-		window:           NewSignal(cx, Size{}),
-		geometry:         NewSignalFunc(cx, driver.Divide(Size{}, nil), Geometry.Equal),
-		verticalBar:      NewSignal(cx, VerticalBarUnspecified),
-		safe:             NewSignal(cx, Edges{}),
-		titleBar:         NewSignal(cx, Edges{}),
-		maximized:        NewSignal(cx, false),
-		fullScreen:       NewSignal(cx, false),
-		minimized:        NewSignal(cx, false),
-		windowFrame:      NewSignal(cx, WindowFrame{}),
-		keyboard:         NewSignal(cx, Points(0)),
-		keyboardDuration: NewSignal(cx, 250*time.Millisecond),
-		dark:             NewSignal(cx, false),
-		reduce:           NewSignal(cx, false),
-		contrast:         NewSignal(cx, false),
-		systemRTL:        NewSignal(cx, false),
-		reader:           NewSignal(cx, false),
-		screenColor:      NewSignal(cx, false),
-		speech:           NewSignal(cx, false),
-		clipboardItems:   NewSignal(cx, false),
-		audio:            NewSignal(cx, false),
-		audioSchedule:    NewSignal(cx, false),
-		hapticPatterns:   NewSignal(cx, false),
-		nowPlaying:       NewSignal(cx, false),
-		speak:            NewSignal(cx, false),
-		gamepads:         NewSignal(cx, false),
-		gpu:              NewSignal(cx, false),
-		camera:           NewSignal(cx, false),
-		scanCode:         NewSignal(cx, false),
-		discoverServices: NewSignal(cx, false),
-		canSendInput:     NewSignal(cx, false),
-		canLockPointer:   NewSignal(cx, false),
-		canLookUp:        NewSignal(cx, false),
-		canQuickLook:     NewSignal(cx, false),
-		canDockPanels:    NewSignal(cx, false),
-		level:            NewSignal(cx, false),
-		place:            NewSignal(cx, false),
-		workspaces:       NewSignal(cx, false),
-		hasWebView:       NewSignal(cx, false),
-		appleSignIn:      NewSignal(cx, false),
-		miniSignIn:       NewSignal(cx, false),
-		purchases:        NewSignal(cx, false),
-		canRequestReview: NewSignal(cx, false),
-		gameServices:     NewSignal(cx, false),
-		cloudStorage:     NewSignal(cx, false),
-		scheduled:        NewSignal(cx, false),
-		transparent:      NewSignal(cx, false),
-		taskbar:          NewSignal(cx, false),
-		fontScale:        NewSignal(cx, float32(1)),
-		ratio:            NewSignal(cx, float32(1)),
-		locale:           NewSignal(cx, ""),
-		forced:           NewSignal(cx, ""),
-		settings:         NewSignal(cx, LocaleSettings{}),
-		displays:         NewSignal(cx, &displayList{}),
-		display:          NewSignal(cx, DisplayInfo{}),
-		os:               NewSignal(cx, OS("")),
-		version:          NewSignal(cx, OSVersion{}),
-		idiom:            NewSignal(cx, IdiomPhone),
-		pointer:          NewSignal(cx, PointerCoarse),
-		lifecycle:        NewSignal(cx, LifecycleActive),
-		thermal:          NewSignal(cx, ThermalUnknown),
-		lowPower:         NewSignal(cx, LowPowerUnknown),
-		appClip:          NewSignal(cx, false),
-		openedURL:        NewSignal(cx, ""),
-		launchedAtLogin:  NewSignal(cx, false),
-		frontmost:        NewSignal(cx, FrontmostAppInfo{}),
-		canReadFrontmost: NewSignal(cx, false),
-		customCursor:     NewSignal(cx, false),
-		appearance:       NewSignal(cx, AppearanceSystem),
-		appleKeys:        NewSignal(cx, false),
-		keyCodeNames:     NewSignalFunc(cx, map[string]string(nil), maps.Equal[map[string]string]),
-		material:         NewSignal(cx, WindowMaterialNone),
-		clear:            NewSignal(cx, false),
-		tokens:           NewSignalFunc(cx, hostColors{}, nil),
+		deviceName:        NewSignal(cx, ""),
+		deviceModel:       NewSignal(cx, ""),
+		window:            NewSignal(cx, Size{}),
+		geometry:          NewSignalFunc(cx, driver.Divide(Size{}, nil), Geometry.Equal),
+		verticalBar:       NewSignal(cx, VerticalBarUnspecified),
+		safe:              NewSignal(cx, Edges{}),
+		titleBar:          NewSignal(cx, Edges{}),
+		maximized:         NewSignal(cx, false),
+		fullScreen:        NewSignal(cx, false),
+		minimized:         NewSignal(cx, false),
+		windowFrame:       NewSignal(cx, WindowFrame{}),
+		keyboard:          NewSignal(cx, Points(0)),
+		keyboardDuration:  NewSignal(cx, 250*time.Millisecond),
+		dark:              NewSignal(cx, false),
+		reduce:            NewSignal(cx, false),
+		contrast:          NewSignal(cx, false),
+		systemRTL:         NewSignal(cx, false),
+		reader:            NewSignal(cx, false),
+		screenColor:       NewSignal(cx, false),
+		speech:            NewSignal(cx, false),
+		clipboardItems:    NewSignal(cx, false),
+		audio:             NewSignal(cx, false),
+		audioSchedule:     NewSignal(cx, false),
+		hapticPatterns:    NewSignal(cx, false),
+		nowPlaying:        NewSignal(cx, false),
+		speak:             NewSignal(cx, false),
+		gamepads:          NewSignal(cx, false),
+		gpu:               NewSignal(cx, false),
+		camera:            NewSignal(cx, false),
+		scanCode:          NewSignal(cx, false),
+		discoverServices:  NewSignal(cx, false),
+		canSendInput:      NewSignal(cx, false),
+		canLockPointer:    NewSignal(cx, false),
+		canLookUp:         NewSignal(cx, false),
+		canQuickLook:      NewSignal(cx, false),
+		canDockPanels:     NewSignal(cx, false),
+		level:             NewSignal(cx, false),
+		place:             NewSignal(cx, false),
+		workspaces:        NewSignal(cx, false),
+		hasWebView:        NewSignal(cx, false),
+		appleSignIn:       NewSignal(cx, false),
+		miniSignIn:        NewSignal(cx, false),
+		purchases:         NewSignal(cx, false),
+		canRequestReview:  NewSignal(cx, false),
+		gameServices:      NewSignal(cx, false),
+		cloudStorage:      NewSignal(cx, false),
+		scheduled:         NewSignal(cx, false),
+		transparent:       NewSignal(cx, false),
+		taskbar:           NewSignal(cx, false),
+		fontScale:         NewSignal(cx, float32(1)),
+		ratio:             NewSignal(cx, float32(1)),
+		locale:            NewSignal(cx, ""),
+		forced:            NewSignal(cx, ""),
+		settings:          NewSignal(cx, LocaleSettings{}),
+		displays:          NewSignal(cx, &displayList{}),
+		display:           NewSignal(cx, DisplayInfo{}),
+		os:                NewSignal(cx, OS("")),
+		version:           NewSignal(cx, OSVersion{}),
+		idiom:             NewSignal(cx, IdiomPhone),
+		pointer:           NewSignal(cx, PointerCoarse),
+		lifecycle:         NewSignal(cx, LifecycleActive),
+		thermal:           NewSignal(cx, ThermalUnknown),
+		lowPower:          NewSignal(cx, LowPowerUnknown),
+		appClip:           NewSignal(cx, false),
+		openedURL:         NewSignal(cx, ""),
+		launchedAtLogin:   NewSignal(cx, false),
+		frontmost:         NewSignal(cx, FrontmostAppInfo{}),
+		canReadFrontmost:  NewSignal(cx, false),
+		customCursor:      NewSignal(cx, false),
+		canRenderDrawings: NewSignal(cx, false),
+		appearance:        NewSignal(cx, AppearanceSystem),
+		appleKeys:         NewSignal(cx, false),
+		keyCodeNames:      NewSignalFunc(cx, map[string]string(nil), maps.Equal[map[string]string]),
+		material:          NewSignal(cx, WindowMaterialNone),
+		clear:             NewSignal(cx, false),
+		tokens:            NewSignalFunc(cx, hostColors{}, nil),
 	}
 	if app != nil {
 		e.forced, e.appearance, e.tokens = app.forced, app.appearance, app.tokens
@@ -319,6 +321,7 @@ func (e *Env) set(v Environment) {
 	e.frontmost.Set(v.FrontmostApp)
 	e.canReadFrontmost.Set(v.CanReadFrontmostApp)
 	e.customCursor.Set(supportsCustomCursor(v))
+	e.canRenderDrawings.Set(v.CanRenderDrawings)
 	e.material.Set(v.WindowMaterial)
 	e.clear.Set(v.WindowTransparent)
 	e.verticalBar.Set(v.VerticalBarEdge)
@@ -519,6 +522,12 @@ func (e *Env) CanSkipTaskbar() bool { return e.taskbar.Get() }
 // cursors (Style.CursorImage): true on macOS, Windows, Linux and the web;
 // false on touch platforms such as iOS and Android.
 func (e *Env) SupportsCustomCursor() bool { return e.customCursor.Get() }
+
+// CanRenderDrawings reports whether Scope.RenderDrawing plays a drawing into
+// pixels off the screen here: macOS, iOS, tvOS, watchOS, Windows, Linux and
+// the web. Elsewhere RenderDrawing fails with CodeUnavailable without asking
+// the platform.
+func (e *Env) CanRenderDrawings() bool { return e.canRenderDrawings.Get() }
 
 func supportsCustomCursor(v Environment) bool {
 	if v.CustomCursor {

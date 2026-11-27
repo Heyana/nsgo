@@ -31,6 +31,7 @@ type canvasOps struct {
 	refreshScale     func(*surface, js.Value)
 	offscreenCanvas  func(*surface, *driver.OffscreenCanvas, *view) (js.Value, float64, bool)
 	releaseOffscreen func(*surface, uint64)
+	renderDrawing    func(*surface, uint32, *driver.RenderDrawingRequest)
 }
 
 type videoOps struct {
@@ -119,6 +120,7 @@ func (*surface) EnableCanvas() {
 		refreshScale:     (*surface).refreshCanvasScale,
 		offscreenCanvas:  (*surface).offscreenCanvas,
 		releaseOffscreen: (*surface).releaseOffscreen,
+		renderDrawing:    (*surface).renderDrawing,
 	})
 }
 

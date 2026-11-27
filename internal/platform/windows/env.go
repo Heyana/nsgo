@@ -98,6 +98,7 @@ func (w *window) environment() driver.Environment {
 		HasWebView:            true,
 		CanSendInput:          true,
 		CanLockPointer:        true,
+		CanRenderDrawings:     true,
 		OSVersion:             osVersion(),
 		Idiom:                 driver.IdiomDesktop,
 		TitleBar:              w.titleBarArea(),

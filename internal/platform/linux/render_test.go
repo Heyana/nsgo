@@ -190,7 +190,7 @@ func TestFontSizesAreLogicalPixels(t *testing.T) {
 	surface := cairoImageSurfaceCreate(0, 1, 1)
 	cr := cairoCreate(surface)
 	defer func() { cairoDestroy(cr); cairoSurfaceDestroy(surface) }()
-	l := canvasLayout(cr, "MMMM", font)
+	l := (&canvasPlayer{cr: cr}).textLayout("MMMM", font)
 	defer gObjectUnref(l)
 	var width, height int32
 	pangoLayoutGetSize(l, &width, &height)

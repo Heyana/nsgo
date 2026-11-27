@@ -39,7 +39,7 @@ func (c *canvasPlayer) vertices(op *driver.DrawOp) {
 			texture.Points = src.Size
 		}
 	default:
-		slot := c.p.w.canvasImage(src)
+		slot := c.p.canvasImage(src)
 		if slot == nil || slot.pic == nil || len(slot.pic.frames) == 0 {
 			c.waited = c.waited || (slot != nil && slot.load != nil)
 			return

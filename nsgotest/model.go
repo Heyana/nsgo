@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"image"
 	"math"
 	"slices"
 	"strings"
@@ -1166,6 +1167,26 @@ func (a *App) apply(b *driver.MountBatch) {
 					a.post(driver.CaptureResult(it.Count, data, err))
 				} else {
 					a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoCapture})
+				}
+			}
+		case driver.ItemRenderDrawing:
+			if a.target == nil {
+				req := it.RenderDrawing
+				if req == nil {
+					a.post(driver.RenderDrawingResult(it.Count, nil, errors.New("nsgotest: no drawing")))
+					break
+				}
+				var img *image.RGBA
+				var err error
+				if a.RenderDrawing != nil {
+					img, err = a.RenderDrawing(req.Drawing, req.Size, req.Scale)
+				} else {
+					img, err = Render(req.Drawing, req.Size, req.Scale)
+				}
+				if errors.Is(err, ErrNoPlayer) {
+					a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDrawingRenderer})
+				} else {
+					a.post(driver.RenderDrawingResult(it.Count, img, err))
 				}
 			}
 		case driver.ItemShare:

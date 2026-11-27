@@ -7,13 +7,24 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"math"
 	"time"
 	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
 )
+
+// RenderDrawingAsync renders req off the calling thread and dispatches the result.
+func RenderDrawingAsync(req *driver.RenderDrawingRequest, count uint32, dispatch func(driver.Event)) {
+	if req == nil {
+		dispatch(driver.RenderDrawingResult(count, nil, errors.New("apple: no drawing")))
+		return
+	}
+	go func() {
+		img, err := RenderDrawing(req.Drawing, req.Size, req.Scale)
+		dispatch(driver.RenderDrawingResult(count, img, err))
+	}()
+}
 
 // RenderDrawing plays a recording into owned RGBA pixels without a window.
 // Its synchronous image resolver has no access to the view caches or main queue.
@@ -53,17 +64,11 @@ type renderImageKey struct {
 }
 
 func (r *drawingRenderer) bitmap(d *driver.Drawing, size driver.Size, scale float64) (uintptr, int, int, error) {
-	if d == nil {
-		return 0, 0, 0, errors.New("apple: no drawing")
+	width, height, err := driver.RenderPixelSize(d, size, scale)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("apple: %w", err)
 	}
-	if len(d.Slots) != 0 || len(d.ViewPaints) != 0 {
-		return 0, 0, 0, errors.New("apple: drawing still depends on a view's animations or paints")
-	}
-	w, h := math.Ceil(float64(size.Width)*scale), math.Ceil(float64(size.Height)*scale)
-	if !(scale > 0) || math.IsInf(scale, 0) || !(w > 0) || !(h > 0) || w*h > maxOffscreenPixels {
-		return 0, 0, 0, errors.New("apple: render size and scale must be finite, positive and at most 16 Mi pixels")
-	}
-	width, height := int(w), int(h)
+	w, h := float64(width), float64(height)
 	const premultipliedLast = 1
 	bitmap := cgOffscreenBitmapCreate(0, uintptr(width), uintptr(height), 8, uintptr(width*4), srgb, premultipliedLast)
 	if bitmap == 0 {

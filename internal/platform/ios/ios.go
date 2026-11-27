@@ -856,29 +856,30 @@ func (s *surface) environment() driver.Environment {
 		DisplayID:   displayID,
 		SafeArea: driver.Edges{Top: driver.Points(in.Top), Right: driver.Points(in.Right),
 			Bottom: driver.Points(in.Bottom), Left: driver.Points(in.Left)},
-		KeyboardHeight:   s.keyboard,
-		KeyboardDuration: s.keyboardDuration,
-		Dark:             objc.Send[int](traits, sel("userInterfaceStyle")) == dark,
-		FontScale:        float32(objc.Send[float64](body, sel("pointSize")) / 17),
-		ReduceMotion:     uiReduceMotion(),
-		IncreaseContrast: uiDarkerColors(),
-		ScreenReader:     uiVoiceOver(),
-		RTL:              rtl,
-		PixelRatio:       float32(scale),
-		Locale:           locale,
-		LocaleSettings:   apple.LocaleSettings(),
-		OS:               driver.OSIOS,
-		OSVersion:        osVersion(),
-		Idiom:            idiom,
-		Gamepads:         true,
-		CanRequestReview: !onTV() && apple.ReviewAvailable(),
-		CloudStorage:     apple.CloudStorageAvailable(),
-		VerticalBarEdge:  verticalBarEdge(traits),
-		Lifecycle:        appLifecycle(),
-		ThermalState:     thermal,
-		LowPowerMode:     lowPower,
-		AppClip:          appClip(),
-		OpenedURL:        openedURL,
+		KeyboardHeight:    s.keyboard,
+		KeyboardDuration:  s.keyboardDuration,
+		Dark:              objc.Send[int](traits, sel("userInterfaceStyle")) == dark,
+		FontScale:         float32(objc.Send[float64](body, sel("pointSize")) / 17),
+		ReduceMotion:      uiReduceMotion(),
+		IncreaseContrast:  uiDarkerColors(),
+		ScreenReader:      uiVoiceOver(),
+		RTL:               rtl,
+		PixelRatio:        float32(scale),
+		Locale:            locale,
+		LocaleSettings:    apple.LocaleSettings(),
+		OS:                driver.OSIOS,
+		OSVersion:         osVersion(),
+		Idiom:             idiom,
+		Gamepads:          true,
+		CanRenderDrawings: true,
+		CanRequestReview:  !onTV() && apple.ReviewAvailable(),
+		CloudStorage:      apple.CloudStorageAvailable(),
+		VerticalBarEdge:   verticalBarEdge(traits),
+		Lifecycle:         appLifecycle(),
+		ThermalState:      thermal,
+		LowPowerMode:      lowPower,
+		AppClip:           appClip(),
+		OpenedURL:         openedURL,
 	}
 	applyCapabilities(&env, idiom, capabilities{
 		speech:        apple.SpeechAvailable(),
@@ -1392,6 +1393,13 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemCapture:
 			s.capture(it.ID, it.Count)
+			continue
+		case driver.ItemRenderDrawing:
+			if ch := canvases.Load(); ch != nil {
+				ch.renderDrawing(s, it.Count, it.RenderDrawing)
+			} else {
+				s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDrawingRenderer})
+			}
 			continue
 		case driver.ItemShare:
 			s.share(*it.Share, it.Count)

@@ -30,6 +30,7 @@ type canvasOps struct {
 	keepImage        func(*window, string)
 	releaseImage     func(*window, string)
 	releaseOffscreen func(*window, uint64)
+	renderDrawing    func(*window, uint32, *driver.RenderDrawingRequest)
 	releaseView      func(*view)
 	closeWindow      func(*window)
 }
@@ -120,6 +121,7 @@ func (*window) EnableCanvas() {
 		keepImage:        (*window).keepCanvasImage,
 		releaseImage:     (*window).releaseCanvasImage,
 		releaseOffscreen: (*window).releaseOffscreen,
+		renderDrawing:    (*window).renderDrawing,
 		releaseView: func(v *view) {
 			v.releaseCanvasParts()
 			v.canvas.raster.release()

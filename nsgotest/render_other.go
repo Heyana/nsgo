@@ -1,4 +1,4 @@
-//go:build !darwin || ios
+//go:build (!darwin || ios) && !windows && (!linux || android)
 
 package nsgotest
 
@@ -16,3 +16,5 @@ func RegisterFont([]byte) error { return ErrNoPlayer }
 
 // Render reports ErrNoPlayer where no windowless canvas player is available.
 func Render(*core.Drawing, core.Size, float64) (*image.RGBA, error) { return nil, ErrNoPlayer }
+
+func canRenderDrawings() bool { return false }

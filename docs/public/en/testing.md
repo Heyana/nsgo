@@ -94,11 +94,11 @@ Headless Linux and Android tests can check the package paths passed to the insta
 
 ## Drawings without a window
 
-On macOS, `nsgotest.PlatformTextEngine()` gives headless tests CoreText metrics. Pass it through `nsgotest.TextEngine`; elsewhere it returns nil and the model keeps its approximate metrics. Register font bytes with `nsgotest.RegisterFont` before starting the app.
+On macOS, Windows and Linux, `nsgotest.PlatformTextEngine()` gives headless tests the host's native text metrics (CoreText, DirectWrite or Pango). Pass it through `nsgotest.TextEngine`; elsewhere (or on Linux without Pango and Cairo) it returns nil and the model keeps its approximate metrics. Register font bytes with `nsgotest.RegisterFont` before starting the app.
 
 `nsgotest.Render(app.Find("id:score").Drawing, core.Size{Width: 600, Height: 800}, 2)` replays the recorded canvas into an owned `*image.RGBA` without opening a window. Encode it with `image/png` or compare its pixels. Size is in points, scale is pixels per point, and the transparent output is limited to 16 Mi pixels. Both must be finite and positive. Images load synchronously with a 30-second deadline; animated images use their first frames, and failures return an error. Resolve animation slots and view paints before rendering.
 
-Windowless rendering and font registration currently support macOS. Other targets return `nsgotest.ErrNoPlayer`; native-target `Screenshot` remains available independently.
+Headless `Scope.RenderDrawing` enables `Env.CanRenderDrawings()` automatically on hosts with a windowless player and delegates to `nsgotest.Render`, or to `app.RenderDrawing` when set. Other targets return `nsgotest.ErrNoPlayer`; native-target `Screenshot` remains available independently.
 
 `View.Style` records a `nsgotest.ViewStyle`, and `View.Animated` records `nsgotest.AnimatedValues`. `app.Animated(selector)` applies bound values to the recorded base style. `app.CanvasScale(selector)` returns the pixels per point a canvas is drawn at: the pixel ratio, times the raster steps of the zooms and transforms around it, times its `ResolutionScale`, which `View.ResolutionScale` records with its `CanvasSampling`. Effects and custom cursors retain their app-value identities; `Radii`, `Rounded`, `Rim` and `Matrix` keep the same geometry policies.
 

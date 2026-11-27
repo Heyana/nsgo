@@ -136,6 +136,10 @@ d.ClearShader()
 
 `core.ShaderEffect` 用 WGSL 绘制子元素，`core.ScreenEffect` 作用于整个界面。`core.ShaderTransition` 和 `core.ScreenTransition` 对 `Value` 变化前后的画面采样，`core.TransitionShader` 用于导航和对话框转场。在 Android 上，效果捕获需要 Android 10 或更新版本，并且 OpenGL ES 3.0 支持外部纹理。`core.Canvas` 和 `core.Shader` 都接受 `Label`，子元素会绘制在它们之上。
 
+## 导出绘制
+
+调用 `cx.RenderDrawing(d, size, scale, done)` 可在不打开窗口的情况下把已记录的 `*core.Drawing` 离屏光栅化为 `image.Image`（`*image.RGBA`），用于 `image/png` 导出或生成缩略图。`cx.Env().CanRenderDrawings()` 报告当前平台是否支持（macOS、iOS、tvOS、watchOS、Windows、Linux 和 Web）；不支持的平台会直接返回 `core.CodeUnavailable`。`size` 单位为点，`scale` 为每点像素数（均须为有限正数，总像素不超过 16 Mi），且绘制中的动画槽与视图画笔须已解析。
+
 ## 下一步
 
 - [图片与图标](images.md)：画布可以绘制的图片。

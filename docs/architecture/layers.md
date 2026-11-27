@@ -4,7 +4,7 @@ NSGo's packages form layers, and each imports only downward: apps sit on compone
 
 [Code map](../../ARCHITECTURE.md#code-map) says what each package does; this document says how they stack and why.
 
-On macOS, the `nsgotest` entry point also imports the shared Apple canvas and text implementation for windowless rendering and native headless metrics. It starts no platform host; `core` still imports no backend.
+On macOS, Windows and Linux, the `nsgotest` entry point also imports the host's native canvas and text implementation for windowless rendering and native headless metrics. It starts no platform host; `core` still imports no backend.
 
 ## Layers
 

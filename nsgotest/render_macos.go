@@ -22,7 +22,9 @@ func RegisterFont(data []byte) error { return apple.RegisterFont(data) }
 // with at most 16 Mi output pixels. It waits for images for up to 30 seconds,
 // uses animated images' first frames, and reports load and decode failures.
 // The drawing must have resolved its view paints and animation slots.
-// macOS is supported; other targets return ErrNoPlayer.
+// macOS, Windows and Linux are supported; other targets return ErrNoPlayer.
 func Render(d *core.Drawing, size core.Size, scale float64) (*image.RGBA, error) {
 	return apple.RenderDrawing(d, size, scale)
 }
+
+func canRenderDrawings() bool { return true }

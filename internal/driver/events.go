@@ -190,7 +190,7 @@ const (
 	// installed the package or Android opened the installer,
 	// ItemCanInstallPackages Count with whether the
 	// app may install packages and ItemInstallSettings Count with whether
-	// the setting opened (all Finished). ItemCapture returns the PNG in Data ([]byte); Text is what failed.
+	// the setting opened (all Finished). ItemCapture returns the PNG in Data ([]byte), and ItemRenderDrawing returns the rendered *image.RGBA in Data; Text is what failed.
 	EventFiles
 	// EventModalShown and EventModalDismissed report that the platform
 	// finished presenting modal ID and taking it away, where it says so.

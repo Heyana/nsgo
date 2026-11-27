@@ -98,8 +98,11 @@ func (w *window) closeOffscreen() {
 // off.Drawing into a bitmap render target only on first use, after a version
 // change, or after a graphics device reset.
 func (p *painter) offscreenBitmap(v *view, off *driver.OffscreenCanvas) *offscreenEntry {
+	if p.resolveOffscreen != nil {
+		return p.resolveOffscreen(off)
+	}
 	w := p.w
-	if w.canvasClosed || off == nil {
+	if w == nil || w.canvasClosed || off == nil {
 		return nil
 	}
 	if e := w.offscreen[off.ID]; e != nil && e.version == off.Version && e.generation == gfxGeneration && e.bitmap != nil {

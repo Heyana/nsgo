@@ -1,4 +1,4 @@
-//go:build darwin && !ios
+//go:build (darwin && !ios) || windows || (linux && !android)
 
 package nsgotest
 
@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -19,7 +20,15 @@ import (
 	"golang.org/x/image/font/sfnt"
 )
 
+func requireWindowlessHost(t *testing.T) {
+	t.Helper()
+	if PlatformTextEngine() == nil {
+		t.Skip("no windowless text/canvas engine available on this host")
+	}
+}
+
 func TestWindowlessCanvasSamples(t *testing.T) {
+	requireWindowlessHost(t)
 	for _, sample := range canvastest.Samples(PlatformTextEngine(), canvastest.Logo("..")) {
 		t.Run(sample.Name, func(t *testing.T) {
 			d := &core.Drawing{}
@@ -39,6 +48,7 @@ func TestWindowlessCanvasSamples(t *testing.T) {
 }
 
 func TestWindowlessScaleAndTransparency(t *testing.T) {
+	requireWindowlessHost(t)
 	draw := func(s float32) *core.Drawing {
 		d := &core.Drawing{}
 		d.SetFillColor(core.RGBA(0xff0000, 0.5)).FillRect(2*s, 3*s, 4*s, 5*s)
@@ -61,6 +71,7 @@ func TestWindowlessScaleAndTransparency(t *testing.T) {
 }
 
 func TestWindowlessImagesAndFailures(t *testing.T) {
+	requireWindowlessHost(t)
 	pixels := image.NewRGBA(image.Rect(4, 5, 6, 7))
 	for y := 5; y < 7; y++ {
 		for x := 4; x < 6; x++ {
@@ -95,6 +106,7 @@ func TestWindowlessImagesAndFailures(t *testing.T) {
 }
 
 func TestWindowlessConcurrentImageRenders(t *testing.T) {
+	requireWindowlessHost(t)
 	var jobs sync.WaitGroup
 	errors := make(chan error, 4)
 	for i := range 4 {
@@ -132,6 +144,7 @@ func TestWindowlessConcurrentImageRenders(t *testing.T) {
 }
 
 func TestWindowlessRegisteredFontAndMetrics(t *testing.T) {
+	requireWindowlessHost(t)
 	data, err := os.ReadFile("../base/formula/fonts/NewCMMath-Book.otf")
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +154,11 @@ func TestWindowlessRegisteredFontAndMetrics(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf sfnt.Buffer
-	family, err := font.Name(&buf, sfnt.NameIDPostScript)
+	nameID := sfnt.NameIDFamily
+	if runtime.GOOS == "darwin" {
+		nameID = sfnt.NameIDPostScript
+	}
+	family, err := font.Name(&buf, nameID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,5 +221,56 @@ func TestWindowlessRegisteredFontAndMetrics(t *testing.T) {
 	}
 	if bytes.Equal(before.Pix, img.Pix) {
 		t.Fatalf("font %q glyph %U rendered the same pixels as a missing family", family, glyph)
+	}
+}
+
+func TestWindowlessScopeRenderDrawingService(t *testing.T) {
+	requireWindowlessHost(t)
+	logo := canvastest.Logo("..")
+	var got image.Image
+	var gotErr error
+	var canRender bool
+	app := Start(t, func(cx *core.Scope) core.Node {
+		canRender = cx.Env().CanRenderDrawings()
+		return core.Canvas{
+			TestID: "score",
+			Style:  core.Style{Width: core.Pt(120), Height: core.Pt(80)},
+			Draw: func(d *core.Drawing, size core.Size) {
+				grad := core.CanvasLinear(0, 0, float32(size.Width), 0,
+					core.GradientStop{Offset: 0, Color: core.RGB(0x2563eb)},
+					core.GradientStop{Offset: 1, Color: core.RGB(0x10b981)},
+				)
+				d.SetFillGradient(grad).FillRect(0, 0, float32(size.Width), float32(size.Height))
+				d.BeginPath().MoveTo(10, 60).LineTo(110, 60).SetStrokeColor(core.RGB(0xffffff)).SetLineWidth(2).Stroke()
+				d.SetFillColor(core.RGB(0xffffff)).FillText("NSGo", 12, 34, core.Font{Size: 20})
+				d.DrawImageIn(core.ImageSource{Data: logo}, 76, 8, 32, 32)
+				cx.RenderDrawing(d, size, 2, func(img image.Image, err error) {
+					got, gotErr = img, err
+				})
+			},
+		}
+	}, TextEngine(PlatformTextEngine()))
+	app.Advance(0)
+	if !canRender {
+		t.Fatal("Env.CanRenderDrawings() = false on a host with a windowless player")
+	}
+	if gotErr != nil || got == nil {
+		t.Fatalf("RenderDrawing failed: img=%v err=%v", got, gotErr)
+	}
+	if got.Bounds() != image.Rect(0, 0, 240, 160) {
+		t.Fatalf("bounds = %v, want 240x160", got.Bounds())
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, got); err != nil {
+		t.Fatalf("png.Encode failed: %v", err)
+	}
+	decoded, err := png.Decode(&encoded)
+	if err != nil {
+		t.Fatalf("png.Decode failed: %v", err)
+	}
+	left := color.RGBAModel.Convert(decoded.At(4, 150)).(color.RGBA)
+	right := color.RGBAModel.Convert(decoded.At(235, 150)).(color.RGBA)
+	if left.B <= left.G || right.G <= right.B {
+		t.Fatalf("gradient pixels unexpected: left=%v right=%v", left, right)
 	}
 }

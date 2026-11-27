@@ -1623,6 +1623,13 @@ func (s *surface) mount(b *driver.MountBatch) {
 		case driver.ItemCapture:
 			s.capture(it.ID, it.Count)
 			continue
+		case driver.ItemRenderDrawing:
+			if ch := canvases.Load(); ch != nil {
+				ch.renderDrawing(s, it.Count, it.RenderDrawing)
+			} else {
+				s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDrawingRenderer})
+			}
+			continue
 		case driver.ItemShare:
 			s.share(*it.Share, it.Count)
 			continue

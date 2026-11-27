@@ -32,6 +32,7 @@ package nsgotest
 
 import (
 	"fmt"
+	"image"
 	"io"
 	"log"
 	"maps"
@@ -492,6 +493,9 @@ type App struct {
 	// ImageSizes are the pixel sizes of the images the model's platform
 	// loads, by URI, which answer Scope.ImageSize; others fail to load.
 	ImageSizes map[string]driver.Size
+	// RenderDrawing, when set in a headless test, answers Scope.RenderDrawing
+	// instead of calling Render.
+	RenderDrawing func(d *core.Drawing, size core.Size, scale float64) (*image.RGBA, error)
 	// ImageBytes are the encoded byte sizes of URI images the model's platform loads, by URI or ImageSource.Key, used when modeling SetImageCacheLimit. Inline ImageSource.Data sources automatically count len(Data) bytes.
 	ImageBytes map[string]int64
 	// ImageCacheLimit is the encoded image cache memory budget last set with core.Scope.SetImageCacheLimit, defaulting to core.DefaultImageCacheLimit.
@@ -831,6 +835,8 @@ func start(t testing.TB, view func(cx *core.Scope) core.Node, fn func(app *core.
 	env := driver.Environment{}
 	if a.env != nil {
 		env = *a.env
+	} else {
+		env.CanRenderDrawings = canRenderDrawings()
 	}
 	if !a.noGPU {
 		env.GPU = true

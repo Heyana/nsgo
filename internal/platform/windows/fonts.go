@@ -110,6 +110,12 @@ func buildFonts(data [][]byte) error {
 	var bad error
 	all := append(append([][]byte(nil), fontData...), data...)
 	for i, d := range all {
+		if len(d) == 0 {
+			if i >= len(fontData) {
+				bad = errors.New("DirectWrite cannot read it")
+			}
+			continue
+		}
 		var file *comObject
 		// With no owner object, DirectWrite copies the bytes.
 		if failed(loader.call(memoryLoaderCreateReference, f5.ptr(), uintptr(unsafe.Pointer(&d[0])),

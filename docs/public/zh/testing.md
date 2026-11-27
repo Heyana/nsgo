@@ -90,6 +90,14 @@ func TestMain(m *testing.M) {
 
 `app.NowPlaying()` 返回应用最后一次发布的系统媒体信息，清除后返回 nil。`app.MediaCommand(core.MediaCommand{Kind: core.MediaSeek, Position: 30 * time.Second})` 向当前发布发送命令，由仍然有效的处理函数接收。无界面测试用 `nsgotest.Environment(core.Environment{NowPlaying: true})` 启用此能力，也可以在 macOS 目标上测试。
 
+## 无窗口绘制
+
+在 macOS、Windows 和 Linux 上，`nsgotest.PlatformTextEngine()` 为无头测试提供宿主原生文本引擎的度量（CoreText、DirectWrite 或 Pango）。通过 `nsgotest.TextEngine` 传入；其他目标（或未安装 Pango 和 Cairo 的 Linux 环境）返回 nil，测试模型保持近似度量。启动应用前用 `nsgotest.RegisterFont` 注册字体字节。
+
+`nsgotest.Render(app.Find("id:score").Drawing, core.Size{Width: 600, Height: 800}, 2)` 在不打开窗口的情况下把记录的画布重放为独立的 `*image.RGBA`，可直接用 `image/png` 编码或比对像素。尺寸单位为点，缩放为每点像素数，透明输出上限为 16 Mi 像素，两者都必须为有限正数。图片同步加载（上限 30 秒），动图取第一帧，失败时返回错误；渲染前需已解析动画槽和视图画笔。
+
+在支持无窗口播放器的宿主上，无头测试默认启用 `Env.CanRenderDrawings()`，并将 `Scope.RenderDrawing` 委托给 `nsgotest.Render`（或在设置后调用 `app.RenderDrawing`）。其他目标返回 `nsgotest.ErrNoPlayer`；目标平台上的 `Screenshot` 仍可独立使用。
+
 `View.Style` 记录 `nsgotest.ViewStyle`，`View.Animated` 记录 `nsgotest.AnimatedValues`。`app.Animated(selector)` 将绑定值应用到记录的基础样式。`app.CanvasScale(selector)` 返回画布绘制时每点的像素数：像素比乘以它外面的缩放和变换的光栅档位，再乘以它的 `ResolutionScale`；`View.ResolutionScale` 和 `CanvasSampling` 记录后两者。效果和自定义光标保留其应用值标识；`Radii`、`Rounded`、`Rim` 和 `Matrix` 保持原有几何策略。
 
 `app.Find(selector).Kind` 的类型是 `nsgotest.ViewKind`。需要检查挂载视图的形式时，可将它与 `nsgotest.KindText`、`KindInput`、`KindCanvas` 或 `KindGPU` 等常量比较。

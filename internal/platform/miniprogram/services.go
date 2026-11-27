@@ -89,6 +89,8 @@ func (s *surface) service(it *driver.MountItem) {
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoFileRevealer})
 	case driver.ItemCapture:
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoCapture})
+	case driver.ItemRenderDrawing:
+		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDrawingRenderer})
 	case driver.ItemShare:
 		s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoShareSheet})
 	case driver.ItemInstallPackage:

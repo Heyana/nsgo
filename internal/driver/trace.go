@@ -147,6 +147,7 @@ var itemNames = map[ItemKind]string{
 	ItemImageCacheLimit: "image-cache-limit",
 	ItemAppClipOverlay:  "app-clip-overlay",
 	ItemCapture:         "capture",
+	ItemRenderDrawing:   "render-drawing",
 }
 
 // TraceLine is the item as traces print it: its kind, its view and what

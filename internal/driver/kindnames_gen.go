@@ -139,6 +139,7 @@ var itemKindNames = map[ItemKind]string{
 	ItemCapture:                 "ItemCapture",
 	ItemOpenDirectory:           "ItemOpenDirectory",
 	ItemReleaseDirectory:        "ItemReleaseDirectory",
+	ItemRenderDrawing:           "ItemRenderDrawing",
 }
 
 // String returns the kind's name, as a log or an event prints it.

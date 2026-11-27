@@ -200,7 +200,7 @@ func (c *canvasPlayer) shade(op *driver.DrawOp) bool {
 			// An offscreen bitmap is Direct2D's alone: it draws plain.
 			return false
 		}
-		s := c.p.w.canvasImage(*imgSrc)
+		s := c.p.canvasImage(*imgSrc)
 		if s == nil || s.pic == nil {
 			c.waited = c.waited || (s != nil && s.load != nil)
 			return true
@@ -227,7 +227,7 @@ func (c *canvasPlayer) shade(op *driver.DrawOp) bool {
 		if i == 0 && first != nil {
 			im = first
 		} else if i < len(pass.Images) && pass.Images[i].Offscreen == nil {
-			if s := c.p.w.canvasImage(pass.Images[i]); s != nil && s.pic != nil {
+			if s := c.p.canvasImage(pass.Images[i]); s != nil && s.pic != nil {
 				im = s.shadeTexture(g)
 			} else if s != nil && s.load != nil {
 				c.waited = true

@@ -35,6 +35,7 @@ type canvasOps struct {
 	keepImage        func(*surface, string)
 	releaseImage     func(*surface, string)
 	releaseOffscreen func(uint64)
+	renderDrawing    func(*surface, uint32, *driver.RenderDrawingRequest)
 }
 
 type videoOps struct {
@@ -141,6 +142,9 @@ func (*surface) EnableCanvas() {
 			apple.ReleaseCanvasImage(s, key)
 		},
 		releaseOffscreen: apple.ReleaseOffscreen,
+		renderDrawing: func(s *surface, count uint32, req *driver.RenderDrawingRequest) {
+			apple.RenderDrawingAsync(req, count, s.engine.Dispatch)
+		},
 	})
 }
 

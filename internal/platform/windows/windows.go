@@ -1563,6 +1563,13 @@ func (w *window) apply(b *driver.MountBatch) {
 		case driver.ItemCapture:
 			w.capture(it.ID, it.Count)
 			continue
+		case driver.ItemRenderDrawing:
+			if ch := canvases.Load(); ch != nil {
+				ch.renderDrawing(w, it.Count, it.RenderDrawing)
+			} else {
+				w.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDrawingRenderer})
+			}
+			continue
 		case driver.ItemShare:
 			w.share(*it.Share, it.Count)
 			continue

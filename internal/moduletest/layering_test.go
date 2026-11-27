@@ -88,8 +88,8 @@ var layers = []struct {
 	{"internal/platform/viewtree", []string{"internal/driver"}},
 	{"internal/platform/webstyle", []string{"internal/driver"}},
 	{"internal/platform/", append([]string{"internal/driver", "internal/engine", "internal/testhost", "desktop/locales", "mobile/locales"}, platformShared...)},
-	// Headless browser tests reuse the browser asset reader. Windowless rendering and text measurement reuse Apple's native player without starting a platform host; core still imports no backend.
-	{"nsgotest", []string{"core", "gamepad", "internal/automation", "internal/devtools", "internal/driver", "internal/platform/apple", "internal/platform/imageload", "internal/shaderir/", "internal/testhost", "widget"}},
+	// Headless browser tests reuse the browser asset reader. Windowless rendering and text measurement reuse the host's native canvas and text player without starting a platform host; core still imports no backend.
+	{"nsgotest", []string{"core", "gamepad", "internal/automation", "internal/devtools", "internal/driver", "internal/platform/apple", "internal/platform/imageload", "internal/platform/linux", "internal/platform/windows", "internal/shaderir/", "internal/testhost", "widget"}},
 	{"", []string{"core", "internal/backend", "internal/dev", "internal/engine"}},
 	// The backend runs the app on the platform build tags pick, with the launch flags, the dev client, restarts and, where the platform's updater keeps no schedule, update checks.
 	{"internal/backend", []string{"core", "internal/crashreport", "internal/dev", "internal/engine", "internal/platform/", "internal/restart", "updater"}},

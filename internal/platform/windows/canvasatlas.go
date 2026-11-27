@@ -27,7 +27,7 @@ func (c *canvasPlayer) atlas(op *driver.DrawOp) {
 		c.atlasImages(op, sprites)
 		return
 	}
-	s := c.p.w.canvasImage(*imgSrc)
+	s := c.p.canvasImage(*imgSrc)
 	if s == nil || s.pic == nil {
 		c.waited = c.waited || (s != nil && s.load != nil)
 		return

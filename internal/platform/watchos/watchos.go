@@ -310,6 +310,7 @@ func (s *surface) environment(scale float64, safe driver.Edges, flags uint32) dr
 	// watchOS's notification center schedules once, daily and weekly notifications natively.
 	env.ScheduledNotifications = apple.NotificationsAvailable()
 	env.Speak = apple.SpeakAvailable()
+	env.CanRenderDrawings = true
 	return env
 }
 
@@ -360,8 +361,16 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 	return apple.TextEngine{}.Prepare(t)
 }
 
+var watchRenderDrawing atomic.Pointer[func(*driver.RenderDrawingRequest, uint32, func(driver.Event))]
+
 // EnableCanvas implements driver.CanvasEnabler: it links the offscreen decoder only into apps that draw a canvas.
-func (s *surface) EnableCanvas() { apple.EnableCanvas() }
+func (s *surface) EnableCanvas() {
+	apple.EnableCanvas()
+	if watchRenderDrawing.Load() == nil {
+		fn := apple.RenderDrawingAsync
+		watchRenderDrawing.Store(&fn)
+	}
+}
 
 // Mount implements engine.Platform.
 func (s *surface) Mount(b *driver.MountBatch) {
@@ -564,6 +573,13 @@ func (s *surface) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemOpenDirectory, driver.ItemReleaseDirectory:
 			s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDirectoryPersistence})
+			continue
+		case driver.ItemRenderDrawing:
+			if fn := watchRenderDrawing.Load(); fn != nil {
+				(*fn)(it.RenderDrawing, it.Count, s.engine.Dispatch)
+			} else {
+				s.engine.Dispatch(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoDrawingRenderer})
+			}
 			continue
 		case driver.ItemReadClipboard, driver.ItemPickImages, driver.ItemTakePhoto, driver.ItemPickFiles,
 			driver.ItemPickDirectories, driver.ItemOpenFile, driver.ItemRevealFile, driver.ItemTrashFile, driver.ItemShare, driver.ItemSaveFile:
