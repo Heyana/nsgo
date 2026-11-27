@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -135,6 +136,15 @@ func TestCapabilitiesAllow(t *testing.T) {
 }
 
 func TestFSReadCapability(t *testing.T) {
+	// Unknown keys in fs drop the capability leniently so newer fields never widen access.
+	parsed, ignored, err := ParseCapabilities([]byte(`{"fs":{"read":["/tmp"],"future":true}}`), false)
+	if err != nil || parsed.FS != nil || !slices.Equal(ignored, []string{"capability fs"}) {
+		t.Fatalf("lenient fs = %+v, ignored %v, err %v", parsed.FS, ignored, err)
+	}
+	if runtime.GOOS == "js" {
+		return
+	}
+
 	base := t.TempDir()
 	allowed := filepath.Join(base, "media")
 	sibling := filepath.Join(base, "media2")
@@ -179,11 +189,5 @@ func TestFSReadCapability(t *testing.T) {
 		if got := c.Allows("fs", tc.path, tc.method); got != tc.want {
 			t.Errorf("%s: Allows(fs, %q, %q) = %v, want %v", tc.name, tc.path, tc.method, got, tc.want)
 		}
-	}
-
-	// Unknown keys in fs drop the capability leniently so newer fields never widen access.
-	parsed, ignored, err := ParseCapabilities([]byte(`{"fs":{"read":["/tmp"],"future":true}}`), false)
-	if err != nil || parsed.FS != nil || !slices.Equal(ignored, []string{"capability fs"}) {
-		t.Fatalf("lenient fs = %+v, ignored %v, err %v", parsed.FS, ignored, err)
 	}
 }

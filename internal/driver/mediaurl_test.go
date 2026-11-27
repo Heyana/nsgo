@@ -47,6 +47,9 @@ func TestCanonicalHTTPURL(t *testing.T) {
 }
 
 func TestResolveLocalMediaPathAndCanonicalFileURL(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("no local filesystem on js")
+	}
 	dir := t.TempDir()
 	realDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {

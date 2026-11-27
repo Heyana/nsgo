@@ -489,6 +489,9 @@ func (a mediaFSAndHostAccess) Allows(req AccessRequest) bool {
 func (a mediaFSAndHostAccess) WebHosts() []string { return nil }
 
 func TestAccessMediaFSReadMenuIconsAndCanonicalURL(t *testing.T) {
+	if goruntime.GOOS == "js" {
+		t.Skip("no local filesystem on js")
+	}
 	base := t.TempDir()
 	allowedDir := filepath.Join(base, "allowed")
 	outsideDir := filepath.Join(base, "outside")

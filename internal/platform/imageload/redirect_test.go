@@ -139,6 +139,9 @@ func TestCheckedImageRedirectsFollowAllowedAndRefuseUngranted(t *testing.T) {
 }
 
 func TestCheckedLocalFileReverifiesBeforeRead(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("no local filesystem on js")
+	}
 	isolatedCache(t)
 	base := t.TempDir()
 	allowedDir := filepath.Join(base, "allowed")
