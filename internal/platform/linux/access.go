@@ -520,7 +520,7 @@ func (w *window) setCanvasParts(v *view, nodes []driver.CanvasNode) {
 		w.updateAccess(part)
 		v.parts = append(v.parts, canvasPart{widget: c, bounds: n.Bounds})
 	}
-	gtkWidgetQueueAllocate(v.widget)
+	w.queueAllocate(v.widget)
 }
 
 // canvasPart is a canvas's named part: its widget and its bounds.

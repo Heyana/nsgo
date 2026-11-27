@@ -18,21 +18,24 @@ import (
 // view is the main thread's copy of one mounted view, drawn by its
 // widget.
 type view struct {
-	win       *window
-	widget    uintptr // NsgoView
-	id        driver.NodeID
-	kind      driver.ViewKind
-	parent    *view
-	children  []*view
-	frame     driver.Bounds
-	style     driver.ViewStyle
-	cursor    driver.Cursor // the cursor set on widget
-	cursorKey string
-	cursorSet bool
-	events    driver.EventMask
-	props     driver.ViewProps
-	overflow  driver.Bounds // where its children reach outside it (ItemOverflow)
-	deleted   bool
+	win              *window
+	widget           uintptr // NsgoView
+	id               driver.NodeID
+	kind             driver.ViewKind
+	parent           *view
+	children         []*view
+	frame            driver.Bounds
+	allocNeeded      bool
+	childAllocNeeded bool
+	placed           bool
+	style            driver.ViewStyle
+	cursor           driver.Cursor // the cursor set on widget
+	cursorKey        string
+	cursorSet        bool
+	events           driver.EventMask
+	props            driver.ViewProps
+	overflow         driver.Bounds // where its children reach outside it (ItemOverflow)
+	deleted          bool
 	// transformedKids is ItemOverflow's Transformed: a child may be drawn transformed, outside overflow.
 	transformedKids bool
 

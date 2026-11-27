@@ -251,7 +251,7 @@ func (w *window) dropWidget(v *view) {
 func (w *window) unparentWidget(widget uintptr) {
 	if parent := gtkWidgetGetParent(widget); parent != 0 {
 		gtkWidgetUnparent(widget)
-		gtkWidgetQueueAllocate(parent)
+		w.queueAllocate(parent)
 		gtkWidgetQueueDraw(parent)
 	}
 }
@@ -272,7 +272,7 @@ func (w *window) insertWidget(p, v, before *view) {
 		next = firstNative(p)
 	}
 	gtkWidgetInsertBefore(v.widget, p.widget, next)
-	gtkWidgetQueueAllocate(p.widget)
+	w.queueAllocate(p.widget)
 	gtkWidgetQueueDraw(p.widget)
 }
 
@@ -299,6 +299,49 @@ func firstNative(p *view) uintptr {
 	return 0
 }
 
+// queueAllocate schedules widget for layout. Outside a synchronous resize
+// drain it calls gtk_widget_queue_allocate. Inside allocateSurface's resize
+// drain it avoids calling gtk_widget_queue_allocate during GTK's size_allocate
+// pass (which leaves alloc_needed_on_child set on ancestors and re-queues
+// layout on the frame clock), instead marking the Go view tree for immediate
+// synchronous allocation in the current pass and queuing a redraw.
+func (w *window) queueAllocate(widget uintptr) {
+	if widget == 0 {
+		return
+	}
+	if w.deferAllocate == 0 {
+		gtkWidgetQueueAllocate(widget)
+		return
+	}
+	if r, ok := lookupWidget(widget); ok && r.w == w {
+		gtkWidgetQueueDraw(widget)
+		if r.v != nil {
+			w.markAllocNeeded(r.v)
+		}
+		return
+	}
+	gtkWidgetQueueAllocate(widget)
+}
+
+func (w *window) markAllocNeeded(v *view) {
+	v.allocNeeded = true
+	for cur := v; cur != nil; {
+		p := cur.parent
+		if p == nil && cur.widget != 0 && gtkWidgetGetParent != nil {
+			if pw := gtkWidgetGetParent(cur.widget); pw != 0 {
+				if r, ok := lookupWidget(pw); ok && r.w == w {
+					p = r.v
+				}
+			}
+		}
+		if p == nil || p.childAllocNeeded {
+			break
+		}
+		p.childAllocNeeded = true
+		cur = p
+	}
+}
+
 // moved tells GTK that v's frame, transform or visibility changed: its
 // parent places it again.
 func (w *window) moved(v *view) {
@@ -306,7 +349,7 @@ func (w *window) moved(v *view) {
 		return
 	}
 	if parent := gtkWidgetGetParent(v.widget); parent != 0 {
-		gtkWidgetQueueAllocate(parent)
+		w.queueAllocate(parent)
 	}
 	gtkWidgetQueueDraw(v.widget)
 }
@@ -351,12 +394,18 @@ func (w *window) allocateSurface(width, height int32) {
 	if size.Width != w.lastWidth || size.Height != w.lastHeight {
 		w.lastWidth, w.lastHeight = size.Width, size.Height
 		if w.engine != nil {
-			w.resize(size)
+			w.resizeDuringAllocate(size)
 		}
 	}
 	if root := w.view(w.root); root != nil && root.widget != 0 && gtkWidgetGetParent(root.widget) == w.surface {
 		w.place(root, 0, 0)
 	}
+}
+
+func (w *window) resizeDuringAllocate(size driver.Size) {
+	w.deferAllocate++
+	defer func() { w.deferAllocate-- }()
+	w.resize(size)
 }
 
 // resizeWait bounds how long GTK's allocation waits for the engine, as the macOS and Windows resize paths do. It is a variable so tests on loaded runners can lengthen it on the main thread.
@@ -388,6 +437,9 @@ func (w *window) resize(size driver.Size) {
 // allocateView places v's children at their frames less v's scroll
 // offset, and the native widgets it hosts.
 func (w *window) allocateView(v *view) {
+	v.placed = true
+	v.allocNeeded = false
+	v.childAllocNeeded = false
 	ox, oy := float32(math.Round(float64(v.offset.X))), float32(math.Round(float64(v.offset.Y)))
 	for c := gtkWidgetGetFirstChild(v.widget); c != 0; c = gtkWidgetGetNextSibling(c) {
 		if r, ok := lookupWidget(c); ok {
@@ -441,7 +493,28 @@ func (w *window) place(v *view, ox, oy float32) {
 	t := gskMatrixTransform(0, m)
 	width := int32(math.Ceil(max(float64(f.Size.Width), 0)))
 	height := int32(math.Ceil(max(float64(f.Size.Height), 0)))
+	v.placed = false
 	gtkWidgetAllocate(v.widget, width, height, -1, t)
+	if !v.placed {
+		if v.allocNeeded {
+			w.allocateView(v)
+		} else if v.childAllocNeeded {
+			w.allocateDirtyChildren(v)
+		}
+	}
+}
+
+// allocateDirtyChildren descends through a view whose own allocation did not
+// change, synchronously placing descendants marked during a resize drain in
+// allocateSurface.
+func (w *window) allocateDirtyChildren(v *view) {
+	v.childAllocNeeded = false
+	ox, oy := float32(math.Round(float64(v.offset.X))), float32(math.Round(float64(v.offset.Y)))
+	for c := gtkWidgetGetFirstChild(v.widget); c != 0; c = gtkWidgetGetNextSibling(c) {
+		if r, ok := lookupWidget(c); ok && r.v != nil && (r.v.allocNeeded || r.v.childAllocNeeded) {
+			w.place(r.v, ox, oy)
+		}
+	}
 }
 
 // allocateNative gives a hosted widget b, or its minimum size where that

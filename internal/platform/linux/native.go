@@ -62,7 +62,7 @@ func (w *window) hostUnder(v *view, h *hosted, child uintptr, target bool) {
 		first := gtkWidgetGetFirstChild(v.widget)
 		gtkWidgetInsertBefore(child, v.widget, first)
 		gtkWidgetSetCanTarget(child, boolInt(target))
-		gtkWidgetQueueAllocate(v.widget)
+		w.queueAllocate(v.widget)
 	}
 }
 
@@ -79,7 +79,7 @@ func (w *window) setHostedChild(v *view, h *hosted, child uintptr) {
 		if w.embedded && w.dir != 0 {
 			directTree(child, w.dir)
 		}
-		gtkWidgetQueueAllocate(v.widget)
+		w.queueAllocate(v.widget)
 	}
 }
 

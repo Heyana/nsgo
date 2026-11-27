@@ -166,7 +166,7 @@ func (w *window) attachEffect(v *view) {
 	gtkWidgetSetParent(fx.gl.area, host.widget)
 	fx.host = host
 	host.fxArea = fx.gl.area
-	gtkWidgetQueueAllocate(host.widget)
+	w.queueAllocate(host.widget)
 }
 
 func (fx *effect) shows() bool {

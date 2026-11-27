@@ -197,7 +197,7 @@ func (w *window) match(v, old *view, lb *layoutBatch) {
 	lm := driver.StartLayoutMotion(from, v.frame, *lb.anim.Update, w.monotonic(lb.at))
 	l.move = &lm
 	if v.widget != 0 {
-		gtkWidgetQueueAllocate(v.widget)
+		w.queueAllocate(v.widget)
 	}
 	w.moved(v)
 }
@@ -296,7 +296,7 @@ func (w *window) stepLayout(now time.Time) bool {
 				l.move = nil
 			}
 			if v.shownFrame().Size != old.Size && v.widget != 0 {
-				gtkWidgetQueueAllocate(v.widget)
+				w.queueAllocate(v.widget)
 			}
 		}
 		if l.fade != nil {

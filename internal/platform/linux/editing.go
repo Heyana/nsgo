@@ -280,7 +280,7 @@ func (w *window) configure(v *view, in *driver.InputConfig) {
 	} else if v.entry == 0 {
 		w.makeEditor(v, in.Multiline)
 	}
-	gtkWidgetQueueAllocate(v.widget)
+	w.queueAllocate(v.widget)
 	editable := boolInt(!in.Readonly && !in.Disabled)
 	purpose, hints := inputPurpose(in)
 	dir := gtkTextDir(in.Style.RTL)
