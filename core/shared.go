@@ -128,6 +128,12 @@ type (
 	// CanvasNode is a named part of a drawing, which assistive technology
 	// and tests see as a child of the canvas.
 	CanvasNode = driver.CanvasNode
+	// CanvasAction is a bitmask of assistive-technology actions a CanvasNode offers.
+	CanvasAction = driver.CanvasAction
+	// CheckedState is the tri-state checked state of a checkable CanvasNode.
+	CheckedState = driver.CheckedState
+	// ExpandedState is whether an expandable CanvasNode is collapsed or expanded.
+	ExpandedState = driver.ExpandedState
 	// CompositeOp is how drawing mixes with what a canvas holds, as the
 	// web's globalCompositeOperation.
 	CompositeOp = driver.CompositeOp
@@ -800,7 +806,30 @@ const (
 	ActionDecrement  = driver.ActionDecrement
 	ActionEscape     = driver.ActionEscape
 	ActionMagicTap   = driver.ActionMagicTap
+	ActionScroll     = driver.ActionScroll
+	ActionDismiss    = driver.ActionDismiss
 	FontMonospace    = driver.FontMonospace
+)
+
+const (
+	CheckedUnset = driver.CheckedUnset
+	CheckedFalse = driver.CheckedFalse
+	CheckedTrue  = driver.CheckedTrue
+	CheckedMixed = driver.CheckedMixed
+)
+
+const (
+	ExpandedUnset = driver.ExpandedUnset
+	ExpandedFalse = driver.ExpandedFalse
+	ExpandedTrue  = driver.ExpandedTrue
+)
+
+const (
+	CanvasActionActivate  = driver.CanvasActionActivate
+	CanvasActionIncrement = driver.CanvasActionIncrement
+	CanvasActionDecrement = driver.CanvasActionDecrement
+	CanvasActionScroll    = driver.CanvasActionScroll
+	CanvasActionDismiss   = driver.CanvasActionDismiss
 )
 
 const (

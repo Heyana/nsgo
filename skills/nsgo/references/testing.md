@@ -28,7 +28,11 @@ An app run with its function, `nsgo.Run(func(app *core.Scope) {...})`, starts wi
 | `text:<text>` | A text containing it, or a field holding it (its placeholder while empty) |
 | `role:<role>` | A view with that role: `button`, `checkbox`, `textbox`, ... |
 | `role:<role> <name>` | One whose label is name, or whose texts contain it |
-| anything else | A test ID, else a label, else a whole text |
+| `hint:<Hint>` | A view or canvas node with that accessibility hint |
+| `value:<Value>` | A view or canvas node with that `ValueText` or current numeric value |
+| `live:<polite\|assertive>` | A view or canvas node with that live region |
+| `state:<state>` | A view or canvas node in `disabled`, `enabled`, `selected`, `unselected`, `expanded`, `collapsed`, `checked`, `unchecked`, `mixed` or `busy` state |
+| anything else | A test ID (or canvas node `ID`), else a label, else a whole text |
 
 `label:`, `text:` and a role's name take `/regexp/flags`. `a >> b` looks for `b` inside `a`, and `>> nth=<i>` keeps one match. A step fails the test when its selector matches no view, more than one, or a disabled one, and prints the view tree; that is the check, so a separate assertion is rarely needed.
 

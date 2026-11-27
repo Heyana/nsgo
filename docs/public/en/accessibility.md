@@ -48,7 +48,7 @@ return core.View{Children: []core.Node{
 
 ## Actions
 
-`AccessibilityActions` lists what the screen reader offers on an element: the standard actions (`core.ActionActivate`, `ActionIncrement`, `ActionDecrement`, `ActionEscape`, `ActionMagicTap`) and the app's own, each with a `Name` and a `Label`. `OnAccessibilityAction` receives the name. Use `AccessibilityActionsFunc` on `core.View` or `core.Input` to change the available actions or translate their labels while the element stays mounted.
+`AccessibilityActions` lists what the screen reader offers on an element: the standard actions (`core.ActionActivate`, `ActionIncrement`, `ActionDecrement`, `ActionScroll`, `ActionDismiss`, `ActionEscape`, `ActionMagicTap`) and the app's own, each with a `Name` and a `Label`. `OnAccessibilityAction` receives the name. Use `AccessibilityActionsFunc` on `core.View` or `core.Input` to change the available actions or translate their labels while the element stays mounted. On `core.Canvas`, `OnAccessibilityAction` receives a `core.CanvasActionEvent` (`NodeID`, `Action`, optional `Value`/`HasValue`) for drawn `core.CanvasNode` controls, and `Ref.SetAccessibilityFocusNode(id)` moves screen-reader focus to a canvas node by ID.
 
 ```go
 core.View{

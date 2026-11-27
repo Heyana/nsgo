@@ -771,41 +771,169 @@ func fontCSS(fnt driver.Font) string {
 }
 
 // describeNodes gives a canvas's named parts to assistive technology: an
-// element each inside the <canvas>, which browsers expose as its
-// children at their bounds and never draw.
+// element each inside the <canvas>, which browsers expose as its children at
+// their bounds and never draw. Existing elements are reconciled in place so
+// keyboard/screen-reader focus and ARIA live regions survive redraws.
 func (s *surface) describeNodes(v *view, nodes []driver.CanvasNode) {
-	v.inner.Set("textContent", "")
+	prevEls := v.canvasNodeEls
+	byID := make(map[string]js.Value, len(prevEls))
+	for _, el := range prevEls {
+		if id := el.Call("getAttribute", "data-canvas-node-id").String(); id != "" {
+			byID[id] = el
+		}
+	}
+	nextEls := make([]js.Value, len(nodes))
+	used := make(map[string]bool, len(nodes))
 	for i := range nodes {
 		n := &nodes[i]
-		el := s.doc.Call("createElement", "div")
-		if role := roles[n.Role]; role != "" {
-			el.Call("setAttribute", "role", role)
+		id := n.NodeID()
+		var el js.Value
+		if id != "" && !used[id] {
+			if existing, ok := byID[id]; ok {
+				el = existing
+				used[id] = true
+			}
+		} else if id == "" && i < len(prevEls) && prevEls[i].Call("getAttribute", "data-canvas-node-id").String() == "" {
+			el = prevEls[i]
 		}
-		if n.Label != "" {
-			el.Call("setAttribute", "aria-label", n.Label)
-			el.Set("textContent", n.Label)
+		if !el.Truthy() {
+			el = s.doc.Call("createElement", "div")
+			el.Call("setAttribute", "data-canvas-node", "")
 		}
-		if n.TestID != "" {
-			el.Call("setAttribute", "data-testid", n.TestID)
-		}
-		if n.Selected {
-			el.Call("setAttribute", "aria-selected", "true")
-		}
-		el.Call("setAttribute", "data-canvas-node", "")
-		el.Set("nsgoCenter", []any{float64(n.Bounds.Origin.X + n.Bounds.Size.Width/2),
-			float64(n.Bounds.Origin.Y + n.Bounds.Size.Height/2)})
-		setStyle(el, map[string]string{"position": "absolute", "left": webstyle.Px(n.Bounds.Origin.X),
-			"top": webstyle.Px(n.Bounds.Origin.Y), "width": webstyle.Px(n.Bounds.Size.Width), "height": webstyle.Px(n.Bounds.Size.Height)})
-		v.inner.Call("appendChild", el)
+		applyCanvasNodeAttrs(el, v, n, i)
+		nextEls[i] = el
 	}
+	for _, old := range prevEls {
+		kept := false
+		for _, cur := range nextEls {
+			if cur.Equal(old) {
+				kept = true
+				break
+			}
+		}
+		if !kept {
+			old.Call("remove")
+		}
+	}
+	for i, el := range nextEls {
+		cur := v.inner.Get("children").Index(i)
+		if !cur.Truthy() {
+			v.inner.Call("appendChild", el)
+		} else if !cur.Equal(el) {
+			v.inner.Call("insertBefore", el, cur)
+		}
+	}
+	v.canvasNodeEls = nextEls
 }
 
-// canvasNodePress presses at the center of the canvas node el is, as
-// assistive technology activates one: the view under that point that
-// takes presses gets the press, as a pointer there would give it.
+func applyCanvasNodeAttrs(el js.Value, v *view, n *driver.CanvasNode, index int) {
+	flag := func(on bool) string {
+		if on {
+			return "true"
+		}
+		return ""
+	}
+	setAttr(el, "role", roles[n.Role])
+	setAttr(el, "aria-label", n.Label)
+	setAttr(el, "aria-description", n.Hint)
+	setAttr(el, "data-testid", n.TestID)
+	setAttr(el, "data-canvas-node-id", n.NodeID())
+	selected := flag(n.Selected)
+	if n.Role == driver.RoleTab || n.Role == driver.RoleOption {
+		selected = strconv.FormatBool(n.Selected)
+	}
+	setAttr(el, "aria-selected", selected)
+	setAttr(el, "aria-disabled", flag(n.Disabled))
+	expanded := ""
+	if n.Expanded != driver.ExpandedUnset {
+		expanded = strconv.FormatBool(n.Expanded == driver.ExpandedTrue)
+	}
+	setAttr(el, "aria-expanded", expanded)
+	checked := ""
+	switch {
+	case n.Checked == driver.CheckedMixed:
+		checked = "mixed"
+	case n.Checked == driver.CheckedTrue:
+		checked = "true"
+	case n.Checked == driver.CheckedFalse || n.IsCheckable():
+		checked = "false"
+	}
+	setAttr(el, "aria-checked", checked)
+	setAttr(el, "aria-busy", flag(n.Busy))
+	var lo, hi, now string
+	if n.HasRange() {
+		f := func(x float32) string { return strconv.FormatFloat(float64(x), 'g', -1, 32) }
+		lo, hi, now = f(n.Min), f(n.Max), f(n.Value)
+	}
+	setAttr(el, "aria-valuemin", lo)
+	setAttr(el, "aria-valuemax", hi)
+	setAttr(el, "aria-valuenow", now)
+	setAttr(el, "aria-valuetext", n.ValueText)
+	setAttr(el, "aria-live", liveRegions[n.Live])
+	text := n.Label
+	if n.Live != driver.LiveRegionNone {
+		text = n.LiveText()
+	}
+	if el.Get("textContent").String() != text {
+		el.Set("textContent", text)
+	}
+	tabIndex := ""
+	if !n.Disabled && (n.EffectiveActions() != 0 || (v.events.Has(driver.EventPress) && n.Role == driver.RoleButton)) {
+		tabIndex = "0"
+	} else if el.Call("getAttribute", "tabindex").String() == "-1" {
+		tabIndex = "-1"
+	}
+	setAttr(el, "tabindex", tabIndex)
+	el.Set("nsgoNodeIdx", index)
+	el.Set("nsgoCenter", []any{float64(n.Bounds.Origin.X + n.Bounds.Size.Width/2),
+		float64(n.Bounds.Origin.Y + n.Bounds.Size.Height/2)})
+	setStyle(el, map[string]string{"position": "absolute", "left": webstyle.Px(n.Bounds.Origin.X),
+		"top": webstyle.Px(n.Bounds.Origin.Y), "width": webstyle.Px(n.Bounds.Size.Width), "height": webstyle.Px(n.Bounds.Size.Height)})
+}
+
+func (s *surface) canvasNodeOf(el js.Value) (*view, *driver.CanvasNode) {
+	if !el.Truthy() || !el.Call("hasAttribute", "data-canvas-node").Bool() {
+		return nil, nil
+	}
+	parent := el.Get("parentElement")
+	if !parent.Truthy() {
+		return nil, nil
+	}
+	owner := parent.Get("parentElement")
+	cv := s.viewOf(owner)
+	if cv == nil || cv.drawing == nil {
+		return nil, nil
+	}
+	idx := el.Get("nsgoNodeIdx")
+	if idx.IsUndefined() {
+		return cv, nil
+	}
+	i := idx.Int()
+	if i < 0 || i >= len(cv.drawing.Nodes) {
+		return cv, nil
+	}
+	return cv, &cv.drawing.Nodes[i]
+}
+
+// canvasNodePress activates the canvas node el stands for: via
+// OnAccessibilityAction when the canvas handles it, or by pressing at its
+// center as a pointer there would.
 func (s *surface) canvasNodePress(el js.Value) bool {
 	if !el.Truthy() || el.Get("nsgoCenter").IsUndefined() {
 		return false
+	}
+	if cv, n := s.canvasNodeOf(el); cv != nil && n != nil {
+		if n.Disabled {
+			return true
+		}
+		if cv.events.Has(driver.EventAccessibilityAction) && n.HasAction(driver.ActionActivate) {
+			s.send(cv, driver.Event{
+				Kind:       driver.EventAccessibilityAction,
+				Text:       driver.ActionActivate,
+				CanvasNode: n.NodeID(),
+			})
+			return true
+		}
 	}
 	center := el.Get("nsgoCenter")
 	owner := el.Get("parentElement").Get("parentElement")
@@ -832,4 +960,44 @@ func (s *surface) canvasNodePress(el js.Value) bool {
 		s.send(v, ev)
 	}
 	return true
+}
+
+// canvasNodeKeyDown handles keyboard actions on a focused canvas node element.
+func (s *surface) canvasNodeKeyDown(e, el js.Value) bool {
+	cv, n := s.canvasNodeOf(el)
+	if cv == nil || n == nil {
+		return false
+	}
+	if n.Disabled || e.Get("isComposing").Bool() {
+		return true
+	}
+	var action string
+	switch e.Get("key").String() {
+	case "ArrowUp", "ArrowRight":
+		action = driver.ActionIncrement
+	case "ArrowDown", "ArrowLeft":
+		action = driver.ActionDecrement
+	case "Enter", " ":
+		action = driver.ActionActivate
+	case "Escape":
+		action = driver.ActionDismiss
+	case "PageUp", "PageDown":
+		action = driver.ActionScroll
+	}
+	if action != "" && cv.events.Has(driver.EventAccessibilityAction) && n.HasAction(action) {
+		e.Call("preventDefault")
+		e.Call("stopPropagation")
+		s.send(cv, driver.Event{
+			Kind:       driver.EventAccessibilityAction,
+			Text:       action,
+			CanvasNode: n.NodeID(),
+		})
+		return true
+	}
+	if action == driver.ActionActivate && !e.Get("repeat").Bool() {
+		e.Call("preventDefault")
+		s.canvasNodePress(el)
+		return true
+	}
+	return false
 }

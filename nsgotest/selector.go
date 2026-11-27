@@ -123,6 +123,18 @@ func parseSelector(s string) (*selector, error) {
 		case "text":
 			p.kind = kind
 			p.text, err = parseText(arg, false, s)
+		case "hint":
+			p.kind = kind
+			p.text, err = parseText(arg, true, s)
+		case "value":
+			p.kind = kind
+			p.text, err = parseText(arg, true, s)
+		case "live":
+			p.kind = kind
+			p.text = textMatch{want: strings.TrimSpace(arg), whole: true}
+		case "state":
+			p.kind = kind
+			p.text = textMatch{want: strings.TrimSpace(arg), whole: true}
 		case "role":
 			p.kind = kind
 			role, name, named := strings.Cut(arg, " ")
@@ -384,11 +396,19 @@ func (a *App) resolveIn(sel *selector, layers []*View) []*View {
 		}
 		switch p.kind {
 		case "id":
-			match(func(v *View) bool { return v.Props.TestID == p.text.want })
+			match(func(v *View) bool { return v.matchesID(p.text.want) })
 		case "label":
 			match(func(v *View) bool { return v.Props.Label != "" && p.text.matches(v.Props.Label) })
 		case "text":
 			match(func(v *View) bool { return v.showsText(p.text) })
+		case "hint":
+			match(func(v *View) bool { return v.Props.Hint != "" && p.text.matches(v.Props.Hint) })
+		case "value":
+			match(func(v *View) bool { return v.matchesValue(p.text) })
+		case "live":
+			match(func(v *View) bool { return v.matchesLive(p.text.want) })
+		case "state":
+			match(func(v *View) bool { return v.matchesState(p.text.want) })
 		case "role":
 			match(func(v *View) bool {
 				return v.Props.Role != driver.RoleNone && roleName(v.Props.Role) == p.role &&
@@ -397,7 +417,7 @@ func (a *App) resolveIn(sel *selector, layers []*View) []*View {
 		case "view":
 			match(func(v *View) bool { return v.ID == p.view })
 		default:
-			match(func(v *View) bool { return v.Props.TestID == p.text.want })
+			match(func(v *View) bool { return v.matchesID(p.text.want) })
 			if len(found) == 0 {
 				match(func(v *View) bool { return v.Props.Label != "" && p.text.matches(v.Props.Label) })
 			}
@@ -415,6 +435,68 @@ func (a *App) resolveIn(sel *selector, layers []*View) []*View {
 		scope = found
 	}
 	return scope
+}
+
+func (v *View) matchesID(want string) bool {
+	if want == "" {
+		return false
+	}
+	return v.Props.TestID == want || v.Node != nil && v.Node.ID == want
+}
+
+func (v *View) matchesValue(m textMatch) bool {
+	if v.Props.Value.Text != "" && m.matches(v.Props.Value.Text) {
+		return true
+	}
+	if v.Props.Value.IsRange() && !v.Props.Value.NoNow {
+		return m.matches(strconv.FormatFloat(float64(v.Props.Value.Now), 'g', -1, 32))
+	}
+	return false
+}
+
+func (v *View) matchesLive(want string) bool {
+	switch want {
+	case "polite":
+		return v.Props.LiveRegion == driver.LiveRegionPolite
+	case "assertive":
+		return v.Props.LiveRegion == driver.LiveRegionAssertive
+	case "none", "off":
+		return v.Props.LiveRegion == driver.LiveRegionNone
+	}
+	return false
+}
+
+func (v *View) matchesState(want string) bool {
+	switch want {
+	case "disabled":
+		return v.Props.Disabled
+	case "enabled":
+		return !v.Props.Disabled
+	case "selected":
+		return v.Props.Selected
+	case "unselected":
+		return !v.Props.Selected
+	case "expanded":
+		return v.Props.Expandable && v.Props.Expanded
+	case "collapsed":
+		return v.Props.Expandable && !v.Props.Expanded
+	case "checked":
+		return v.Props.Checked && !v.Props.Indeterminate
+	case "mixed":
+		return v.Props.Indeterminate
+	case "unchecked":
+		if v.Node != nil {
+			return v.Node.IsCheckable() && !v.Props.Checked && !v.Props.Indeterminate
+		}
+		switch v.Props.Role {
+		case driver.RoleCheckbox, driver.RoleSwitch, driver.RoleRadio, driver.RoleMenuItemCheckbox, driver.RoleMenuItemRadio:
+			return !v.Props.Checked && !v.Props.Indeterminate
+		}
+		return false
+	case "busy":
+		return v.Props.Busy
+	}
+	return false
 }
 
 // showsText reports whether v reads text: a text view's text, a canvas

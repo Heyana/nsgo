@@ -59,3 +59,23 @@ func TestEditorTraitsAndValue(t *testing.T) {
 		t.Errorf("invalid spin button: editorValue = %q, want %q", got, "12, invalid data")
 	}
 }
+
+func TestCanvasNodeSpokenValue(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		node driver.CanvasNode
+		want string
+	}{
+		{"range percentage", driver.CanvasNode{Role: driver.RoleAdjustable, Min: 0, Max: 200, Value: 50}, "25%"},
+		{"value text overrides percentage", driver.CanvasNode{Role: driver.RoleAdjustable, Min: 0, Max: 100, Value: 50, ValueText: "Half"}, "Half"},
+		{"mixed checkbox", driver.CanvasNode{Role: driver.RoleCheckbox, Checked: driver.CheckedMixed}, "mixed"},
+		{"checked switch", driver.CanvasNode{Role: driver.RoleSwitch, Checked: driver.CheckedTrue}, "1"},
+		{"collapsed disclosure", driver.CanvasNode{Role: driver.RoleButton, Expanded: driver.ExpandedFalse}, "collapsed"},
+		{"expanded disclosure", driver.CanvasNode{Role: driver.RoleButton, Expanded: driver.ExpandedTrue}, "expanded"},
+	} {
+		vp := driver.CanvasNodeViewProps(tc.node)
+		if got := spokenValue(&vp); got != tc.want {
+			t.Errorf("%s: spokenValue = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}

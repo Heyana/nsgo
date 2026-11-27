@@ -208,9 +208,17 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 	for _, n := range nodes {
 		w.bounds(n.Bounds)
 		w.byte(byte(n.Role))
+		w.str(n.ID)
 		w.str(n.Label)
+		w.str(n.Hint)
 		w.str(n.TestID)
-		w.flags(n.Selected)
+		w.floats(n.Value, n.Min, n.Max, n.Step)
+		w.str(n.ValueText)
+		w.flags(n.Selected, n.Disabled, n.Busy)
+		w.byte(byte(n.Expanded))
+		w.byte(byte(n.Checked))
+		w.byte(byte(n.Live))
+		w.byte(byte(n.EffectiveActions()))
 	}
 	// The resolution scale and whether its pixels stretch to the nearest.
 	w.float(float32(d.ResolutionScale()))

@@ -5,6 +5,8 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
@@ -439,17 +441,234 @@ type AnimatedArg interface {
 	AnimatedNodeID() uint32
 }
 
-// CanvasNode is a named part of a drawing, such as a chart's bar or a
-// grid's cell: assistive technology and tests see it as a child of the
-// canvas, and a press on it presses at its center.
+// CanvasNode is a named part of a drawing, such as a chart's bar, a
+// slider or a grid's cell: assistive technology and tests see it as a
+// child of the canvas.
 type CanvasNode struct {
+	// ID is the node's stable identifier within the canvas for
+	// accessibility actions and Ref.SetAccessibilityFocusNode. When empty,
+	// TestID is used.
+	ID string
 	// Bounds is where it is in the canvas, in the canvas's own points,
 	// whatever the transform.
-	Bounds   Bounds
-	Role     Role
-	Label    string
-	TestID   string
-	Selected bool
+	Bounds Bounds
+	Role   Role
+	Label  string
+	// Hint describes what activating or operating the node does, read
+	// after its label.
+	Hint   string
+	TestID string
+	// Value, Min, Max and Step describe a numeric range when Max > Min
+	// (such as RoleAdjustable or RoleProgressBar). Step is the increment
+	// size; zero leaves it to the platform or app.
+	Value float32
+	Min   float32
+	Max   float32
+	Step  float32
+	// ValueText is spoken instead of Value, or alone without a range.
+	ValueText string
+	Selected  bool
+	Disabled  bool
+	Expanded  ExpandedState
+	Checked   CheckedState
+	Busy      bool
+	// Live marks text or values that assistive technology should announce
+	// as they change.
+	Live LiveRegion
+	// Actions lists the assistive-technology actions the node accepts.
+	// When zero and not Disabled, defaults are inferred from Role,
+	// Expanded and Checked.
+	Actions CanvasAction
+}
+
+// NodeID returns n's stable identifier: ID when set, else TestID.
+func (n CanvasNode) NodeID() string { return cmp.Or(n.ID, n.TestID) }
+
+// HasRange reports whether n carries a numeric range (Max > Min).
+func (n CanvasNode) HasRange() bool { return n.Max > n.Min }
+
+// RangeStep returns n's step size when positive, or a tenth of its range when
+// ranged, or 0 otherwise.
+func (n CanvasNode) RangeStep() float32 {
+	if n.Step > 0 {
+		return n.Step
+	}
+	if n.HasRange() {
+		return (n.Max - n.Min) / 10
+	}
+	return 0
+}
+
+// AccessibilityValue returns n's range and textual value as an
+// AccessibilityValue.
+func (n CanvasNode) AccessibilityValue() AccessibilityValue {
+	if n.HasRange() {
+		return AccessibilityValue{Min: n.Min, Max: n.Max, Now: n.Value, Text: n.ValueText}
+	}
+	return AccessibilityValue{Text: n.ValueText}
+}
+
+// IsCheckable reports whether n exposes a checked state by role or Checked.
+func (n CanvasNode) IsCheckable() bool {
+	if n.Checked != CheckedUnset {
+		return true
+	}
+	switch n.Role {
+	case RoleCheckbox, RoleSwitch, RoleRadio, RoleMenuItemCheckbox, RoleMenuItemRadio:
+		return true
+	}
+	return false
+}
+
+// EffectiveActions returns the assistive-technology actions n offers,
+// respecting Disabled and inferring role defaults when Actions is zero.
+func (n CanvasNode) EffectiveActions() CanvasAction {
+	if n.Disabled {
+		return 0
+	}
+	if n.Actions != 0 {
+		return n.Actions
+	}
+	var a CanvasAction
+	switch n.Role {
+	case RoleAdjustable, RoleSpinButton:
+		a |= CanvasActionIncrement | CanvasActionDecrement
+	case RoleButton, RoleLink, RoleCheckbox, RoleSwitch, RoleRadio, RoleTab,
+		RoleMenuItem, RoleMenuItemCheckbox, RoleMenuItemRadio, RoleOption,
+		RoleTreeItem, RoleCombobox:
+		a |= CanvasActionActivate
+	case RoleDialog, RoleAlertDialog:
+		a |= CanvasActionDismiss
+	}
+	if n.Expanded != ExpandedUnset || n.Checked != CheckedUnset {
+		a |= CanvasActionActivate
+	}
+	return a
+}
+
+// HasAction reports whether n offers the standard action named name.
+func (n CanvasNode) HasAction(name string) bool {
+	bit := CanvasActionByName(name)
+	return bit != 0 && n.EffectiveActions().Has(bit)
+}
+
+// ActionList returns n's effective actions as AccessibilityAction values.
+func (n CanvasNode) ActionList() []AccessibilityAction {
+	a := n.EffectiveActions()
+	if a == 0 {
+		return nil
+	}
+	var out []AccessibilityAction
+	for _, bit := range [...]CanvasAction{
+		CanvasActionActivate, CanvasActionIncrement, CanvasActionDecrement,
+		CanvasActionScroll, CanvasActionDismiss,
+	} {
+		if a.Has(bit) {
+			out = append(out, AccessibilityAction{Name: bit.Name()})
+		}
+	}
+	return out
+}
+
+// CanvasNodeViewProps converts n's accessibility fields into a ViewProps value
+// for backends and test models that map ViewProps directly.
+func CanvasNodeViewProps(n CanvasNode) ViewProps {
+	p := ViewProps{
+		Role:          n.Role,
+		Label:         n.Label,
+		Hint:          n.Hint,
+		TestID:        n.TestID,
+		Selected:      n.Selected,
+		Disabled:      n.Disabled,
+		Busy:          n.Busy,
+		Expandable:    n.Expanded != ExpandedUnset,
+		Expanded:      n.Expanded == ExpandedTrue,
+		Checked:       n.Checked == CheckedTrue,
+		Indeterminate: n.Checked == CheckedMixed,
+		Value:         n.AccessibilityValue(),
+		LiveRegion:    n.Live,
+	}
+	if acts := n.ActionList(); len(acts) > 0 {
+		p.Actions = &acts
+	}
+	return p
+}
+
+// LiveText returns what a live-region CanvasNode announces when it changes.
+func (n CanvasNode) LiveText() string {
+	val := n.ValueText
+	if val == "" && n.HasRange() {
+		val = strconv.FormatFloat(float64(n.Value), 'g', -1, 32)
+	}
+	switch {
+	case n.Label != "" && val != "":
+		return n.Label + ", " + val
+	case n.Label != "":
+		return n.Label
+	default:
+		return strings.TrimSpace(val)
+	}
+}
+
+// CanvasLiveAnnouncement is one live-region update between two canvas frames.
+type CanvasLiveAnnouncement struct {
+	Index int
+	Text  string
+	Live  LiveRegion
+}
+
+// CanvasLiveChanges returns the live-region announcements for nodes in next
+// whose Live is set and whose LiveText changed since prev (matched by NodeID,
+// falling back to index when both lack an ID).
+func CanvasLiveChanges(prev, next []CanvasNode) []CanvasLiveAnnouncement {
+	if len(prev) == 0 || len(next) == 0 {
+		return nil
+	}
+	var byID map[string]string
+	for i := range prev {
+		if id := prev[i].NodeID(); id != "" {
+			if byID == nil {
+				byID = make(map[string]string, len(prev))
+			}
+			byID[id] = prev[i].LiveText()
+		}
+	}
+	var out []CanvasLiveAnnouncement
+	for i := range next {
+		n := &next[i]
+		if n.Live == LiveRegionNone {
+			continue
+		}
+		text := n.LiveText()
+		if text == "" {
+			continue
+		}
+		var old string
+		var existed bool
+		if id := n.NodeID(); id != "" {
+			old, existed = byID[id]
+		} else if i < len(prev) && prev[i].NodeID() == "" {
+			old, existed = prev[i].LiveText(), true
+		}
+		if existed && old != text {
+			out = append(out, CanvasLiveAnnouncement{Index: i, Text: text, Live: n.Live})
+		}
+	}
+	return out
+}
+
+// FindCanvasNode returns the index of the first node in nodes whose NodeID
+// equals id, or -1.
+func FindCanvasNode(nodes []CanvasNode, id string) int {
+	if id == "" {
+		return -1
+	}
+	for i := range nodes {
+		if nodes[i].NodeID() == id {
+			return i
+		}
+	}
+	return -1
 }
 
 // CompositeOp is how drawing mixes with what the canvas holds, as the

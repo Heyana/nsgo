@@ -16,11 +16,33 @@ import (
 // The platform's reports: what a platform tells the app about its media,
 // menus, modals and gestures, sent as the platform sends them.
 
-// selector matches, as a screen reader would: an action the view offers,
-// or ActionActivate on a pressable view without it, which presses it.
+// AccessibilityAction performs the accessibility action named name on what
+// selector matches, as a screen reader would: an action the view or canvas
+// node offers, or ActionActivate on a pressable view without it, which presses it.
 func (a *App) AccessibilityAction(selector, name string) {
 	a.t.Helper()
 	v := a.Find(selector)
+	if v.Node != nil {
+		if v.Node.Disabled {
+			a.t.Fatalf("nsgotest: %q is disabled", selector)
+		}
+		canvas := v.Parent
+		switch {
+		case canvas != nil && canvas.Events.Has(driver.EventAccessibilityAction) && v.Node.HasAction(name):
+			a.dispatch(driver.Event{
+				Kind:       driver.EventAccessibilityAction,
+				ID:         canvas.ID,
+				Text:       name,
+				CanvasNode: v.Node.NodeID(),
+			})
+		case name == driver.ActionActivate && canvas != nil && canvas.Events.Has(driver.EventPress):
+			at, page := v.center()
+			a.dispatch(driver.Event{Kind: driver.EventPress, ID: canvas.ID, Point: at, Page: page, Count: 1})
+		default:
+			a.t.Fatalf("nsgotest: %q offers no %q action", selector, name)
+		}
+		return
+	}
 	switch {
 	case v.Props.HasAction(name) && v.Events.Has(driver.EventAccessibilityAction):
 		a.dispatch(driver.Event{Kind: driver.EventAccessibilityAction, ID: v.ID, Text: name})

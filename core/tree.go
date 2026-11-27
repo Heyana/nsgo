@@ -512,6 +512,7 @@ type handlers struct {
 	fileEnter, fileLeave                 func()
 	fileDrop                             func([]string)
 	action                               func(string)
+	canvasAction                         func(CanvasActionEvent)
 	transitionEnd                        func()
 }
 
@@ -534,7 +535,7 @@ func (h *handlers) empty() bool {
 		h.pan == nil && h.pinch == nil && h.rotation == nil &&
 		h.wheel == nil &&
 		h.fileEnter == nil && h.fileLeave == nil && h.fileDrop == nil &&
-		h.action == nil && h.transitionEnd == nil
+		h.action == nil && h.canvasAction == nil && h.transitionEnd == nil
 }
 
 type textNode struct {
@@ -2844,6 +2845,18 @@ func (t *Tree) Dispatch(ev driver.Event) {
 		}
 		press(h.longPress)
 	case driver.EventAccessibilityAction:
+		if h.canvasAction != nil && n.canvas != nil {
+			if t.canvasNodeAccepts(n, ev.CanvasNode, ev.Text) {
+				ae := CanvasActionEvent{
+					NodeID:   ev.CanvasNode,
+					Action:   ev.Text,
+					Value:    ev.Value,
+					HasValue: ev.HasValue,
+				}
+				t.within(n.owner, func() { h.canvasAction(ae) })
+			}
+			break
+		}
 		if p := n.labelProps(); h.action != nil && !p.Disabled && p.HasAction(ev.Text) {
 			t.within(n.owner, func() { h.action(ev.Text) })
 		}
@@ -3416,7 +3429,7 @@ func (n *node) events() driver.EventMask {
 	bit(driver.EventFileDragEnter, h.fileEnter != nil)
 	bit(driver.EventFileDragLeave, h.fileLeave != nil)
 	bit(driver.EventFileDrop, h.fileDrop != nil)
-	bit(driver.EventAccessibilityAction, h.action != nil)
+	bit(driver.EventAccessibilityAction, h.action != nil || h.canvasAction != nil)
 	if n.native != nil {
 		bit(driver.EventNative, n.native.event != nil)
 		bit(driver.EventNativeSize, true)

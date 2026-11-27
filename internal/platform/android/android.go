@@ -1894,7 +1894,7 @@ func encode(w *writer, b *driver.MountBatch, first bool, requests []uint32, nati
 				w.u32(1)
 			}
 		case driver.ItemSetClipboard, driver.ItemAnnounce, driver.ItemTitle, driver.ItemAccessibilityLabel,
-			driver.ItemKeepImage, driver.ItemReleaseImage:
+			driver.ItemAccessibilityFocus, driver.ItemKeepImage, driver.ItemReleaseImage:
 			w.str(it.Value)
 		case driver.ItemReadClipboard:
 			w.u32(it.Count)

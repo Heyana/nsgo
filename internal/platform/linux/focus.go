@@ -239,6 +239,9 @@ func (w *window) focusView(v *view) {
 }
 
 func (w *window) setControlFocus(v *view) {
+	if v != nil {
+		w.focusedPartCanvas, w.focusedPartID = nil, ""
+	}
 	old := w.controlFocus
 	if old == v {
 		return

@@ -83,17 +83,17 @@ The callback runs lazily on first `Source()` call inside `Untracked`, and runs a
 
 ## Nodes
 
-`Drawing.Node` names a part of the drawing, a chart's bar or a grid's cell, with bounds in the canvas, a role, a label, a test ID and a selected state. A press on one is a press on the canvas at the node's center.
+`Drawing.Node` names a part of the drawing — a chart's bar, a grid's cell or a drawn slider, toggle or dialog — with an `ID`, bounds in the canvas, a role, a label, a `Hint`, a test ID, a numeric range (`Value`, `Min`, `Max`, `Step`) and `ValueText`, states (`Selected`, `Disabled`, `Expanded`, `Checked` tri-state and `Busy`), a `Live` region (`LiveRegionPolite` or `LiveRegionAssertive`) and supported `Actions` (`CanvasActionActivate`, `CanvasActionIncrement`, `CanvasActionDecrement`, `CanvasActionScroll`, `CanvasActionDismiss`, inferred from role and state when zero and cleared when `Disabled`). `Canvas.OnAccessibilityAction` receives `CanvasActionEvent` (`NodeID`, `Action`, optional `Value`/`HasValue`) for enabled nodes; when unset, activating a node falls back to pressing at its center. `Ref.SetAccessibilityFocusNode(id)` emits `ItemAccessibilityFocus` with `Value: id` under the same confinement gate as `Ref.SetAccessibilityFocus`.
 
 | Target | Nodes are |
 | --- | --- |
-| macOS | `NSAccessibilityElement`s, the canvas view's accessibility children |
-| iOS | `UIAccessibilityElement`s in place of the canvas |
-| Web | ARIA elements inside the `<canvas>`, which browsers expose at their bounds and never draw |
-| Android | Virtual views of the canvas's `AccessibilityNodeProvider` |
-| Windows | UI Automation providers, the canvas element's children |
-| Linux | Empty `GtkLabel`s of the node's role at its bounds, which take no pointer |
-| `nsgotest` | Views of the model: selectors find them by label, text and test ID, and a press presses the pressable view under their center |
+| macOS | `NSAccessibilityElement`s with role, label, help, values, states, `AXElementBusy`, press/increment/decrement/cancel/scroll actions, live announcements (`driver.CanvasLiveChanges`) and VoiceOver focus |
+| iOS | `UIAccessibilityElement`s in place of the canvas with traits, hint, spoken values/states, activate/increment/decrement/scroll/escape actions, live announcements and VoiceOver focus |
+| Web | Reconciled ARIA `<div>` elements inside the `<canvas>` carrying roles, `aria-valuenow`/`valuemin`/`valuemax`/`valuetext`, `aria-disabled`, `aria-expanded`, `aria-checked`, `aria-busy`, `aria-description`, `aria-live`, keyboard/click action routing and focus |
+| Android | Virtual views of `CanvasNode`'s `AccessibilityNodeProvider` with `Accessibility.describe`, `RangeInfo`, `setLiveRegion`, click/scroll/set-progress/dismiss/accessibility-focus actions and live announcements |
+| Windows | UI Automation providers, children of the canvas element, with `Value`, `RangeValue`, `Toggle`, `ExpandCollapse`, `Invoke` and `SelectionItem` patterns, `LiveSetting`/`LiveRegionChanged`, `IsEnabled` and focus |
+| Linux | `NsgoView` widgets (`GtkAccessibleRange`) of the node's role at its bounds, exposing properties/states/ranges through `GtkAccessible`, `set_current_value`, keyboard actions, `gtk_accessible_announce` for live updates and focus |
+| `nsgotest` | Views of the model with full `ViewProps` and `Node`: selectors match `id:`, `label:`, `text:`, `role:`, `hint:`, `value:`, `live:` and `state:`; `AccessibilityAction` dispatches node actions and `AccessibilityFocus` tracks `SetAccessibilityFocusNode` |
 
 ## Players
 

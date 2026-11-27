@@ -3,7 +3,9 @@
 package linux
 
 import (
+	"cmp"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -594,36 +596,226 @@ func (w *window) announce(text string, urgent bool) {
 	gtkAccessibleAnnounce(w.surface, cstr(text), priority)
 }
 
-// setCanvasParts makes a canvas's named parts its accessible children.
+// partRef maps a canvas part's GTK widget back to its window, canvas and node.
+type partRef struct {
+	w    *window
+	v    *view
+	node driver.CanvasNode
+}
+
+var canvasPartWidgets = struct {
+	sync.Mutex
+	m map[uintptr]partRef
+}{m: map[uintptr]partRef{}}
+
+func lookupCanvasPartWidget(widget uintptr) (partRef, bool) {
+	canvasPartWidgets.Lock()
+	r, ok := canvasPartWidgets.m[widget]
+	canvasPartWidgets.Unlock()
+	return r, ok
+}
+
+func setCanvasPartWidget(widget uintptr, r partRef) {
+	canvasPartWidgets.Lock()
+	canvasPartWidgets.m[widget] = r
+	canvasPartWidgets.Unlock()
+}
+
+func forgetCanvasPartWidget(widget uintptr) {
+	canvasPartWidgets.Lock()
+	delete(canvasPartWidgets.m, widget)
+	canvasPartWidgets.Unlock()
+}
+
+func rangeIfaceInitCallback(iface, data uintptr) {
+	// GTypeInterface is 16 bytes on 64-bit targets, followed by set_current_value.
+	setSlot(iface, 16, cbRangeSetCurrentValue)
+}
+
+func rangeSetCurrentValueCallback(widget uintptr, value float64) int32 {
+	if pr, ok := lookupCanvasPartWidget(widget); ok && pr.w != nil && pr.v != nil && !pr.v.deleted {
+		n := pr.node
+		if n.Disabled || !pr.v.events.Has(driver.EventAccessibilityAction) {
+			return 0
+		}
+		var action string
+		if value > float64(n.Value) {
+			action = driver.ActionIncrement
+		} else if value < float64(n.Value) {
+			action = driver.ActionDecrement
+		} else {
+			return 1
+		}
+		if !n.HasAction(action) {
+			return 0
+		}
+		pr.w.engine.Dispatch(driver.Event{
+			Kind:       driver.EventAccessibilityAction,
+			ID:         pr.v.id,
+			Text:       action,
+			CanvasNode: n.NodeID(),
+			Value:      float32(value),
+			HasValue:   true,
+		})
+		return 1
+	}
+	if r, ok := lookupWidget(widget); ok && r.w != nil && r.v != nil && !r.v.deleted {
+		v := r.v
+		if v.props.Disabled || !v.events.Has(driver.EventAccessibilityAction) {
+			return 0
+		}
+		var action string
+		if value > float64(v.props.Value.Now) {
+			action = driver.ActionIncrement
+		} else if value < float64(v.props.Value.Now) {
+			action = driver.ActionDecrement
+		} else {
+			return 1
+		}
+		if !v.props.HasAction(action) {
+			return 0
+		}
+		r.w.engine.Dispatch(driver.Event{
+			Kind: driver.EventAccessibilityAction,
+			ID:   v.id,
+			Text: action,
+		})
+		return 1
+	}
+	return 0
+}
+
+// setCanvasParts makes a canvas's named parts its accessible children and
+// announces live-region updates.
 func (w *window) setCanvasParts(v *view, nodes []driver.CanvasNode) {
 	if len(nodes) == 0 && len(v.parts) == 0 {
 		return
 	}
-	for _, c := range v.parts {
-		gtkWidgetUnparent(c.widget)
-		gObjectUnref(c.widget)
+	var prev []driver.CanvasNode
+	if len(v.parts) > 0 {
+		prev = make([]driver.CanvasNode, len(v.parts))
+		for i, c := range v.parts {
+			prev[i] = c.node
+			forgetCanvasPartWidget(c.widget)
+			gtkWidgetUnparent(c.widget)
+			gObjectUnref(c.widget)
+		}
 	}
 	v.parts = v.parts[:0]
+	partType := viewType
+	if partType == 0 {
+		partType = gtkLabelGetType()
+	}
+	var refocus uintptr
 	for _, n := range nodes {
 		nick := "group"
 		if int(n.Role) < len(roleNicks) && roleNicks[n.Role] != "" {
 			nick = roleNicks[n.Role]
 		}
-		c := newAccessibleWidget(gtkLabelGetType(), enumValue("role", nick))
+		c := newAccessibleWidget(partType, enumValue("role", nick))
 		gObjectRefSink(c)
 		gtkWidgetSetCanTarget(c, 0)
+		if !n.Disabled && n.EffectiveActions() != 0 {
+			gtkWidgetSetFocusable(c, 1)
+		}
 		gtkWidgetSetParent(c, v.widget)
-		part := &view{widget: c, props: driver.ViewProps{Label: n.Label, TestID: n.TestID, Selected: n.Selected}}
+		vp := driver.CanvasNodeViewProps(n)
+		vp.TestID = cmp.Or(n.TestID, n.ID)
+		part := &view{widget: c, props: vp}
 		w.updateAccess(part)
-		v.parts = append(v.parts, canvasPart{widget: c, bounds: n.Bounds})
+		setCanvasPartWidget(c, partRef{w: w, v: v, node: n})
+		v.parts = append(v.parts, canvasPart{widget: c, bounds: n.Bounds, node: n})
+		if w.focusedPartCanvas == v && w.focusedPartID != "" && n.NodeID() == w.focusedPartID {
+			refocus = c
+		}
+	}
+	if refocus != 0 {
+		gtkWidgetSetFocusable(refocus, 1)
+		gtkWidgetGrabFocus(refocus)
+	} else if w.focusedPartCanvas == v {
+		w.focusedPartCanvas, w.focusedPartID = nil, ""
 	}
 	w.queueAllocate(v.widget)
+	for _, a := range driver.CanvasLiveChanges(prev, nodes) {
+		w.announce(a.Text, a.Live == driver.LiveRegionAssertive)
+	}
 }
 
-// canvasPart is a canvas's named part: its widget and its bounds.
+// focusCanvasPart moves GTK / AT-SPI focus to the named canvas part.
+func (w *window) focusCanvasPart(v *view, nodeID string) {
+	if v == nil || nodeID == "" {
+		return
+	}
+	for i := range v.parts {
+		if v.parts[i].node.NodeID() == nodeID {
+			w.setControlFocus(nil)
+			gtkWidgetSetFocusable(v.parts[i].widget, 1)
+			gtkWidgetGrabFocus(v.parts[i].widget)
+			w.focusedPartCanvas, w.focusedPartID = v, nodeID
+			return
+		}
+	}
+}
+
+// canvasPartKey handles standard keyboard actions when a canvas part holds focus.
+func (w *window) canvasPartKey(keyval, state uint32, repeat bool) bool {
+	cv := w.focusedPartCanvas
+	if cv == nil || cv.deleted || w.focusedPartID == "" || state&(gdkControl|gdkAlt|gdkSuper|gdkMeta) != 0 {
+		return false
+	}
+	var target *canvasPart
+	for i := range cv.parts {
+		if cv.parts[i].node.NodeID() == w.focusedPartID {
+			target = &cv.parts[i]
+			break
+		}
+	}
+	if target == nil || target.node.Disabled {
+		return false
+	}
+	var action string
+	switch keyval {
+	case gdkUp, gdkRight:
+		action = driver.ActionIncrement
+	case gdkDown, gdkLeft:
+		action = driver.ActionDecrement
+	case gdkReturn, gdkKPEnter, gdkSpace:
+		if repeat {
+			return true
+		}
+		action = driver.ActionActivate
+	case gdkEscape:
+		action = driver.ActionDismiss
+	case gdkPageUp, gdkPageDown:
+		action = driver.ActionScroll
+	default:
+		return false
+	}
+	if cv.events.Has(driver.EventAccessibilityAction) && target.node.HasAction(action) {
+		w.engine.Dispatch(driver.Event{
+			Kind:       driver.EventAccessibilityAction,
+			ID:         cv.id,
+			Text:       action,
+			CanvasNode: target.node.NodeID(),
+		})
+		return true
+	}
+	if action == driver.ActionActivate && cv.events.Has(driver.EventPress) {
+		b := target.bounds
+		at := driver.Point{X: b.Origin.X + b.Size.Width/2, Y: b.Origin.Y + b.Size.Height/2}
+		if sb, ok := w.surfaceBounds(cv); ok {
+			w.press(driver.Point{X: sb.Origin.X + at.X, Y: sb.Origin.Y + at.Y})
+			return true
+		}
+	}
+	return false
+}
+
+// canvasPart is a canvas's named part: its widget, bounds and node metadata.
 type canvasPart struct {
 	widget uintptr
 	bounds driver.Bounds
+	node   driver.CanvasNode
 }
 
 // part returns the canvas part whose widget is c, if any.
@@ -639,6 +831,7 @@ func (v *view) part(c uintptr) *canvasPart {
 // releaseCanvasParts lets a deleted canvas's parts go.
 func (v *view) releaseCanvasParts() {
 	for _, c := range v.parts {
+		forgetCanvasPartWidget(c.widget)
 		gtkWidgetUnparent(c.widget)
 		gObjectUnref(c.widget)
 	}

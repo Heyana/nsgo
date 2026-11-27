@@ -166,7 +166,8 @@ const (
 	// ViewProps were sent before, and nothing else: a label following app
 	// state changes alone, so the rest is not sent again.
 	ItemAccessibilityLabel
-	// ItemAccessibilityFocus moves the screen reader's focus to ID.
+	// ItemAccessibilityFocus moves the screen reader's focus to ID, or to
+	// the CanvasNode whose ID matches Value when Value is non-empty.
 	ItemAccessibilityFocus
 	// ItemScreen configures a screen's system header (Screen) on the
 	// platforms that report header heights, before the screen is

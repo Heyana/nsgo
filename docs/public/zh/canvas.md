@@ -65,14 +65,20 @@ d.DrawSVGIn(badge, 12, 12, 180, 60)
 
 用 `d.DrawAtlas(source, rects, xforms, alphas)` 按顺序绘制同一张图集的多个精灵。每个 `core.Bounds` 以图片自身的点为单位选择一个区域。对应的 `core.RSXform` 将区域的左上角放在 `TX, TY`，`SCos` 和 `SSin` 分别是缩放倍数乘以旋转角的余弦和正弦。例如，`core.RSXform{SCos: 0.5, TX: 40, TY: 20}` 将 32 点的区域缩到半宽半高，绘制在 (40, 20)。透明度传 `nil` 时沿用当前绘图透明度，也可以为每个精灵指定相乘的系数。
 
-`Drawing.Node` 给绘图的一部分命名，例如图表的柱或地图的区域，带边界、角色、标签和选中状态。辅助技术把这些部分当作画布的子元素，测试可以按标签、文本或 test ID 找到它们；按下其中一个就是按下它的中心。
+`Drawing.Node` 给绘图的一部分命名——例如图表的柱、滑块、开关或对话框——带稳定 `ID`、边界、角色、标签、`Hint`、数值范围（`Value`、`Min`、`Max`、`Step`）和 `ValueText`、状态（`Selected`、`Disabled`、`Expanded`、三态 `Checked` 与 `Busy`）、`Live` 区域（`core.LiveRegionPolite` 或 `core.LiveRegionAssertive`）以及 `Actions`（`core.CanvasActionActivate`、`CanvasActionIncrement`、`CanvasActionDecrement`、`CanvasActionScroll`、`CanvasActionDismiss`）。辅助技术将这些部分作为画布的子元素暴露，将节点操作发送到 `Canvas.OnAccessibilityAction`（未设置时回退到按压节点中心），并可通过 `Ref.SetAccessibilityFocusNode(id)` 将屏幕阅读器焦点移到指定节点。`nsgotest` 支持通过 `id:`、`label:`、`text:`、`role:`、`hint:`、`value:`、`live:` 和 `state:` 查找节点，并用 `AccessibilityAction` 触发其操作。
 
 ```go
 d.Node(core.CanvasNode{
-	Bounds: core.Bounds{Origin: core.Point{X: x, Y: y}, Size: core.Size{Width: w, Height: h}},
-	Role:   core.RoleButton,
-	Label:  "打开报告",
-	TestID: "report",
+	ID:        "volume",
+	Bounds:    core.Bounds{Origin: core.Point{X: x, Y: y}, Size: core.Size{Width: w, Height: h}},
+	Role:      core.RoleAdjustable,
+	Label:     "音量",
+	Hint:      "上下滑动调整音量",
+	Value:     level,
+	Min:       0,
+	Max:       100,
+	Step:      10,
+	ValueText: fmt.Sprintf("%.0f%%", level),
 })
 ```
 

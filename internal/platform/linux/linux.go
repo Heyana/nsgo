@@ -141,8 +141,10 @@ type window struct {
 	hideOnBlur bool
 	visible    bool
 	// showFirst waits for the first mount batch before presenting a newly opened window or panel, so GTK does not map an empty window first.
-	showFirst firstShow
-	focused   bool
+	showFirst         firstShow
+	focused           bool
+	focusedPartCanvas *view
+	focusedPartID     string
 	// noActivate keeps a panel from the focus (SurfaceConfig.NoActivate), which X11 does by leaving it unmanaged: no window manager places, decorates or focuses it. anchorBounds and panelSide are where core.Window.ShowAt last placed it, panelSide WindowPlaceDefault for nowhere.
 	noActivate bool
 	dock       driver.PanelDock
@@ -1435,7 +1437,12 @@ func (w *window) apply(b *driver.MountBatch) {
 			continue
 		case driver.ItemAccessibilityFocus:
 			if v := w.view(it.ID); v != nil && v.widget != 0 {
-				w.focusView(v)
+				if it.Value != "" {
+					w.focusCanvasPart(v, it.Value)
+				} else {
+					w.focusedPartCanvas, w.focusedPartID = nil, ""
+					w.focusView(v)
+				}
 			}
 			continue
 		case driver.ItemStatusBar, driver.ItemBackUnhandled, driver.ItemBackPreview, driver.ItemHistory:

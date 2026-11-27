@@ -132,8 +132,9 @@ func registerViewType() error {
 			return
 		}
 		// Range roles expose their value to AT-SPI only on widgets that
-		// are GtkAccessibleRange; its one method keeps its default.
-		var info gInterfaceInfo
+		// are GtkAccessibleRange; set_current_value routes Orca / AT-SPI
+		// Value.setCurrentValue calls to increment/decrement actions.
+		info := gInterfaceInfo{init: cbRangeIfaceInit}
 		gTypeAddInterfaceStatic(viewType, gtkAccessibleRangeGetType(), &info)
 	})
 	return viewTypeErr

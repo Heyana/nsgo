@@ -30,7 +30,11 @@ type Canvas struct {
 	StyleFunc func() Style
 	OnPress   func(PressEvent)
 	OnLayout  func(Bounds)
-	Ref       *Ref
+	// OnAccessibilityAction receives assistive-technology actions performed
+	// on the drawing's CanvasNodes (ActionActivate, ActionIncrement,
+	// ActionDecrement, ActionScroll, ActionDismiss) with the node's ID.
+	OnAccessibilityAction func(CanvasActionEvent)
+	Ref                   *Ref
 	// Label names the drawing for assistive technology, which reads it as an image; LabelFunc follows what it reads, as Text's does.
 	Label     string
 	LabelFunc func() string
@@ -49,6 +53,21 @@ type Canvas struct {
 	// CopyItem supplies extra clipboard representations when a text selection copies this canvas as a single attachment; CopyItemFunc follows what it reads. base/formula provides Presentation MathML and source representations through it.
 	CopyItem     *ClipboardItem
 	CopyItemFunc func() *ClipboardItem
+}
+
+// CanvasActionEvent is an assistive-technology action performed on a
+// CanvasNode of a Canvas.
+type CanvasActionEvent struct {
+	// NodeID is the CanvasNode's ID, or its TestID when ID is empty.
+	NodeID string
+	// Action is the action name: ActionActivate, ActionIncrement,
+	// ActionDecrement, ActionScroll or ActionDismiss.
+	Action string
+	// Value is an optional target value supplied by assistive technology
+	// (such as Android's ACTION_SET_PROGRESS or UIA's SetValue), valid
+	// when HasValue is true.
+	Value    float32
+	HasValue bool
 }
 
 // canvasResolution is the ResolutionScale a canvas sends: r within (0, 1), or 0 for any other value, which draws at the screen's density.
@@ -222,7 +241,7 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 	t.bindClasses(cx, n, c.Class, c.ClassFunc)
 	t.bindStyle(cx, n, c.Style, c.StyleFunc)
 	t.setRef(n, c.Ref)
-	n.setHandlers(handlers{press: c.OnPress, layout: c.OnLayout})
+	n.setHandlers(handlers{press: c.OnPress, layout: c.OnLayout, canvasAction: c.OnAccessibilityAction})
 	n.setProps(driver.ViewProps{Role: RoleImage, Label: c.Label, TestID: c.TestID})
 	t.bindAccessibility(cx, n, a11y{labelFunc: c.LabelFunc})
 	cn := &canvasNode{draw: c.Draw, size: NewSignal(cx, Size{}),
@@ -369,6 +388,20 @@ func (t *Tree) refuseDrawingImagesOwner(owner *Scope, d *Drawing) {
 	if d.Shaded() {
 		eachShaderImage(d, func(img *ImageSource) { t.refuseImageOwner(owner, img) })
 	}
+}
+
+// canvasNodeAccepts reports whether canvas node n's current drawing holds an
+// enabled CanvasNode identified by nodeID that offers action.
+func (t *Tree) canvasNodeAccepts(n *node, nodeID, action string) bool {
+	if n.canvas == nil || n.canvas.drawing == nil || n.labelProps().Disabled {
+		return false
+	}
+	idx := driver.FindCanvasNode(n.canvas.drawing.Nodes, nodeID)
+	if idx < 0 {
+		return false
+	}
+	cn := n.canvas.drawing.Nodes[idx]
+	return !cn.Disabled && cn.HasAction(action)
 }
 
 // MeasureText returns the advance width and the metrics of text's first

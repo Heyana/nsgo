@@ -35,6 +35,7 @@ func (w *window) focusView(v *view) {
 		w.setFocus(v.field)
 		return
 	}
+	w.axFocusView, w.axFocusPart = 0, 0
 	w.setFocus(nil)
 	w.restore = nil
 	w.controlFocus = v

@@ -72,20 +72,22 @@ var (
 	cbWebDownloadFailed      uintptr
 	cbWebScheme              uintptr
 
-	cbShield           uintptr
-	cbTouch            uintptr
-	cbViewClassInit    uintptr
-	cbViewDispose      uintptr
-	cbViewSizeAllocate uintptr
-	cbViewFocus        uintptr
-	cbViewSnapshot     uintptr
-	cbViewContains     uintptr
-	cbVideoPrepared    uintptr
-	cbVideoPlaying     uintptr
-	cbVideoSize        uintptr
-	cbVideoEnded       uintptr
-	cbVideoError       uintptr
-	cbVideoProgress    uintptr
+	cbShield               uintptr
+	cbTouch                uintptr
+	cbViewClassInit        uintptr
+	cbViewDispose          uintptr
+	cbViewSizeAllocate     uintptr
+	cbViewFocus            uintptr
+	cbViewSnapshot         uintptr
+	cbViewContains         uintptr
+	cbRangeIfaceInit       uintptr
+	cbRangeSetCurrentValue uintptr
+	cbVideoPrepared        uintptr
+	cbVideoPlaying         uintptr
+	cbVideoSize            uintptr
+	cbVideoEnded           uintptr
+	cbVideoError           uintptr
+	cbVideoProgress        uintptr
 
 	cbSettingsChanged       uintptr
 	cbDisplaysChanged       uintptr
@@ -164,6 +166,8 @@ func init() {
 	cbViewFocus = newCallback(viewFocusCallback)
 	cbViewSnapshot = newCallback(viewSnapshotCallback)
 	cbViewContains = newCallback(viewContainsCallback)
+	cbRangeIfaceInit = newCallback(rangeIfaceInitCallback)
+	cbRangeSetCurrentValue = newCallback(rangeSetCurrentValueCallback)
 
 	cbSettingsChanged = newCallback(settingsChangedCallback)
 	cbDisplaysChanged = newCallback(displaysChangedCallback)

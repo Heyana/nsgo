@@ -308,6 +308,11 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 			a.recordOffscreen(d.Images[i].Offscreen, nil)
 		}
 	}
+	var focusedNodeID string
+	if a.AccessibilityFocus != nil && a.AccessibilityFocus.Parent == v && a.AccessibilityFocus.Node != nil {
+		focusedNodeID = a.AccessibilityFocus.Node.NodeID()
+		a.AccessibilityFocus = nil
+	}
 	kept := v.Children[:0]
 	for _, c := range v.Children {
 		if c.Node == nil {
@@ -317,9 +322,13 @@ func (a *App) drawCanvas(v *View, d *driver.Drawing) {
 	v.Children = kept
 	for i := range d.Nodes {
 		n := &d.Nodes[i]
-		v.Children = append(v.Children, &View{Kind: KindView, Parent: v, Frame: n.Bounds, Node: n,
+		child := &View{Kind: KindView, Parent: v, Frame: n.Bounds, Node: n,
 			Style: ViewStyle{Opacity: 1},
-			Props: ViewProps{Role: n.Role, Label: n.Label, TestID: n.TestID, Selected: n.Selected}})
+			Props: viewProps(driver.CanvasNodeViewProps(*n))}
+		v.Children = append(v.Children, child)
+		if focusedNodeID != "" && n.NodeID() == focusedNodeID {
+			a.AccessibilityFocus = child
+		}
 	}
 }
 
@@ -700,7 +709,17 @@ func (a *App) apply(b *driver.MountBatch) {
 		case driver.ItemAccessibilityLabel:
 			v.Props.Label = it.Value
 		case driver.ItemAccessibilityFocus:
-			a.AccessibilityFocus = v
+			if it.Value != "" {
+				a.AccessibilityFocus = nil
+				for _, c := range v.Children {
+					if c.Node != nil && c.Node.NodeID() == it.Value {
+						a.AccessibilityFocus = c
+						break
+					}
+				}
+			} else {
+				a.AccessibilityFocus = v
+			}
 		case driver.ItemEvents:
 			v.Events = it.Events
 		case driver.ItemText:

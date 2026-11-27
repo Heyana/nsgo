@@ -48,6 +48,10 @@ const (
 	ActionEscape = "escape"
 	// ActionMagicTap is VoiceOver's two-finger double tap (iOS).
 	ActionMagicTap = "magicTap"
+	// ActionScroll scrolls a canvas node or container forward or into view.
+	ActionScroll = "scroll"
+	// ActionDismiss dismisses a dialog, popup, toast or canvas overlay.
+	ActionDismiss = "dismiss"
 )
 
 // IsStandardAction reports whether name is one of the standard actions,
@@ -56,10 +60,81 @@ const (
 func IsStandardAction(name string) bool {
 	switch name {
 	case ActionActivate, ActionIncrement, ActionDecrement, ActionLongPress,
-		ActionExpand, ActionCollapse, ActionEscape, ActionMagicTap:
+		ActionExpand, ActionCollapse, ActionEscape, ActionMagicTap,
+		ActionScroll, ActionDismiss:
 		return true
 	}
 	return false
+}
+
+// CheckedState is the tri-state checked value of a checkable CanvasNode.
+// The zero value is unset.
+type CheckedState uint8
+
+const (
+	CheckedUnset CheckedState = iota
+	CheckedFalse
+	CheckedTrue
+	CheckedMixed
+)
+
+// ExpandedState is whether an expandable CanvasNode is collapsed or expanded.
+// The zero value is unset (not expandable).
+type ExpandedState uint8
+
+const (
+	ExpandedUnset ExpandedState = iota
+	ExpandedFalse
+	ExpandedTrue
+)
+
+// CanvasAction is a bitmask of assistive-technology actions a CanvasNode offers.
+type CanvasAction uint8
+
+const (
+	CanvasActionActivate CanvasAction = 1 << iota
+	CanvasActionIncrement
+	CanvasActionDecrement
+	CanvasActionScroll
+	CanvasActionDismiss
+)
+
+// Has reports whether a includes action.
+func (a CanvasAction) Has(action CanvasAction) bool { return a&action != 0 }
+
+// Name returns the standard action name for a single CanvasAction bit, or "".
+func (a CanvasAction) Name() string {
+	switch a {
+	case CanvasActionActivate:
+		return ActionActivate
+	case CanvasActionIncrement:
+		return ActionIncrement
+	case CanvasActionDecrement:
+		return ActionDecrement
+	case CanvasActionScroll:
+		return ActionScroll
+	case CanvasActionDismiss:
+		return ActionDismiss
+	}
+	return ""
+}
+
+// CanvasActionByName returns the CanvasAction bit for a standard canvas action
+// name, or 0 for an unrecognized name.
+func CanvasActionByName(name string) CanvasAction {
+	switch name {
+	case ActionActivate:
+		return CanvasActionActivate
+	case ActionIncrement:
+		return CanvasActionIncrement
+	case ActionDecrement:
+		return CanvasActionDecrement
+	case ActionScroll:
+		return CanvasActionScroll
+	case ActionDismiss:
+		return CanvasActionDismiss
+	}
+	return 0
 }
 
 // Accessible says whether a view is one element for assistive technology.

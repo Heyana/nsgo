@@ -62,20 +62,62 @@ class CanvasNode extends View {
 
     /** A named part of the drawing, in points. */
     static final class Part {
+        static final int ACTION_ACTIVATE = 1;
+        static final int ACTION_INCREMENT = 2;
+        static final int ACTION_DECREMENT = 4;
+        static final int ACTION_SCROLL = 8;
+        static final int ACTION_DISMISS = 16;
+
         final float x, y, w, h;
         final int role;
-        final String label, testID;
-        final boolean selected;
+        final String id, label, hint, testID;
+        final float value, min, max, step;
+        final String valueText;
+        final boolean selected, disabled, busy;
+        final int expanded, checked, live, actions;
 
-        Part(float x, float y, float w, float h, int role, String label, String testID, boolean selected) {
+        Part(float x, float y, float w, float h, int role, String id, String label, String hint, String testID,
+                float value, float min, float max, float step, String valueText,
+                boolean selected, boolean disabled, boolean busy, int expanded, int checked, int live, int actions) {
             this.x = x;
             this.y = y;
             this.w = w;
             this.h = h;
             this.role = role;
-            this.label = label;
-            this.testID = testID;
+            this.id = id != null ? id : "";
+            this.label = label != null ? label : "";
+            this.hint = hint != null ? hint : "";
+            this.testID = testID != null ? testID : "";
+            this.value = value;
+            this.min = min;
+            this.max = max;
+            this.step = step;
+            this.valueText = valueText != null ? valueText : "";
             this.selected = selected;
+            this.disabled = disabled;
+            this.busy = busy;
+            this.expanded = expanded;
+            this.checked = checked;
+            this.live = live;
+            this.actions = actions;
+        }
+
+        String nodeID() {
+            return !id.isEmpty() ? id : testID;
+        }
+
+        boolean hasRange() {
+            return max > min;
+        }
+
+        String liveText() {
+            String val = valueText;
+            if (val.isEmpty() && hasRange()) {
+                val = Float.toString(value);
+            }
+            if (!label.isEmpty() && !val.isEmpty()) return label + ", " + val;
+            if (!label.isEmpty()) return label;
+            return val.trim();
         }
     }
 
@@ -84,12 +126,21 @@ class CanvasNode extends View {
         boolean pressAt(float rawX, float rawY);
     }
 
+    /** Reports an assistive-technology action performed on a canvas node. */
+    interface ActionListener {
+        boolean onAction(String nodeID, String action, float value, boolean hasValue);
+    }
+
     private byte[] ops;
     private int[] offsets = new int[0];
     private boolean[] colors = new boolean[0];
     private Part[] parts = new Part[0];
     Presser presser;
+    ActionListener actionListener;
+    String[] spoken;
+    boolean handlesActions;
     private int hovered = -1;
+    private int focusedPart = -1;
     /** Stepped raster scale (>1 when inside a scaled view or zooming scroll). */
     private float rasterScale = 1f;
     /** Canvas.ResolutionScale, in (0, 1], which multiplies rasterScale, and whether its pixels stretch smoothly. */
@@ -221,12 +272,15 @@ class CanvasNode extends View {
         if (ops == null || ops.length == 0 || (rasterScale <= 1f && resolution >= 1f && offsets.length == 0)) {
             releaseBacking();
         }
-        boolean changed = parts.length != this.parts.length;
+        Part[] prev = this.parts;
+        boolean changed = parts.length != prev.length;
         this.parts = parts;
+        if (focusedPart >= parts.length) focusedPart = -1;
         if (changed) {
             setImportantForAccessibility(parts.length > 0 ? IMPORTANT_FOR_ACCESSIBILITY_YES
                     : IMPORTANT_FOR_ACCESSIBILITY_AUTO);
         }
+        announceLiveParts(prev, parts);
         if (parts.length > 0) sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
         invalidate();
     }
@@ -420,6 +474,44 @@ class CanvasNode extends View {
         if (getParent() != null) getParent().requestSendAccessibilityEvent(this, e);
     }
 
+    /** Moves TalkBack accessibility focus to the named canvas part, if present. */
+    void focusPart(String nodeID) {
+        if (nodeID == null || nodeID.isEmpty()) return;
+        for (int i = 0; i < parts.length; i++) {
+            if (nodeID.equals(parts[i].nodeID())) {
+                focusedPart = i;
+                sendPartEvent(i, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
+                return;
+            }
+        }
+    }
+
+    private void announceLiveParts(Part[] prev, Part[] next) {
+        if (prev == null || prev.length == 0 || next == null || next.length == 0) return;
+        Map<String, String> byID = new HashMap<>();
+        for (Part p : prev) {
+            String key = p.nodeID();
+            if (!key.isEmpty()) byID.put(key, p.liveText());
+        }
+        for (int i = 0; i < next.length; i++) {
+            Part p = next[i];
+            if (p.live == 0) continue;
+            String text = p.liveText();
+            if (text.isEmpty()) continue;
+            String old = null;
+            String key = p.nodeID();
+            if (!key.isEmpty()) {
+                old = byID.get(key);
+            } else if (i < prev.length && prev[i].nodeID().isEmpty()) {
+                old = prev[i].liveText();
+            }
+            if (old != null && !old.equals(text)) {
+                sendPartEvent(i, AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
+                announceForAccessibility(text);
+            }
+        }
+    }
+
     private final AccessibilityNodeProvider provider = new AccessibilityNodeProvider() {
         @Override
         public AccessibilityNodeInfo createAccessibilityNodeInfo(int id) {
@@ -435,20 +527,60 @@ class CanvasNode extends View {
             AccessibilityNodeInfo info = AccessibilityNodeInfo.obtain(CanvasNode.this, id);
             info.setParent(CanvasNode.this);
             info.setPackageName(getContext().getPackageName());
-            info.setEnabled(true);
+            info.setEnabled(!p.disabled);
             info.setVisibleToUser(true);
             info.setContentDescription(p.label.isEmpty() ? null : p.label);
             info.setSelected(p.selected);
-            if (!p.testID.isEmpty()) info.setViewIdResourceName(p.testID);
-            switch (p.role) {
-                case Protocol.ROLE_BUTTON: info.setClassName("android.widget.Button"); break;
-                case Protocol.ROLE_IMAGE: info.setClassName("android.widget.ImageView"); break;
-                case Protocol.ROLE_TEXT: info.setClassName("android.widget.TextView"); break;
-                case Protocol.ROLE_HEADER: info.setHeading(true); break;
-                default: break;
+            String resID = !p.testID.isEmpty() ? p.testID : p.id;
+            if (!resID.isEmpty()) info.setViewIdResourceName(resID);
+            if (!p.hint.isEmpty() && Build.VERSION.SDK_INT >= 26) info.setHintText(p.hint);
+            Accessibility.Description d = Accessibility.describe(
+                    p.role, false, null, p.checked == 2, p.checked == 3, false, p.busy,
+                    p.expanded != 0, p.expanded == 2, 0, p.valueText, spoken);
+            if (d.className != null) info.setClassName(d.className);
+            if (d.heading && Build.VERSION.SDK_INT >= 28) info.setHeading(true);
+            if (d.roleDescription != null) {
+                info.getExtras().putCharSequence("AccessibilityNodeInfo.roleDescription", d.roleDescription);
             }
-            info.setClickable(true);
-            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK);
+            if (d.checkable || p.checked != 0) {
+                info.setCheckable(true);
+                info.setChecked(p.checked == 2);
+            }
+            if (p.hasRange()) {
+                info.setRangeInfo(AccessibilityNodeInfo.RangeInfo.obtain(
+                        AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_FLOAT, p.min, p.max, p.value));
+            }
+            if (d.stateDescription != null && Build.VERSION.SDK_INT >= 30) {
+                info.setStateDescription(d.stateDescription);
+            }
+            if (p.live == 1) info.setLiveRegion(ACCESSIBILITY_LIVE_REGION_POLITE);
+            else if (p.live == 2) info.setLiveRegion(ACCESSIBILITY_LIVE_REGION_ASSERTIVE);
+            if (focusedPart == id) {
+                info.setAccessibilityFocused(true);
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLEAR_ACCESSIBILITY_FOCUS);
+            } else {
+                info.setAccessibilityFocused(false);
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_ACCESSIBILITY_FOCUS);
+            }
+            if (!p.disabled) {
+                if ((p.actions & Part.ACTION_ACTIVATE) != 0 || (!handlesActions && presser != null)) {
+                    info.setClickable(true);
+                    info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK);
+                }
+                if ((p.actions & (Part.ACTION_INCREMENT | Part.ACTION_SCROLL)) != 0) {
+                    info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);
+                }
+                if ((p.actions & (Part.ACTION_DECREMENT | Part.ACTION_SCROLL)) != 0) {
+                    info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);
+                }
+                if (p.hasRange() && (p.actions & (Part.ACTION_INCREMENT | Part.ACTION_DECREMENT)) != 0
+                        && Build.VERSION.SDK_INT >= 24) {
+                    info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS);
+                }
+                if ((p.actions & Part.ACTION_DISMISS) != 0) {
+                    info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DISMISS);
+                }
+            }
             Rect parent = new Rect((int) (p.x * density), (int) (p.y * density), (int) ((p.x + p.w) * density),
                     (int) ((p.y + p.h) * density));
             info.setBoundsInParent(parent);
@@ -462,14 +594,70 @@ class CanvasNode extends View {
         @Override
         public boolean performAction(int id, int action, Bundle arguments) {
             if (id == View.NO_ID) return performAccessibilityAction(action, arguments);
-            if (id < 0 || id >= parts.length || action != AccessibilityNodeInfo.ACTION_CLICK || presser == null) {
+            if (id < 0 || id >= parts.length) return false;
+            if (action == AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS) {
+                focusedPart = id;
+                sendPartEvent(id, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
+                return true;
+            }
+            if (action == AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS) {
+                if (focusedPart == id) {
+                    focusedPart = -1;
+                    sendPartEvent(id, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED);
+                    return true;
+                }
                 return false;
             }
             Part p = parts[id];
-            float density = getResources().getDisplayMetrics().density;
-            int[] at = new int[2];
-            getLocationOnScreen(at);
-            return presser.pressAt(at[0] + (p.x + p.w / 2) * density, at[1] + (p.y + p.h / 2) * density);
+            if (p.disabled) return false;
+            if (action == AccessibilityNodeInfo.ACTION_CLICK) {
+                if (handlesActions && (p.actions & Part.ACTION_ACTIVATE) != 0 && actionListener != null) {
+                    return actionListener.onAction(p.nodeID(), "activate", 0f, false);
+                }
+                if (presser == null) return false;
+                float density = getResources().getDisplayMetrics().density;
+                int[] at = new int[2];
+                getLocationOnScreen(at);
+                return presser.pressAt(at[0] + (p.x + p.w / 2) * density, at[1] + (p.y + p.h / 2) * density);
+            }
+            if (!handlesActions || actionListener == null) return false;
+            if (action == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) {
+                if ((p.actions & Part.ACTION_INCREMENT) != 0) {
+                    return actionListener.onAction(p.nodeID(), "increment", 0f, false);
+                }
+                if ((p.actions & Part.ACTION_SCROLL) != 0) {
+                    return actionListener.onAction(p.nodeID(), "scroll", 0f, false);
+                }
+                return false;
+            }
+            if (action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) {
+                if ((p.actions & Part.ACTION_DECREMENT) != 0) {
+                    return actionListener.onAction(p.nodeID(), "decrement", 0f, false);
+                }
+                if ((p.actions & Part.ACTION_SCROLL) != 0) {
+                    return actionListener.onAction(p.nodeID(), "scroll", 0f, false);
+                }
+                return false;
+            }
+            if (action == AccessibilityNodeInfo.ACTION_DISMISS) {
+                if ((p.actions & Part.ACTION_DISMISS) != 0) {
+                    return actionListener.onAction(p.nodeID(), "dismiss", 0f, false);
+                }
+                return false;
+            }
+            if (Build.VERSION.SDK_INT >= 24
+                    && action == AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.getId()
+                    && arguments != null && arguments.containsKey(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE)) {
+                float target = arguments.getFloat(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, p.value);
+                if (target > p.value && (p.actions & Part.ACTION_INCREMENT) != 0) {
+                    return actionListener.onAction(p.nodeID(), "increment", target, true);
+                }
+                if (target < p.value && (p.actions & Part.ACTION_DECREMENT) != 0) {
+                    return actionListener.onAction(p.nodeID(), "decrement", target, true);
+                }
+                return false;
+            }
+            return false;
         }
     };
 

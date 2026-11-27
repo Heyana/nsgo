@@ -664,7 +664,7 @@ func keyPressedCallback(controller uintptr, keyval, keycode, state uint32, data 
 		w.chrome.altAlone = false
 		return 1
 	}
-	if w.selectKey(keyval, state) || w.shortcut(keyval, state, repeat) || w.controlKey(keyval, state, repeat) {
+	if w.selectKey(keyval, state) || w.shortcut(keyval, state, repeat) || w.canvasPartKey(keyval, state, repeat) || w.controlKey(keyval, state, repeat) {
 		w.chrome.altAlone = false
 		return 1
 	}

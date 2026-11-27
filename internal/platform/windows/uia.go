@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"cmp"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -92,6 +93,7 @@ const (
 	propIsControlElement      = 30016
 	propIsContentElement      = 30017
 	propIsOffscreen           = 30022
+	propItemStatus            = 30026
 	propIsPassword            = 30019
 	propLabeledBy             = 30018
 	propLiveSetting           = 30135
@@ -292,7 +294,7 @@ func (e *uiaElement) pattern(iid guid) *uiaIface {
 		return &e.selection
 	case iid == iidSelectionProvider && s.multiselectable:
 		return &e.selectionProvider
-	case iid == iidValueProvider && v.field != nil && e.part == 0:
+	case iid == iidValueProvider && ((v.field != nil && e.part == 0) || (e.part > 0 && s.valueText != "")):
 		return &e.value
 	}
 	return nil
@@ -324,12 +326,14 @@ type uiaSpec struct {
 	name, help, automationID                        string
 	localizedType                                   string
 	description                                     string
+	valueText                                       string
 	invalid                                         bool
+	busy                                            bool
 	enabled, focusable, focused                     bool
 	invoke, ranged, expandable                      bool
 	selectable, selected, expanded, multiselectable bool
 	toggle                                          int32 // ToggleState, -1 for none
-	min, max, now                                   float32
+	min, max, now, step                             float32
 	live                                            driver.LiveRegion
 	level                                           int
 	heading, dialog, password                       bool
@@ -408,8 +412,43 @@ func (e *uiaElement) spec(v *view) uiaSpec {
 		if int(n.Role) < len(uiaControls) && uiaControls[n.Role] != 0 {
 			c = uiaControls[n.Role]
 		}
-		return uiaSpec{control: c, name: n.Label, automationID: n.TestID, enabled: true, toggle: -1,
-			invoke: n.Role == driver.RoleButton || n.Role == driver.RoleLink, selectable: n.Selected, selected: n.Selected}
+		actions := n.EffectiveActions()
+		s := uiaSpec{
+			control:      c,
+			name:         n.Label,
+			help:         n.Hint,
+			valueText:    n.ValueText,
+			automationID: cmp.Or(n.TestID, n.ID),
+			enabled:      !n.Disabled,
+			busy:         n.Busy,
+			live:         n.Live,
+			toggle:       -1,
+			expandable:   n.Expanded != driver.ExpandedUnset,
+			expanded:     n.Expanded == driver.ExpandedTrue,
+			selectable:   n.Selected || n.Role == driver.RoleTab || n.Role == driver.RoleOption || n.Role == driver.RoleRadio,
+			selected:     n.Selected,
+			focusable:    !n.Disabled && (actions != 0 || n.Role == driver.RoleButton || n.Role == driver.RoleLink),
+			focused:      e.w != nil && e.w.axFocusView == v.id && e.w.axFocusPart == e.part,
+		}
+		if n.HasRange() {
+			s.ranged, s.min, s.max, s.now, s.step = true, n.Min, n.Max, n.Value, n.RangeStep()
+		}
+		s.invoke = !n.Disabled && (actions.Has(driver.CanvasActionActivate) ||
+			(!v.events.Has(driver.EventAccessibilityAction) && (n.Role == driver.RoleButton || n.Role == driver.RoleLink)))
+		if n.IsCheckable() {
+			s.toggle = 0
+			switch n.Checked {
+			case driver.CheckedTrue:
+				s.toggle = 1
+			case driver.CheckedMixed:
+				s.toggle = 2
+			}
+			s.invoke = s.invoke && n.Role != driver.RoleCheckbox && n.Role != driver.RoleSwitch
+		}
+		if n.Role == driver.RoleRadio && n.Checked == driver.CheckedTrue {
+			s.selected = true
+		}
+		return s
 	}
 	p := &v.props
 	s := uiaSpec{name: p.Label, help: p.Hint, description: p.Description, invalid: p.Invalid, automationID: p.TestID, enabled: !p.Disabled, toggle: -1, live: p.LiveRegion}
@@ -667,6 +706,10 @@ func uiaGetPropertyValue(i *uiaIface, id uintptr, out *variant) uintptr {
 		}
 	case propIsDialog:
 		out.setBool(s.dialog)
+	case propItemStatus:
+		if s.busy {
+			out.setString("busy")
+		}
 	case propIsOffscreen:
 		b := e.screenBounds()
 		out.setBool(b.width <= 0 || b.height <= 0)
@@ -776,6 +819,13 @@ func uiaSetFocus(i *uiaIface) uintptr {
 		return uiaElementGone
 	}
 	if v != nil {
+		if i.el.part > 0 {
+			i.el.w.axFocusView, i.el.w.axFocusPart = v.id, i.el.part
+			if uiaListening() {
+				uiaRaiseAutomationEvent.Call(uintptr(unsafe.Pointer(&i.el.simple)), eventFocusChanged)
+			}
+			return sOK
+		}
 		i.el.w.focusView(v)
 	}
 	return sOK
@@ -837,6 +887,15 @@ func uiaElementFromPoint(i *uiaIface, x, y float64, out *unsafe.Pointer) uintptr
 func uiaGetFocus(i *uiaIface, out *unsafe.Pointer) uintptr {
 	*out = nil
 	w := i.el.w
+	if w.axFocusView != 0 && w.axFocusPart > 0 {
+		e := w.element(w.axFocusView, w.axFocusPart)
+		if _, ok := e.alive(); ok {
+			e.refs.Add(1)
+			*out = unsafe.Pointer(&e.fragment)
+			return sOK
+		}
+		w.axFocusView, w.axFocusPart = 0, 0
+	}
 	if v := w.focusedView(); v != nil {
 		e := w.element(v.id, 0)
 		e.refs.Add(1)
@@ -856,8 +915,21 @@ func (e *uiaElement) activate() uintptr {
 	}
 	w := e.w
 	if e.part > 0 {
+		cn := v.canvasNodes()[e.part-1]
+		if cn.Disabled {
+			return sOK
+		}
+		if v.events.Has(driver.EventAccessibilityAction) && cn.HasAction(driver.ActionActivate) {
+			w.engine.Dispatch(driver.Event{
+				Kind:       driver.EventAccessibilityAction,
+				ID:         v.id,
+				Text:       driver.ActionActivate,
+				CanvasNode: cn.NodeID(),
+			})
+			return sOK
+		}
 		b, _ := w.surfaceBounds(v)
-		n := v.canvasNodes()[e.part-1].Bounds
+		n := cn.Bounds
 		w.engine.PressAt(driver.Event{Page: driver.Point{X: b.Origin.X + n.Origin.X + n.Size.Width/2, Y: b.Origin.Y + n.Origin.Y + n.Size.Height/2}})
 		return sOK
 	}
@@ -900,7 +972,12 @@ func uiaRangeMin(i *uiaIface, out *float64) uintptr {
 	return i.el.number(func(s uiaSpec) float32 { return s.min }, out)
 }
 func uiaRangeStep(i *uiaIface, out *float64) uintptr {
-	return i.el.number(func(s uiaSpec) float32 { return (s.max - s.min) / 10 }, out)
+	return i.el.number(func(s uiaSpec) float32 {
+		if s.step > 0 {
+			return s.step
+		}
+		return (s.max - s.min) / 10
+	}, out)
 }
 
 // uiaRangeSet moves a range toward value by the increment and decrement
@@ -917,6 +994,20 @@ func (e *uiaElement) setRange(value float64) uintptr {
 	} else if value == float64(s.now) {
 		return sOK
 	}
+	if e.part > 0 {
+		cn := v.canvasNodes()[e.part-1]
+		if !cn.Disabled && cn.HasAction(action) && v.events.Has(driver.EventAccessibilityAction) {
+			e.w.engine.Dispatch(driver.Event{
+				Kind:       driver.EventAccessibilityAction,
+				ID:         v.id,
+				Text:       action,
+				CanvasNode: cn.NodeID(),
+				Value:      float32(value),
+				HasValue:   true,
+			})
+		}
+		return sOK
+	}
 	if v.props.HasAction(action) && v.events.Has(driver.EventAccessibilityAction) {
 		e.w.engine.Dispatch(driver.Event{Kind: driver.EventAccessibilityAction, ID: v.id, Text: action})
 	}
@@ -929,6 +1020,13 @@ func uiaReadOnly(i *uiaIface, out *int32) uintptr {
 		return uiaElementGone
 	}
 	*out = 0
+	if i.el.part > 0 {
+		cn := v.canvasNodes()[i.el.part-1]
+		if i == &i.el.value || cn.Disabled || !cn.HasAction(driver.ActionIncrement) {
+			*out = 1
+		}
+		return sOK
+	}
 	if v.field != nil && v.field.config.Readonly || v.field == nil && !v.props.HasAction(driver.ActionIncrement) {
 		*out = 1
 	}
@@ -943,7 +1041,7 @@ func (e *uiaElement) expandAction(name string) uintptr {
 	if !ok || v == nil {
 		return uiaElementGone
 	}
-	if v.props.HasAction(name) && v.events.Has(driver.EventAccessibilityAction) {
+	if e.part == 0 && v.props.HasAction(name) && v.events.Has(driver.EventAccessibilityAction) {
 		e.w.engine.Dispatch(driver.Event{Kind: driver.EventAccessibilityAction, ID: v.id, Text: name})
 		return sOK
 	}
@@ -1045,7 +1143,16 @@ func uiaSelectionRequired(i *uiaIface, out *int32) uintptr {
 func uiaFieldValue(i *uiaIface, out *uintptr) uintptr {
 	*out = 0
 	v, ok := i.el.alive()
-	if !ok || v == nil || v.field == nil {
+	if !ok || v == nil {
+		return uiaElementGone
+	}
+	if i.el.part > 0 {
+		text := i.el.spec(v).valueText
+		b, _, _ := sysAllocString.Call(uintptr(unsafe.Pointer(wide(text))))
+		*out = b
+		return sOK
+	}
+	if v.field == nil {
 		return uiaElementGone
 	}
 	if v.field.masked() {
@@ -1147,6 +1254,15 @@ func (w *window) uiaChanged(held []uiaShown) {
 		if was.description != now.description {
 			h.e.raiseString(propFullDescription, was.description, now.description)
 		}
+		if h.e.part > 0 && was.valueText != now.valueText {
+			h.e.raiseString(propValueValue, was.valueText, now.valueText)
+		}
+		if was.enabled != now.enabled {
+			var a, b variant
+			a.setBool(was.enabled)
+			b.setBool(now.enabled)
+			h.e.raise(propIsEnabled, &a, &b)
+		}
 		// Without the pattern the state reads as off, as uiaToggleState answers.
 		if (was.toggle >= 0 || now.toggle >= 0) && max(was.toggle, 0) != max(now.toggle, 0) {
 			var a, b variant
@@ -1239,6 +1355,30 @@ func (w *window) structureChanged() {
 	id := []int32{uiaAppendRuntimeID, 0}
 	uiaRaiseStructureChangedEvent.Call(uintptr(unsafe.Pointer(&root.simple)), structureInvalidated,
 		uintptr(unsafe.Pointer(&id[0])), uintptr(len(id)))
+}
+
+// focusCanvasNode moves UI Automation focus to the CanvasNode named nodeID.
+func (w *window) focusCanvasNode(v *view, nodeID string) {
+	idx := driver.FindCanvasNode(v.canvasNodes(), nodeID)
+	if idx < 0 {
+		return
+	}
+	w.axFocusView, w.axFocusPart = v.id, idx+1
+	if uiaListening() {
+		e := w.element(v.id, idx+1)
+		uiaRaiseAutomationEvent.Call(uintptr(unsafe.Pointer(&e.simple)), eventFocusChanged)
+	}
+}
+
+// canvasLiveChanged raises LiveRegionChanged on canvas parts whose live text changed.
+func (w *window) canvasLiveChanged(v *view, prev []driver.CanvasNode) {
+	if !uiaListening() {
+		return
+	}
+	for _, a := range driver.CanvasLiveChanges(prev, v.canvasNodes()) {
+		e := w.element(v.id, a.Index+1)
+		uiaRaiseAutomationEvent.Call(uintptr(unsafe.Pointer(&e.simple)), eventLiveRegionChange)
+	}
 }
 
 // focusChanged tells clients field v took the keyboard focus.

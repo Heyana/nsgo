@@ -841,6 +841,10 @@ func readEvent(r *reader) (uint32, driver.Event, string) {
 		// A web view's platform failure carries its domain in data and its code in index.
 		ev.Data, ev.Index, data = &driver.WebFailure{Domain: data, Code: ev.Index}, 0, ""
 	}
+	if ev.Kind == driver.EventAccessibilityAction && data != "" {
+		// A canvas node action carries its node ID in data and optional progress flag in finished.
+		ev.CanvasNode, ev.HasValue, ev.Finished, data = data, ev.Finished, false, ""
+	}
 	return from, ev, data
 }
 

@@ -396,6 +396,9 @@ type window struct {
 	// pointerMode is where the window takes the pointer (windowpointer.go).
 	pointerMode driver.WindowPointerEvents
 	focused     bool
+	// axFocusView and axFocusPart hold the canvas node targeted by ItemAccessibilityFocus or UIA SetFocus.
+	axFocusView driver.NodeID
+	axFocusPart int
 	// anchor is the tray icon a panel last showed under, 0 for none, and anchorBounds and placement where core.Window.ShowAt last placed it, placement WindowPlaceDefault for nowhere. noActivate keeps a panel from ever taking the focus.
 	anchor       uint32
 	anchorBounds driver.Bounds
@@ -1689,8 +1692,16 @@ func (w *window) apply(b *driver.MountBatch) {
 			}
 			continue
 		case driver.ItemAccessibilityFocus:
-			if v := w.view(it.ID); v != nil && v.field != nil {
-				w.setFocus(v.field)
+			if v := w.view(it.ID); v != nil {
+				if it.Value != "" {
+					w.focusCanvasNode(v, it.Value)
+				} else if v.field != nil {
+					w.axFocusView, w.axFocusPart = 0, 0
+					w.setFocus(v.field)
+				} else {
+					w.axFocusView, w.axFocusPart = 0, 0
+					w.focusView(v)
+				}
 			}
 			continue
 		case driver.ItemStatusBar, driver.ItemBackUnhandled, driver.ItemBackPreview, driver.ItemHistory:
@@ -1856,13 +1867,15 @@ func (w *window) apply(b *driver.MountBatch) {
 			// A modal is a view; it appears without animation.
 		case driver.ItemCanvas:
 			held := w.uiaHeld(v)
-			had := len(v.canvasNodes())
+			prevNodes := v.canvasNodes()
+			had := len(prevNodes)
 			was := v.drawing
 			v.drawing = it.Drawing
 			v.canvasCache.setDrawing(nil)
-			was.Release()
 			w.forgetParts(v.id, len(v.canvasNodes())+1, had)
 			w.uiaChanged(held)
+			w.canvasLiveChanged(v, prevNodes)
+			was.Release()
 			w.animator.BindCanvas(v.id, it.Drawing.Slots)
 		case driver.ItemShader:
 			if sh := shaders.Load(); sh != nil {

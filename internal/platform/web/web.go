@@ -278,30 +278,31 @@ type view struct {
 	textBoxOK bool
 	oneLine   bool
 	// placed is the frame place last set on el, while placedOK.
-	placed      driver.Bounds
-	placedOK    bool
-	elStyle     js.Value // el's style, once place has set it
-	events      driver.EventMask
-	input       *webInput    // a text field's
-	border      driver.Edges // the width of each side's border
-	size        driver.Size  // the frame's
-	scroll      driver.Size  // a scroll view's content size
-	sc          *scrollState
-	layout      *textLayout
-	image       *image
-	drawing     *driver.Drawing // a canvas's
-	gl          *glShader       // a shader view's
-	gpu         *gpuView        // a GPU view's
-	fx          *effect         // its effect, transition or navigation shader (effect.go)
-	glassActive bool            // Liquid Glass drawn via the HTML-in-Canvas shader (glass.go)
-	web         *webFrame       // a web view's
-	video       *video          // a video's
-	modal       driver.ModalAnimation
-	presented   bool     // a modal was inserted once
-	presentAnim js.Value // running entrance Web Animation, if any
-	cancelAnim  func()   // cancels presentAnim and releases its callbacks
-	hover       bool     // pointerenter and pointerleave are listened to
-	moves       bool     // pointermove is
+	placed        driver.Bounds
+	placedOK      bool
+	elStyle       js.Value // el's style, once place has set it
+	events        driver.EventMask
+	input         *webInput    // a text field's
+	border        driver.Edges // the width of each side's border
+	size          driver.Size  // the frame's
+	scroll        driver.Size  // a scroll view's content size
+	sc            *scrollState
+	layout        *textLayout
+	image         *image
+	drawing       *driver.Drawing // a canvas's
+	canvasNodeEls []js.Value      // accessible DOM children for a canvas's nodes
+	gl            *glShader       // a shader view's
+	gpu           *gpuView        // a GPU view's
+	fx            *effect         // its effect, transition or navigation shader (effect.go)
+	glassActive   bool            // Liquid Glass drawn via the HTML-in-Canvas shader (glass.go)
+	web           *webFrame       // a web view's
+	video         *video          // a video's
+	modal         driver.ModalAnimation
+	presented     bool     // a modal was inserted once
+	presentAnim   js.Value // running entrance Web Animation, if any
+	cancelAnim    func()   // cancels presentAnim and releases its callbacks
+	hover         bool     // pointerenter and pointerleave are listened to
+	moves         bool     // pointermove is
 	// canvasRatio is the pixels per point of the last replay, including scroll zoom and style transforms.
 	canvasRatio float64
 	// canvasTile is the drawing-point rectangle painted in inner, and canvasSliced whether inner is positioned as a visible sub-rectangle.
@@ -2014,7 +2015,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 			}
 			setAttr(el, "aria-label", it.Value)
 		case driver.ItemAccessibilityFocus:
-			v.focusAccessibility()
+			v.focusAccessibilityNode(it.Value)
 		case driver.ItemViewProps:
 			v.disabled = it.ViewProps.Disabled
 			v.props = *it.ViewProps
@@ -2705,6 +2706,24 @@ func (v *view) focusAccessibility() {
 		v.setTabIndex()
 	}
 	el.Call("focus")
+}
+
+// focusAccessibilityNode moves focus to the named CanvasNode, or to v when
+// nodeID is empty.
+func (v *view) focusAccessibilityNode(nodeID string) {
+	if nodeID == "" {
+		v.focusAccessibility()
+		return
+	}
+	for _, el := range v.canvasNodeEls {
+		if el.Call("getAttribute", "data-canvas-node-id").String() == nodeID {
+			if !el.Call("hasAttribute", "tabindex").Bool() {
+				setAttr(el, "tabindex", "-1")
+			}
+			el.Call("focus")
+			return
+		}
+	}
 }
 
 // pressable reports whether v captures presses on its descendants.
@@ -3401,6 +3420,9 @@ func (s *surface) keyDown(e js.Value) {
 	defer s.perfWork(false)()
 	k := e.Get("key").String()
 	el := e.Get("target")
+	if s.canvasNodeKeyDown(e, el) {
+		return
+	}
 	v := s.target(el)
 	if v == nil || v.kind == driver.KindInput {
 		return

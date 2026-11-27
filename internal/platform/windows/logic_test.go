@@ -1914,6 +1914,80 @@ func TestCanvasPartsDropTheirElements(t *testing.T) {
 	}
 }
 
+func TestCanvasNodeUIASpecAndFocus(t *testing.T) {
+	w := &window{scale: 1, animator: driver.NewAnimator(func(driver.Event) {}), drops: map[*view]bool{}, hosts: map[*component]bool{}}
+	d := &driver.Drawing{Nodes: []driver.CanvasNode{
+		{
+			ID:        "vol",
+			TestID:    "vol-id",
+			Bounds:    driver.Bounds{Origin: driver.Point{X: 10, Y: 20}, Size: driver.Size{Width: 100, Height: 24}},
+			Role:      driver.RoleAdjustable,
+			Label:     "Volume",
+			Hint:      "Adjust level",
+			Value:     40,
+			Min:       0,
+			Max:       100,
+			Step:      5,
+			ValueText: "40%",
+			Live:      driver.LiveRegionPolite,
+		},
+		{
+			ID:       "cb",
+			Bounds:   driver.Bounds{Origin: driver.Point{X: 10, Y: 50}, Size: driver.Size{Width: 80, Height: 24}},
+			Role:     driver.RoleCheckbox,
+			Label:    "All",
+			Checked:  driver.CheckedMixed,
+			Expanded: driver.ExpandedTrue,
+			Busy:     true,
+		},
+		{
+			ID:       "off",
+			Bounds:   driver.Bounds{Origin: driver.Point{X: 10, Y: 80}, Size: driver.Size{Width: 80, Height: 24}},
+			Role:     driver.RoleButton,
+			Label:    "Locked",
+			Disabled: true,
+		},
+	}}
+	w.apply(&driver.MountBatch{Root: 1, Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 1, View: driver.KindView},
+		{Kind: driver.ItemCreate, ID: 2, View: driver.KindCanvas},
+		{Kind: driver.ItemInsert, ID: 2, Parent: 1},
+		{Kind: driver.ItemEvents, ID: 2, Events: 1 << driver.EventAccessibilityAction},
+		{Kind: driver.ItemCanvas, ID: 2, Drawing: d},
+	}})
+	v := w.view(2)
+	vol := w.element(2, 1)
+	s := vol.spec(v)
+	if s.control != ctSlider || s.name != "Volume" || s.help != "Adjust level" || s.automationID != "vol-id" ||
+		!s.ranged || s.min != 0 || s.max != 100 || s.now != 40 || s.step != 5 || s.valueText != "40%" ||
+		!s.enabled || s.live != driver.LiveRegionPolite {
+		t.Fatalf("slider spec = %+v", s)
+	}
+	if vol.pattern(iidRangeValueProvider) == nil || vol.pattern(iidValueProvider) == nil {
+		t.Fatal("slider part missing RangeValue or Value pattern")
+	}
+
+	cb := w.element(2, 2)
+	cs := cb.spec(v)
+	if cs.control != ctCheckBox || cs.toggle != 2 || !cs.expandable || !cs.expanded || !cs.busy {
+		t.Fatalf("checkbox spec = %+v", cs)
+	}
+	if cb.pattern(iidToggleProvider) == nil || cb.pattern(iidExpandCollapseProvider) == nil {
+		t.Fatal("checkbox part missing Toggle or ExpandCollapse pattern")
+	}
+
+	off := w.element(2, 3)
+	os := off.spec(v)
+	if os.enabled || os.invoke || os.focusable {
+		t.Fatalf("disabled part spec = %+v", os)
+	}
+
+	w.focusCanvasNode(v, "vol")
+	if w.axFocusView != 2 || w.axFocusPart != 1 || !vol.spec(v).focused {
+		t.Fatalf("focusCanvasNode did not focus part 1: view=%d part=%d", w.axFocusView, w.axFocusPart)
+	}
+}
+
 func TestBackdropTransformAndTarget(t *testing.T) {
 	// A translated host with overflow maps its local points (x, y) from target DIPs to (x + ov, y + ov) in the backdrop picture's DIPs.
 	cases := []struct {

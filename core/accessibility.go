@@ -29,6 +29,20 @@ func (r *Ref) SetAccessibilityFocus() {
 	}
 }
 
+// SetAccessibilityFocusNode moves the screen reader's focus to the CanvasNode
+// with the given ID (or TestID when ID is empty) inside the referenced Canvas.
+// Under a confined owner it does only as Scope.Confine allows.
+func (r *Ref) SetAccessibilityFocusNode(id string) {
+	if id != "" && r.placed() && r.t.mayMoveFocus(r.n.owner) {
+		r.t.commands = append(r.t.commands, driver.MountItem{
+			Kind:  driver.ItemAccessibilityFocus,
+			ID:    r.n.id,
+			Value: id,
+		})
+		r.t.changed = true
+	}
+}
+
 // a11y is what an element's accessibility props are bound from.
 type a11y struct {
 	labelFunc       func() string

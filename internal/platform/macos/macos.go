@@ -2661,7 +2661,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemAccessibilityLabel:
 			v.setLabel(it.Value)
 		case driver.ItemAccessibilityFocus:
-			v.focusAccessibility()
+			v.focusAccessibilityNode(it.Value)
 		case driver.ItemText:
 			v.layout.Release()
 			v.layout, _ = it.Text.Layout.(*apple.Layout)
