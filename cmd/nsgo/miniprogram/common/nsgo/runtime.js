@@ -336,6 +336,13 @@ function start(page, host = mpHost()) {
       host.on('onWindowResize', () => send('device', 0))
       host.on('onAppShow', () => send('lifecycle', 0, true))
       host.on('onAppHide', () => send('lifecycle', 0, false))
+      if (config.platform === 'alipay') {
+        host.on('onKeyboardHeightChange', (e) => {
+          const h = e && (e.height != null ? e.height : e.detail && e.detail.height)
+          const d = e && (e.duration != null ? e.duration : e.detail && e.detail.duration)
+          send('keyboard', 0, Math.max(0, Number(h) || 0), Number(d) || 0.25)
+        })
+      }
       return {
         tree,
         /** An event of the page: its name, the view's ID, then what it carries. */

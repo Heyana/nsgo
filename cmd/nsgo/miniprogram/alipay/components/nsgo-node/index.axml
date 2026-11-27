@@ -7,8 +7,9 @@
 <import-sjs name="m" from="./index.sjs" />
 <scroll-view
   a:if="{{node.k === 'scroll'}}"
+  id="n"
   class="n"
-  style="{{m.box(node)}}"
+  style="{{m.box(node, kaStyle)}}"
   aria-role="{{node.ax ? node.ax.r : ''}}"
   aria-label="{{node.ax ? node.ax.l : ''}}"
   aria-description="{{node.ax ? node.ax.h : ''}}"
@@ -24,10 +25,10 @@
   refresher-triggered="{{node.sc ? node.sc.rt : false}}"
   onRefresherRefresh="onRefresh"
   onScroll="onScroll"
-  onTouchStart="onDragStart"
-  onTouchMove="onTouch"
-  onTouchEnd="onDragEnd"
-  onTouchCancel="onDragEnd"
+  onTouchStart="onScrollTouchStart"
+  onTouchMove="onScrollTouchMove"
+  onTouchEnd="onScrollTouchEnd"
+  onTouchCancel="onScrollTouchEnd"
 >
   <view class="content" style="width:{{node.cs ? node.cs[0] : node.f[2]}}px;height:{{node.cs ? node.cs[1] : node.f[3]}}px">
     <nsgo-node a:for="{{node.c}}" a:key="id" node="{{item}}" onNsgo="onNsgo" />
@@ -35,8 +36,9 @@
 </scroll-view>
 <view
   a:elif="{{node.k === 'input'}}"
+  id="n"
   class="n"
-  style="{{m.box(node)}}"
+  style="{{m.box(node, kaStyle)}}"
   onTouchStart="onTouch"
   onTouchMove="onTouch"
   onTouchEnd="onTouch"
@@ -107,8 +109,9 @@
 </view>
 <view
   a:elif="{{node.tc}}"
+  id="n"
   class="n"
-  style="{{m.box(node)}}"
+  style="{{m.box(node, kaStyle)}}"
   aria-role="{{node.ax ? node.ax.r : ''}}"
   aria-label="{{node.ax ? node.ax.l : ''}}"
   aria-description="{{node.ax ? node.ax.h : ''}}"
@@ -150,8 +153,9 @@
 </view>
 <view
   a:else
+  id="n"
   class="n"
-  style="{{m.box(node)}}"
+  style="{{m.box(node, kaStyle)}}"
   aria-role="{{node.ax ? node.ax.r : ''}}"
   aria-label="{{node.ax ? node.ax.l : ''}}"
   aria-description="{{node.ax ? node.ax.h : ''}}"

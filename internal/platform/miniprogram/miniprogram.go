@@ -265,9 +265,13 @@ func (s *surface) event(args []js.Value) {
 	case "blur":
 		m.field(id, driver.EventBlur, "")
 	case "keyboard":
-		s.env.KeyboardHeight = driver.Points(arg(2).Float())
-		s.env.KeyboardDuration = time.Duration(arg(3).Float() * float64(time.Second))
-		s.engine.SetEnvironment(s.env)
+		h := driver.Points(arg(2).Float())
+		d := time.Duration(arg(3).Float() * float64(time.Second))
+		if s.env.KeyboardHeight != h || s.env.KeyboardDuration != d {
+			s.env.KeyboardHeight = h
+			s.env.KeyboardDuration = d
+			s.engine.SetEnvironment(s.env)
+		}
 	case "imgload":
 		m.imageLoaded(id, driver.Points(arg(2).Float()), driver.Points(arg(3).Float()))
 	case "imgerror":
@@ -294,7 +298,7 @@ func (s *surface) event(args []js.Value) {
 	case "vderror":
 		m.videoError(id, arg(2).String())
 	case "back":
-		s.engine.Dispatch(driver.Event{Kind: driver.EventBack})
+		m.backPressed()
 	case "frame":
 		m.tick(time.Since(s.started))
 	case "device":

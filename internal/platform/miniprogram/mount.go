@@ -1207,6 +1207,13 @@ func (m *mounter) edited(id driver.NodeID, text string) {
 	}
 }
 
+// backPressed clears the page-container guard and dispatches EventBack so the
+// next ItemHistory re-arms it whenever the app still has history to pop.
+func (m *mounter) backPressed() {
+	m.back = false
+	m.h.dispatch(driver.Event{Kind: driver.EventBack})
+}
+
 // field reports a text field's focus, blur or submit.
 func (m *mounter) field(id driver.NodeID, kind driver.EventKind, text string) {
 	if v := m.view(id); v != nil {

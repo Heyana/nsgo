@@ -1,8 +1,8 @@
 // Styles of a view, a line of its text and its field, at their frames.
 export default {
-  box: function (n) {
+  box: function (n, ka) {
     return 'left:' + n.f[0] + 'px;top:' + n.f[1] + 'px;width:' + n.f[2] + 'px;height:' + n.f[3] + 'px;' +
-      n.s + n.a + (n.tr ? 'transition:' + n.tr + ';' : '')
+      n.s + n.a + (n.tr ? 'transition:' + n.tr + ';' : '') + (ka || '')
   },
   run: function (t, r) {
     return 'left:' + (t.x + r[1]) + 'px;top:' + (t.y + r[2]) + 'px;line-height:' + r[3] + 'px;' + t.s[r[4]] +

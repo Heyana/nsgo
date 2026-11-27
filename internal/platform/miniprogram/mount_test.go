@@ -251,6 +251,32 @@ func TestModalsAreAnimatedInAndBackGoesThroughTheApp(t *testing.T) {
 	}
 }
 
+func TestBackPressedRearmsHistory(t *testing.T) {
+	m, h := mounted()
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemHistory, Count: 2}}})
+	if bk := h.ops("bk"); !slices.Equal(bk, []string{"[0,true]"}) {
+		t.Fatalf("initial back ops = %v, want [[0,true]]", bk)
+	}
+	// First back press clears m.back so a remaining history entry re-arms the container.
+	m.backPressed()
+	if len(h.events) != 1 || h.events[0].Kind != driver.EventBack {
+		t.Fatalf("events after first back = %+v, want [EventBack]", h.events)
+	}
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemHistory, Count: 1}}})
+	if bk := h.ops("bk"); !slices.Equal(bk, []string{"[0,true]", "[0,true]"}) {
+		t.Fatalf("re-armed back ops = %v, want two [0,true] ops", bk)
+	}
+	// Second back press drops history to 0: m.back is already false, so no redundant op.
+	m.backPressed()
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{{Kind: driver.ItemHistory, Count: 0}}})
+	if bk := h.ops("bk"); !slices.Equal(bk, []string{"[0,true]", "[0,true]"}) {
+		t.Fatalf("final back ops = %v, want no extra op at depth 0", bk)
+	}
+	if len(h.events) != 2 || h.events[1].Kind != driver.EventBack {
+		t.Fatalf("events after second back = %+v, want two EventBack", h.events)
+	}
+}
+
 func TestStringsAreJSON(t *testing.T) {
 	for _, s := range []string{"a\"b\\c\n\t", "\x01", "你好  ", string([]byte{0xff})} {
 		var back string
