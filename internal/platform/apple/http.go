@@ -15,11 +15,20 @@ import (
 )
 
 // Image downloads go through URLSession on macOS, iOS and watchOS.
-func init() { imageload.HTTP = httpGet }
+func init() {
+	imageload.HTTP = httpGet
+	imageload.HTTPNoRedirect = httpGetNoRedirect
+}
 
 var urlSession struct {
 	sync.Once
 	id objc.ID
+}
+
+var urlSessionNoRedirect struct {
+	sync.Once
+	id       objc.ID
+	delegate objc.ID
 }
 
 // session is the downloads' URLSession: ephemeral and without a cache,
@@ -34,6 +43,29 @@ func session() objc.ID {
 	return urlSession.id
 }
 
+// noRedirectSession returns a URLSession whose delegate declines all HTTP
+// redirects so imageload can validate every redirect target against grants.
+func noRedirectSession() objc.ID {
+	urlSessionNoRedirect.Do(func() {
+		class := RegisterClass("NsgoNoRedirectDelegate", Class("NSObject"),
+			[]*objc.Protocol{objc.GetProtocol("NSURLSessionTaskDelegate")}, []objc.MethodDef{
+				{Cmd: sel("URLSession:task:willPerformHTTPRedirection:newRequest:completionHandler:"),
+					Fn: func(_ objc.ID, _ objc.SEL, _, _, _, _, handler objc.ID) {
+						CallBlock(handler, 0)
+					}},
+			})
+		urlSessionNoRedirect.delegate = objc.ID(class).Send(sel("new"))
+		config := objc.ID(Class("NSURLSessionConfiguration")).Send(sel("ephemeralSessionConfiguration"))
+		config.Send(sel("setURLCache:"), objc.ID(0))
+		config.Send(sel("setRequestCachePolicy:"), uint(1)) // NSURLRequestReloadIgnoringLocalCacheData
+		urlSessionNoRedirect.id = objc.ID(Class("NSURLSession")).Send(
+			sel("sessionWithConfiguration:delegate:delegateQueue:"),
+			config, urlSessionNoRedirect.delegate, objc.ID(0),
+		).Send(sel("retain"))
+	})
+	return urlSessionNoRedirect.id
+}
+
 type httpResult struct {
 	resp *imageload.Response
 	err  error
@@ -42,6 +74,16 @@ type httpResult struct {
 // httpGet is imageload.HTTP: a data task, whose progress it reads every
 // 100 ms, cancelled with ctx.
 func httpGet(ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
+	return httpGetWith(session(), ctx, url, header, progress)
+}
+
+// httpGetNoRedirect is imageload.HTTPNoRedirect: returns 3xx responses without
+// following redirects.
+func httpGetNoRedirect(ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
+	return httpGetWith(noRedirectSession(), ctx, url, header, progress)
+}
+
+func httpGetWith(sess objc.ID, ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
 	done := make(chan httpResult, 1)
 	var task objc.ID
 	withPool(func() {
@@ -71,7 +113,7 @@ func httpGet(ctx context.Context, url string, header imageload.Header, progress 
 			}
 			done <- httpResult{resp: r}
 		})
-		task = session().Send(sel("dataTaskWithRequest:completionHandler:"), req, handler).Send(sel("retain"))
+		task = sess.Send(sel("dataTaskWithRequest:completionHandler:"), req, handler).Send(sel("retain"))
 		handler.Release()
 		task.Send(sel("resume"))
 	})

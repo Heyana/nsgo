@@ -234,6 +234,8 @@ type surface struct {
 	folderHandles atomic.Bool
 	// folderPersist is set once the runtime's environment says it supports persistent directory grants (capFolderPersist).
 	folderPersist atomic.Bool
+	// fetchNoRedirect is set once the runtime's environment says Downloads.java honors fetchNoRedirect (capFetchNoRedirect).
+	fetchNoRedirect atomic.Bool
 	// perf measures the surface when an app or test asks (-fps).
 	perf *performance
 
@@ -548,6 +550,7 @@ func (s *surface) serve(app engine.App, opts Options, test *testOpen) {
 			s.videoPiP.Store(fourth&capVideoPiP != 0)
 			s.folderHandles.Store(fourth&capFolderHandles != 0)
 			s.folderPersist.Store(fourth&capFolderPersist != 0)
+			s.fetchNoRedirect.Store(fourth&capFetchNoRedirect != 0)
 			// The bulk hello waits for the first environment, which says whether the runtime reads extended messages: one that does not keeps both sides on complete messages (errNoExtendedMessages).
 			if s.extendedMessages.Load() && s.bulkHello.CompareAndSwap(false, true) {
 				_ = s.sendExtended(extBulk, func(*writer) {})
@@ -664,6 +667,7 @@ func (s *surface) startEngine(app engine.App, size driver.Size, g driver.Geometr
 		s.send(msgPerfPanel, func(w *writer) { w.flags(s.perf.showPanel) })
 	}
 	imageload.HTTP = s.httpGet
+	imageload.HTTPNoRedirect = s.httpGetNoRedirect
 	imageload.HTTPToFile = s.httpGetToFile
 	imageload.UseDiskCache(eopts.CacheDir)
 	s.engine = engine.Start(s, app, eopts)

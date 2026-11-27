@@ -243,6 +243,8 @@ final class Protocol {
     static final int CAP_FOLDER_HANDLES = 16;
     /** The fourth capability byte's bit for a runtime that supports persistent directory grants: PICK_DIR_PERSIST on ITEM_PICK_DIRECTORIES and FOLDER_REOPEN / FOLDER_RELEASE on FOLDER (capFolderPersist in protocol.go). */
     static final int CAP_FOLDER_PERSIST = 32;
+    /** The fourth capability byte's bit for a runtime that honors FETCH_NO_REDIRECT in Downloads.java without following redirects (capFetchNoRedirect in protocol.go). */
+    static final int CAP_FETCH_NO_REDIRECT = 64;
     /** A full native tree follows: surface ID and its attachment generation (ViewAttachment). */
     static final int EXT_SURFACE_RESET = 11;
     /** Answers a PHYSICAL_KEY down that asked: surface, request and whether the focused view consumed it (HardwareKeys). */
@@ -424,6 +426,7 @@ final class Protocol {
     static final int FETCH_START = 0;
     static final int FETCH_CANCEL = 1;
     static final int FETCH_TO_FILE = 2;
+    static final int FETCH_NO_REDIRECT = 3;
     static final int FETCHED_PROGRESS = 0;
     static final int FETCHED_DONE = 1;
 

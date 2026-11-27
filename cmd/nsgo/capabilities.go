@@ -71,6 +71,9 @@ func describeCapabilities(c pkg.Capabilities) []string {
 			out = append(out, line)
 		}
 	}
+	if f := c.FS; f != nil && len(f.Read) > 0 {
+		out = append(out, "fs.read: "+strings.Join(f.Read, ", "))
+	}
 	if w := c.WebView; w != nil {
 		line := "webview: " + strings.Join(w.Hosts, ", ")
 		if w.Input {

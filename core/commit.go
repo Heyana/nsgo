@@ -1247,6 +1247,22 @@ func (n *node) viewStyle() driver.ViewStyle {
 	// Custom cursors copy any Pixels once per version (so the app may reuse
 	// its buffer after commit) and keep the sent pointer while unchanged.
 	if vs.CursorImage != nil {
+		if n.owner != nil && n.owner.rt.restricted {
+			if t := n.owner.tree(); t != nil {
+				ci := *vs.CursorImage
+				ci.Image = t.pickScale(ci.Image)
+				ci.Image2x = t.pickScale(ci.Image2x)
+				t.refuseImageOwner(n.owner, &ci.Image)
+				t.refuseImageOwner(n.owner, &ci.Image2x)
+				if ci.Image.Empty() && ci.Image2x.Empty() {
+					vs.CursorImage = nil
+				} else {
+					vs.CursorImage = &ci
+				}
+			}
+		}
+	}
+	if vs.CursorImage != nil {
 		if vs.CursorImage.Image.Pixels != nil || vs.CursorImage.Image2x.Pixels != nil {
 			if n.cursorPixels == nil {
 				n.cursorPixels = new([2]pixelFrame)

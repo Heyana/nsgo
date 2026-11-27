@@ -2,16 +2,18 @@
 // desktop idiom have. Elsewhere its calls do nothing.
 
 import type { Accessor } from "./index";
-import type { Point, Size } from "./types";
+import type { ImageSource, Point, Size } from "./types";
 
 export declare const isAvailable: boolean;
 /** The system's title bar area, in which the app's own bar leaves room for the window controls. */
 export interface TitleBarArea { height: number; left: number; right: number }
 export declare const titleBar: Accessor<TitleBarArea>;
 export type MenuRole = "about" | "hide" | "hideOthers" | "showAll" | "quit" | "undo" | "redo" | "cut" | "copy" | "paste" | "selectAll" | "minimize" | "zoom" | "toggleFullScreen" | "close" | "pasteAndMatchStyle" | "delete" | "startSpeaking" | "stopSpeaking" | "bringAllToFront" | "services" | "windowMenu" | "helpMenu";
+/** An icon shown beside a native menu item: an ImageSource, an inline SVG document, or an icon descriptor. */
+export type MenuIcon = ImageSource | { source?: ImageSource; svg?: string; template?: boolean };
 export type MenuItem =
   | { type: "separator" }
-  | { label?: string; role?: MenuRole; shortcut?: string;
+  | { label?: string; icon?: MenuIcon; role?: MenuRole; shortcut?: string;
       /** Whether the shortcut chooses it while a text field has the keyboard focus: "always" (default), "auto" (unless the field uses the key) or "notEditing". */
       when?: "always" | "auto" | "notEditing"; disabled?: boolean; checked?: boolean; radio?: boolean; onSelect?: () => void; submenu?: readonly (MenuItem | null | undefined | false)[] };
 export interface MenuModule {

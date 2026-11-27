@@ -16,6 +16,12 @@ import (
 // as App Transport Security.
 var HTTP func(ctx context.Context, url string, header Header, progress Progress) (*Response, error)
 
+// HTTPNoRedirect downloads one http(s) hop without following 3xx redirects,
+// returning the 3xx response and its Location header so imageload validates
+// every redirect target against a restricted source's grants before following
+// it. Backends set it alongside HTTP.
+var HTTPNoRedirect func(ctx context.Context, url string, header Header, progress Progress) (*Response, error)
+
 // HTTPToFile streams an http(s) response body directly to dst on disk, calling
 // progress as bytes are written, and returns the response status and headers
 // with Body empty. Backends that install update packages set it alongside HTTP
@@ -30,7 +36,10 @@ type Response struct {
 	Body   []byte
 }
 
-var errNoHTTP = errors.New("imageload: no HTTP client")
+var (
+	errNoHTTP            = errors.New("imageload: no HTTP client")
+	errNoRedirectControl = errors.New("imageload: HTTP client cannot check redirects")
+)
 
 // get is HTTP, or an error when the backend set none.
 func get(ctx context.Context, url string, header Header, progress Progress) (*Response, error) {
@@ -38,6 +47,14 @@ func get(ctx context.Context, url string, header Header, progress Progress) (*Re
 		return nil, errNoHTTP
 	}
 	return HTTP(ctx, url, header, progress)
+}
+
+// getNoRedirect is HTTPNoRedirect, failing closed when the backend set none.
+func getNoRedirect(ctx context.Context, url string, header Header, progress Progress) (*Response, error) {
+	if HTTPNoRedirect == nil {
+		return nil, errNoRedirectControl
+	}
+	return HTTPNoRedirect(ctx, url, header, progress)
 }
 
 // Header holds HTTP headers by their canonical keys (CanonicalKey), as

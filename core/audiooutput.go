@@ -31,7 +31,8 @@ type AudioOutput struct {
 
 // NewAudioOutput opens a paused PCM stream for audio.NewOutput.
 func (cx *Scope) NewAudioOutput(conf AudioOutputConfig) (*AudioOutput, error) {
-	if err := audioRefusal(cx, AudioSource{}); err != nil {
+	var empty AudioSource
+	if _, err := audioRefusal(cx, &empty); err != nil {
 		return nil, err
 	}
 	t := cx.tree()

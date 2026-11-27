@@ -51,8 +51,20 @@ func (cx *Scope) SetNowPlaying(info NowPlaying) {
 	at := time.Now()
 	if info.Artwork != nil {
 		src := t.pickScale(*info.Artwork)
-		if src.Pixels == nil && len(src.Data) == 0 && cx.gate(serviceImage, src.URI) != nil {
-			info.Artwork = nil
+		if src.Pixels == nil && len(src.Data) == 0 {
+			if cx.gate(serviceImage, src.URI) != nil {
+				info.Artwork = nil
+			} else if a := combinedAccess(cx); a != nil {
+				if resolved, err := resolveSourceWithAccess(a, cx.current(), AccessNetwork, src.URI); err != nil {
+					info.Artwork = nil
+				} else {
+					src.URI = resolved
+					driver.SetImageSourceCheck(&src, imageSourceCheck(a))
+					info.Artwork = &src
+				}
+			} else {
+				info.Artwork = &src
+			}
 		} else {
 			info.Artwork = &src
 		}

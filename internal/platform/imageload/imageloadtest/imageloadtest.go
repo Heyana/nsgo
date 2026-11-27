@@ -65,6 +65,34 @@ func CheckHTTP(t *testing.T, get func(ctx context.Context, url string, header im
 	}
 }
 
+// CheckHTTPNoRedirect verifies that getNoRedirect returns a 3xx redirect
+// response with its Location header without following it to the target.
+func CheckHTTPNoRedirect(t *testing.T, getNoRedirect func(ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error)) {
+	t.Helper()
+	var targetHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/redirect":
+			http.Redirect(w, r, "/target", http.StatusFound)
+		case "/target":
+			targetHits.Add(1)
+			w.Write([]byte("target"))
+		}
+	}))
+	defer srv.Close()
+
+	resp, err := getNoRedirect(context.Background(), srv.URL+"/redirect", imageload.Header{}, nil)
+	if err != nil {
+		t.Fatalf("getNoRedirect: %v", err)
+	}
+	if resp.Status != http.StatusFound || resp.Header.Get("Location") != "/target" {
+		t.Fatalf("getNoRedirect = status %d location %q, want 302 /target", resp.Status, resp.Header.Get("Location"))
+	}
+	if targetHits.Load() != 0 {
+		t.Fatalf("getNoRedirect followed redirect to /target (%d hits)", targetHits.Load())
+	}
+}
+
 var (
 	slowRun   atomic.Int64
 	slowStart = time.Now().UnixNano()

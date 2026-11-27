@@ -10,9 +10,24 @@ import (
 
 // The tests download through net/http, standing in for the system's
 // client a backend sets.
-func init() { HTTP = netHTTP }
+func init() {
+	HTTP = netHTTP
+	HTTPNoRedirect = netHTTPNoRedirect
+}
+
+var noRedirectClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
 
 func netHTTP(ctx context.Context, url string, header Header, progress Progress) (*Response, error) {
+	return netHTTPWith(http.DefaultClient, ctx, url, header, progress)
+}
+
+func netHTTPNoRedirect(ctx context.Context, url string, header Header, progress Progress) (*Response, error) {
+	return netHTTPWith(noRedirectClient, ctx, url, header, progress)
+}
+
+func netHTTPWith(client *http.Client, ctx context.Context, url string, header Header, progress Progress) (*Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -20,7 +35,7 @@ func netHTTP(ctx context.Context, url string, header Header, progress Progress) 
 	for k, v := range header {
 		req.Header[k] = v
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

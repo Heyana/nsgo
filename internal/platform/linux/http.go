@@ -22,8 +22,11 @@ import (
 // apps share, with GIO's proxies and TLS.
 func init() {
 	imageload.HTTP = httpGet
+	imageload.HTTPNoRedirect = httpGetNoRedirect
 	imageload.HTTPToFile = httpGetToFile
 }
+
+const soupMessageNoRedirect = 1 << 1 // SOUP_MESSAGE_NO_REDIRECT
 
 var soup struct {
 	once sync.Once
@@ -31,6 +34,7 @@ var soup struct {
 
 	sessionNew           func() uintptr
 	messageNew           func(method, uri *byte) uintptr
+	messageSetFlags      func(msg uintptr, flags uint32)
 	requestHeaders       func(msg uintptr) uintptr
 	responseHeaders      func(msg uintptr) uintptr
 	headersAppend        func(headers uintptr, name, value *byte)
@@ -66,6 +70,7 @@ func loadSoup() error {
 		}
 		purego.RegisterLibFunc(&soup.sessionNew, lib, "soup_session_new")
 		purego.RegisterLibFunc(&soup.messageNew, lib, "soup_message_new")
+		purego.RegisterLibFunc(&soup.messageSetFlags, lib, "soup_message_set_flags")
 		purego.RegisterLibFunc(&soup.requestHeaders, lib, "soup_message_get_request_headers")
 		purego.RegisterLibFunc(&soup.responseHeaders, lib, "soup_message_get_response_headers")
 		purego.RegisterLibFunc(&soup.headersAppend, lib, "soup_message_headers_append")
@@ -86,7 +91,7 @@ func loadSoup() error {
 // httpDo runs a synchronous libsoup GET on one thread, with a session of its
 // own, as a session is used from the thread that made it, and a GCancellable
 // that ctx cancels. read consumes the response body stream before cleanup.
-func httpDo(ctx context.Context, url string, header imageload.Header, read func(resp *imageload.Response, body io.Reader, length int64) error) (*imageload.Response, error) {
+func httpDo(ctx context.Context, url string, header imageload.Header, noRedirect bool, read func(resp *imageload.Response, body io.Reader, length int64) error) (*imageload.Response, error) {
 	if err := loadSoup(); err != nil {
 		return nil, err
 	}
@@ -97,6 +102,9 @@ func httpDo(ctx context.Context, url string, header imageload.Header, read func(
 		return nil, errors.New("linux: not a URL: " + url)
 	}
 	defer soup.objectUnref(msg)
+	if noRedirect {
+		soup.messageSetFlags(msg, soupMessageNoRedirect)
+	}
 	headers := soup.requestHeaders(msg)
 	for k, vs := range header {
 		for _, v := range vs {
@@ -149,7 +157,17 @@ func httpDo(ctx context.Context, url string, header imageload.Header, read func(
 
 // httpGet is imageload.HTTP: reads the full body into memory.
 func httpGet(ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
-	return httpDo(ctx, url, header, func(resp *imageload.Response, body io.Reader, length int64) error {
+	return httpDo(ctx, url, header, false, func(resp *imageload.Response, body io.Reader, length int64) error {
+		var err error
+		resp.Body, err = imageload.ReadAll(body, length, progress)
+		return err
+	})
+}
+
+// httpGetNoRedirect is imageload.HTTPNoRedirect: returns 3xx responses without
+// following redirects.
+func httpGetNoRedirect(ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
+	return httpDo(ctx, url, header, true, func(resp *imageload.Response, body io.Reader, length int64) error {
 		var err error
 		resp.Body, err = imageload.ReadAll(body, length, progress)
 		return err
@@ -158,7 +176,7 @@ func httpGet(ctx context.Context, url string, header imageload.Header, progress 
 
 // httpGetToFile is imageload.HTTPToFile: streams a 200 response directly to dst.
 func httpGetToFile(ctx context.Context, url string, header imageload.Header, dst string, progress imageload.Progress) (*imageload.Response, error) {
-	return httpDo(ctx, url, header, func(resp *imageload.Response, body io.Reader, length int64) error {
+	return httpDo(ctx, url, header, false, func(resp *imageload.Response, body io.Reader, length int64) error {
 		if resp.Status != 200 {
 			return nil
 		}

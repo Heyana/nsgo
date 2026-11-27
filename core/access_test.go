@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"log"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -450,5 +453,233 @@ func TestVideoSeparateAudioUsesNetworkGrant(t *testing.T) {
 	}
 	if failure == nil || !strings.Contains(failure.Error(), "other.com") {
 		t.Fatalf("audio source refusal = %v", failure)
+	}
+}
+
+type mediaFSAndHostAccess struct {
+	hosts []string
+	roots []string
+}
+
+func (a mediaFSAndHostAccess) Allows(req AccessRequest) bool {
+	switch req.Permission {
+	case AccessNetwork:
+		host := strings.TrimPrefix(strings.TrimPrefix(req.Resource, "https://"), "http://")
+		host, _, _ = strings.Cut(host, "/")
+		host, _, _ = strings.Cut(host, ":")
+		return driver.AllowsHost(a.hosts, host)
+	case AccessFS:
+		if req.Method != AccessRead {
+			return false
+		}
+		for _, root := range a.roots {
+			resolvedRoot, err := filepath.EvalSymlinks(root)
+			if err != nil {
+				continue
+			}
+			rel, err := filepath.Rel(resolvedRoot, req.Resource)
+			if err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (a mediaFSAndHostAccess) WebHosts() []string { return nil }
+
+func TestAccessMediaFSReadMenuIconsAndCanonicalURL(t *testing.T) {
+	base := t.TempDir()
+	allowedDir := filepath.Join(base, "allowed")
+	outsideDir := filepath.Join(base, "outside")
+	if err := os.MkdirAll(allowedDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	imgFile := filepath.Join(allowedDir, "pic.png")
+	vidFile := filepath.Join(allowedDir, "clip.mp4")
+	outsideFile := filepath.Join(outsideDir, "secret.png")
+	for _, f := range []string{imgFile, vidFile, outsideFile} {
+		if err := os.WriteFile(f, []byte("bytes"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	escapeLink := filepath.Join(allowedDir, "escape.png")
+	_ = os.Symlink(outsideFile, escapeLink)
+
+	win := goruntime.GOOS == "windows"
+	realImg, err := filepath.EvalSymlinks(imgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	realVid, err := filepath.EvalSymlinks(vidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantImgURL := driver.CanonicalFileURL(realImg, win)
+	wantVidURL := driver.CanonicalFileURL(realVid, win)
+
+	var errs []error
+	onErr := func(err error) { errs = append(errs, err) }
+
+	var held *Scope
+	h := newHost(t, Size{Width: 200, Height: 200}, func(cx *Scope) Node {
+		cx.Env().ratio.Set(2)
+		return Func(func(cx *Scope) Node {
+			held = cx
+			cx.ProvideAccess(mediaFSAndHostAccess{hosts: []string{"ok.com"}, roots: []string{allowedDir}})
+			return View{
+				Style: Style{CursorImage: &CustomCursor{
+					Image:   Src(outsideFile),
+					Image2x: Src(imgFile),
+				}},
+				Children: []Node{
+					Image{Source: Src(imgFile), TestID: "img-path"},
+					Image{Source: Src(driver.CanonicalFileURL(imgFile, win)), TestID: "img-fileurl"},
+					Image{Source: Src(outsideFile), OnError: onErr, TestID: "img-outside"},
+					Image{Source: Src(escapeLink), OnError: onErr, TestID: "img-symlink"},
+					Image{Source: Src("https://OK.COM:443/a/../b.png"), TestID: "img-canon"},
+					Video{Source: vidFile, TestID: "vid-ok"},
+					Video{Source: outsideFile, OnError: onErr, TestID: "vid-outside"},
+					WebView{Source: WebSrc(driver.CanonicalFileURL(imgFile, win)), TestID: "web-file"},
+				},
+			}
+		})
+	})
+
+	b := h.commit()
+	imgURIs := map[string]string{}
+	vidURIs := map[string]string{}
+	var imgCheck func(string) error
+	var cursor *CustomCursor
+	var webSrc string
+	for _, it := range b.Items {
+		switch it.Kind {
+		case driver.ItemImage:
+			id := h.tree.nodes[it.ID].props.TestID
+			imgURIs[id] = it.Image.Source.URI
+			if id == "img-canon" {
+				imgCheck = driver.ImageSourceCheck(it.Image.Source)
+			}
+		case driver.ItemVideo:
+			vidURIs[h.tree.nodes[it.ID].props.TestID] = it.Video.Source
+		case driver.ItemWeb:
+			webSrc = it.Web.Source.Src
+		case driver.ItemViewStyle:
+			if it.ViewStyle != nil && it.ViewStyle.CursorImage != nil {
+				cursor = it.ViewStyle.CursorImage
+			}
+		}
+	}
+
+	if imgURIs["img-path"] != wantImgURL || imgURIs["img-fileurl"] != wantImgURL {
+		t.Fatalf("allowed local images = %v, want %q", imgURIs, wantImgURL)
+	}
+	if imgURIs["img-outside"] != "" || imgURIs["img-symlink"] != "" {
+		t.Fatalf("refused local images leaked: %v", imgURIs)
+	}
+	if imgURIs["img-canon"] != "https://ok.com/b.png" {
+		t.Fatalf("canonical HTTP image URI = %q, want https://ok.com/b.png", imgURIs["img-canon"])
+	}
+	if imgCheck == nil || imgCheck("https://ok.com/next.png") != nil || ErrorCode(imgCheck("https://evil.io/x.png")) != CodeAccessDenied {
+		t.Fatalf("image source redirect check failed: hasCheck=%v", imgCheck != nil)
+	}
+	if vidURIs["vid-ok"] != wantVidURL || vidURIs["vid-outside"] != "" {
+		t.Fatalf("video URIs = %v, want ok=%q outside=\"\"", vidURIs, wantVidURL)
+	}
+	// WebView must NEVER allow fs.read local files.
+	if webSrc != "about:blank" {
+		t.Fatalf("webview local file was not refused: %q", webSrc)
+	}
+	// CursorImage refuses outside file and canonicalizes allowed local file.
+	if cursor == nil || !cursor.Image.Empty() || cursor.Image2x.URI != wantImgURL {
+		t.Fatalf("cursor image grants = %+v", cursor)
+	}
+
+	// Menu item icons: checked across application menu, dock menu and popup menu.
+	h.tree.reported.OS = OSMacOS
+	held.Run(func() {
+		items := []MenuItem{
+			{Label: "Allowed Local", Icon: MenuIcon{Source: Src(imgFile)}},
+			{Label: "Outside Local", Icon: MenuIcon{Source: Src(outsideFile)}},
+			{Label: "Symlink Escape", Icon: MenuIcon{Source: Src(escapeLink)}},
+			{Label: "Canonical HTTP", Icon: MenuIcon{Source: Src("https://OK.COM:443/dir/../icon.png")}},
+			{Label: "Denied HTTP", Icon: MenuIcon{Source: Src("https://evil.io/icon.png")}},
+			{Label: "Sub", Items: []MenuItem{
+				{Label: "Nested Denied", Icon: MenuIcon{Source: Src(outsideFile)}},
+				{Label: "Nested Allowed", Icon: MenuIcon{Source: Src(imgFile)}},
+			}},
+		}
+		held.SetApplicationMenu(items)
+		held.SetDockMenu(items)
+	})
+	menuBatch := h.commit()
+	checkedMenus := 0
+	for _, it := range menuBatch.Items {
+		if it.Kind != driver.ItemMenu && it.Kind != driver.ItemDockMenu {
+			continue
+		}
+		checkedMenus++
+		if len(it.Menu) != 6 {
+			t.Fatalf("menu entries = %d, want 6", len(it.Menu))
+		}
+		if it.Menu[0].Icon.Source.URI != wantImgURL {
+			t.Errorf("menu[0] icon URI = %q, want %q", it.Menu[0].Icon.Source.URI, wantImgURL)
+		}
+		if !it.Menu[1].Icon.Empty() || !it.Menu[2].Icon.Empty() || !it.Menu[4].Icon.Empty() {
+			t.Errorf("ungranted menu icons were not stripped: %+v %+v %+v", it.Menu[1].Icon, it.Menu[2].Icon, it.Menu[4].Icon)
+		}
+		if it.Menu[3].Icon.Source.URI != "https://ok.com/icon.png" {
+			t.Errorf("menu[3] canonical icon URI = %q, want https://ok.com/icon.png", it.Menu[3].Icon.Source.URI)
+		}
+		if !it.Menu[5].Items[0].Icon.Empty() || it.Menu[5].Items[1].Icon.Source.URI != wantImgURL {
+			t.Errorf("submenu icons = %+v", it.Menu[5].Items)
+		}
+	}
+	if checkedMenus != 2 {
+		t.Fatalf("checked %d menus, want 2 (app + dock)", checkedMenus)
+	}
+
+	// ImageSize & KeepImage must check the scale-picked variant, not the 1x URI.
+	var sizeErr error
+	variantBypass := ImageSource{
+		URI:      "https://ok.com/1x.png",
+		Scales:   ScalesOf(1, 2),
+		Variants: map[float32]string{2: "https://evil.io/2x.png"},
+	}
+	held.Run(func() {
+		held.ImageSize(variantBypass, func(_ Size, err error) { sizeErr = err })
+		held.KeepImage(variantBypass)()
+	})
+	if ErrorCode(sizeErr) != CodeAccessDenied {
+		t.Fatalf("ImageSize variant bypass error = %v, want ERR_ACCESS_DENIED", sizeErr)
+	}
+	bypassBatch := h.commit()
+	for _, it := range bypassBatch.Items {
+		if it.Kind == driver.ItemImageInfo || it.Kind == driver.ItemKeepImage {
+			t.Fatalf("variant bypass emitted %v", it.Kind)
+		}
+	}
+
+	// ImageSize with an allowed canonical URL attaches sourceCheck.
+	held.Run(func() {
+		held.ImageSize(Src("https://OK.COM:443/x/../y.png"), func(Size, error) {})
+	})
+	infoBatch := h.commit()
+	var gotInfo *driver.ImageSource
+	for _, it := range infoBatch.Items {
+		if it.Kind == driver.ItemImageInfo {
+			gotInfo = &it.Image.Source
+		}
+	}
+	if gotInfo == nil || gotInfo.URI != "https://ok.com/y.png" || driver.ImageSourceCheck(*gotInfo) == nil {
+		t.Fatalf("ImageSize item = %+v, want canonical URI and redirect check", gotInfo)
+	}
+
+	h.drain()
+	if len(errs) != 3 {
+		t.Fatalf("expected 3 OnError callbacks (img-outside, img-symlink, vid-outside), got %d: %v", len(errs), errs)
 	}
 }

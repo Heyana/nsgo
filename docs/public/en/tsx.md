@@ -90,6 +90,8 @@ An app can run TSX it downloads, such as its own screens delivered anew or plugi
 capabilities:
   network:
     hosts: [api.example.com, "*.cdn.example.com"]
+  fs:
+    read: ["/path/to/media"] # local directory roots for images, videos, audio and menu icons
   open_url: true # or { schemes: [https] }
   host: [search, "player.*"] # the app's handlers it may call
   # webview: { hosts: [...], input: true, media: [microphone, camera] }, clipboard, picker, speech, text_to_speech, status_bar, notifications, biometrics, sign_in_with_apple, purchases, secrets, audio, gamepad, auth_session

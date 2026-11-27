@@ -58,14 +58,15 @@ final class Downloads {
         }
         String url = Protocol.readString(in);
         String dst = op == Protocol.FETCH_TO_FILE ? Protocol.readString(in) : null;
+        boolean noRedirect = op == Protocol.FETCH_NO_REDIRECT;
         String[] headers = new String[2 * in.readInt()];
         for (int i = 0; i < headers.length; i++) headers[i] = Protocol.readString(in);
         Download d = new Download();
         running.put(id, d);
-        pool.execute(() -> run(id, d, url, dst, headers));
+        pool.execute(() -> run(id, d, url, dst, noRedirect, headers));
     }
 
-    private void run(int id, Download d, String url, String dst, String[] headers) {
+    private void run(int id, Download d, String url, String dst, boolean noRedirect, String[] headers) {
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url).openConnection();
@@ -73,6 +74,7 @@ final class Downloads {
             if (d.cancelled) return;
             // imageload keeps its own cache under HTTP's rules.
             c.setUseCaches(false);
+            if (noRedirect) c.setInstanceFollowRedirects(false);
             for (int i = 0; i < headers.length; i += 2) c.addRequestProperty(headers[i], headers[i + 1]);
             int status = c.getResponseCode();
             long total = Math.max(c.getContentLengthLong(), 0);

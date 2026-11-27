@@ -1341,6 +1341,10 @@ type ImageSource struct {
 	// Variants, for a source whose variants are not asset: files (a TSX
 	// bundle's data: URLs), are the URIs of the scales past 1x by scale.
 	Variants map[float32]string
+	// sourceCheck, when non-nil, validates HTTP redirect hops and local file
+	// re-checks in imageload. Core sets it for restricted scopes via
+	// SetImageSourceCheck.
+	sourceCheck func(url string) error
 }
 
 // Density returns the pixels a point of the image s names has: an
@@ -1385,7 +1389,8 @@ func (s ImageSource) Key() string {
 // Same reports whether s and o load the same image: inline data must be the same bytes, not equal ones, pixels the same buffer at the same Version, and offscreen canvases the same ID and Version.
 func (s ImageSource) Same(o ImageSource) bool {
 	return s.URI == o.URI && s.Size == o.Size && s.Scales == o.Scales && len(s.Data) == len(o.Data) &&
-		(len(s.Data) == 0 || &s.Data[0] == &o.Data[0]) && s.Pixels == o.Pixels && s.Offscreen.Same(o.Offscreen) && s.Version == o.Version
+		(len(s.Data) == 0 || &s.Data[0] == &o.Data[0]) && s.Pixels == o.Pixels && s.Offscreen.Same(o.Offscreen) && s.Version == o.Version &&
+		(s.sourceCheck != nil) == (o.sourceCheck != nil)
 }
 
 // Empty reports whether s names no image.

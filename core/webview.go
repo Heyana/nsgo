@@ -250,8 +250,12 @@ func (t *Tree) restrictWeb(n *node, c *driver.WebConfig) {
 		}
 	}
 	t.refuseSource(n, AccessWebView, &c.Source.Src, &wn.refused, report)
-	if c.Source.BaseURL != "" && sourceRefusal(n.owner, AccessWebView, c.Source.BaseURL) != nil {
-		c.Source.BaseURL = ""
+	if c.Source.BaseURL != "" {
+		if canon, err := resolveSource(n.owner, AccessWebView, c.Source.BaseURL); err != nil {
+			c.Source.BaseURL = ""
+		} else {
+			c.Source.BaseURL = canon
+		}
 	}
 	c.Restricted, c.Hosts, c.Schemes, c.DownloadDir = true, strings.Join(a.WebHosts(), " "), strings.Join(webSchemes(a), " "), ""
 	for _, m := range webMediaNames {
@@ -408,8 +412,12 @@ func (r *Ref) Load(src WebSource) {
 		if refused != "" {
 			return
 		}
-		if src.BaseURL != "" && sourceRefusal(r.n.owner, AccessWebView, src.BaseURL) != nil {
-			src.BaseURL = ""
+		if src.BaseURL != "" {
+			if canon, err := resolveSource(r.n.owner, AccessWebView, src.BaseURL); err != nil {
+				src.BaseURL = ""
+			} else {
+				src.BaseURL = canon
+			}
 		}
 	}
 	src = driver.ResolveWebSource(src)

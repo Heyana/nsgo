@@ -18,7 +18,10 @@ import (
 )
 
 // Image downloads go through WinHTTP.
-func init() { imageload.HTTP = httpGet }
+func init() {
+	imageload.HTTP = httpGet
+	imageload.HTTPNoRedirect = httpGetNoRedirect
+}
 
 var (
 	winhttp                = syscall.NewLazyDLL("winhttp.dll")
@@ -34,15 +37,17 @@ var (
 )
 
 const (
-	winHTTPAutomaticProxy   = 4          // WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
-	winHTTPOptDecompression = 118        // WINHTTP_OPTION_DECOMPRESSION
-	winHTTPOptProtocols     = 133        // WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL
-	winHTTPFlagSecure       = 0x00800000 // WINHTTP_FLAG_SECURE
-	winHTTPStatusCode       = 19         // WINHTTP_QUERY_STATUS_CODE
-	winHTTPRawHeaders       = 22         // WINHTTP_QUERY_RAW_HEADERS_CRLF
-	winHTTPQueryFlagNumber  = 0x20000000 // WINHTTP_QUERY_FLAG_NUMBER
-	winHTTPAllHeaders       = 0xffffffff // (DWORD)-1: the headers' length up to their NUL
-	errInsufficientBuffer   = syscall.Errno(122)
+	winHTTPAutomaticProxy      = 4          // WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
+	winHTTPOptRedirectPolicy   = 88         // WINHTTP_OPTION_REDIRECT_POLICY
+	winHTTPRedirectPolicyNever = 0          // WINHTTP_OPTION_REDIRECT_POLICY_NEVER
+	winHTTPOptDecompression    = 118        // WINHTTP_OPTION_DECOMPRESSION
+	winHTTPOptProtocols        = 133        // WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL
+	winHTTPFlagSecure          = 0x00800000 // WINHTTP_FLAG_SECURE
+	winHTTPStatusCode          = 19         // WINHTTP_QUERY_STATUS_CODE
+	winHTTPRawHeaders          = 22         // WINHTTP_QUERY_RAW_HEADERS_CRLF
+	winHTTPQueryFlagNumber     = 0x20000000 // WINHTTP_QUERY_FLAG_NUMBER
+	winHTTPAllHeaders          = 0xffffffff // (DWORD)-1: the headers' length up to their NUL
+	errInsufficientBuffer      = syscall.Errno(122)
 )
 
 var winHTTPSession struct {
@@ -72,6 +77,16 @@ func session() (uintptr, error) {
 // httpGet is imageload.HTTP: a synchronous request, which closing its
 // handle cancels when ctx ends.
 func httpGet(ctx context.Context, rawURL string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
+	return httpGetWith(ctx, rawURL, header, progress, false)
+}
+
+// httpGetNoRedirect is imageload.HTTPNoRedirect: returns 3xx responses without
+// following redirects.
+func httpGetNoRedirect(ctx context.Context, rawURL string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
+	return httpGetWith(ctx, rawURL, header, progress, true)
+}
+
+func httpGetWith(ctx context.Context, rawURL string, header imageload.Header, progress imageload.Progress, noRedirect bool) (*imageload.Response, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err
@@ -94,6 +109,10 @@ func httpGet(ctx context.Context, rawURL string, header imageload.Header, progre
 		uintptr(unsafe.Pointer(wide(u.RequestURI()))), 0, 0, 0, flags)
 	if req == 0 {
 		return nil, fmt.Errorf("windows: WinHttpOpenRequest: %w", err)
+	}
+	if noRedirect {
+		never := uint32(winHTTPRedirectPolicyNever)
+		winHTTPSetOption.Call(req, winHTTPOptRedirectPolicy, uintptr(unsafe.Pointer(&never)), 4)
 	}
 	var closeOnce sync.Once
 	closeReq := func() { closeOnce.Do(func() { winHTTPCloseHandle.Call(req) }) }

@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Capabilities are what a package's code may reach, NSH's capabilities
@@ -17,6 +20,9 @@ import (
 type Capabilities struct {
 	// Network is fetch and the images and videos loaded from the network.
 	Network *Network `json:"network,omitempty"`
+	// FS is local filesystem roots that a package's media (images, videos,
+	// audio and menu item icons) may read from.
+	FS *FS `json:"fs,omitempty"`
 	// WebView is the pages web views show and navigate to.
 	WebView *WebView `json:"webview,omitempty"`
 	// OpenURL is openUrl: every URL, or those of Schemes.
@@ -50,6 +56,13 @@ type Network struct {
 	// Hosts are "*", "*.example.com" (its subdomains) or a host.
 	Hosts []string   `json:"hosts,omitempty"`
 	HTTP  []HTTPRule `json:"http,omitempty"`
+}
+
+// FS says which local directory roots a package's media (images, videos,
+// audio and menu item icons) may read files from.
+type FS struct {
+	// Read lists absolute directory roots under which local files may be read.
+	Read []string `json:"read,omitempty"`
 }
 
 // HTTPRule allows requests to Host's pattern, narrowed by each field set:
@@ -102,6 +115,12 @@ func ParseCapabilities(data []byte, strict bool) (c Capabilities, ignored []stri
 		switch k {
 		case "network":
 			c.Network, unknown, err = parseNetwork(raw, strict)
+		case "fs":
+			c.FS = &FS{}
+			unknown, err = decodeKnown(raw, c.FS, "read")
+			if err == nil {
+				err = checkFSRead(c.FS.Read)
+			}
 		case "webview":
 			c.WebView = &WebView{}
 			unknown, err = decodeKnown(raw, c.WebView, "hosts", "input", "media")
@@ -194,6 +213,8 @@ func dropCapability(c *Capabilities, key string) {
 	switch key {
 	case "network":
 		c.Network = nil
+	case "fs":
+		c.FS = nil
 	case "webview":
 		c.WebView = nil
 	case "openUrl":
@@ -275,6 +296,25 @@ func checkHosts(hosts []string) error {
 	return nil
 }
 
+// checkFSRead refuses empty, control-bearing or relative fs.read roots.
+func checkFSRead(roots []string) error {
+	for _, r := range roots {
+		if r == "" || strings.IndexFunc(r, unicode.IsControl) >= 0 || !isAbsFSRoot(r) {
+			return fmt.Errorf("fs.read root %q must be an absolute directory path", r)
+		}
+	}
+	return nil
+}
+
+// isAbsFSRoot reports whether p is an absolute Unix or Windows path so
+// capabilities validate consistently across build hosts.
+func isAbsFSRoot(p string) bool {
+	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, `\\`) {
+		return true
+	}
+	return len(p) >= 3 && ('a' <= p[0]|0x20 && p[0]|0x20 <= 'z') && p[1] == ':' && (p[2] == '\\' || p[2] == '/')
+}
+
 // checkWebMedia refuses a device web pages cannot capture, rather than
 // granting nothing; screens are not among them.
 func checkWebMedia(media []string) error {
@@ -345,6 +385,7 @@ func validHostGrant(g string) bool {
 // The capabilities' keys, which core.Access names as its permissions.
 const (
 	capNetwork            = "network"
+	capFS                 = "fs"
 	capWebView            = "webview"
 	capOpenURL            = "openUrl"
 	capClipboard          = "clipboard"
@@ -373,6 +414,8 @@ func (c *Capabilities) Allows(permission, resource, method string) bool {
 	switch permission {
 	case capNetwork:
 		return c.Network != nil && c.Network.allows(resource, method)
+	case capFS:
+		return method == "read" && c.FS != nil && c.FS.allowsRead(resource)
 	case capWebView:
 		if c.WebView == nil {
 			return false
@@ -451,10 +494,21 @@ func (c *Capabilities) WebHosts() []string {
 	return c.WebView.Hosts
 }
 
-// webURL parses an http, https, ws or wss URL with a host.
+// webURL parses an http, https, ws or wss URL with a host, rejecting
+// whitespace, control characters and backslashes before the query/fragment.
 func webURL(s string) (*url.URL, bool) {
+	if s == "" || strings.IndexFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return nil, false
+	}
+	beforeQuery := s
+	if i := strings.IndexAny(beforeQuery, "?#"); i >= 0 {
+		beforeQuery = beforeQuery[:i]
+	}
+	if strings.ContainsRune(beforeQuery, '\\') {
+		return nil, false
+	}
 	u, err := url.Parse(s)
-	if err != nil || u.Hostname() == "" {
+	if err != nil || u.Opaque != "" || u.Hostname() == "" {
 		return nil, false
 	}
 	switch strings.ToLower(u.Scheme) {
@@ -462,6 +516,50 @@ func webURL(s string) (*url.URL, bool) {
 		return u, true
 	}
 	return nil, false
+}
+
+// allowsRead reports whether resource names an existing regular local file
+// whose symlink-resolved canonical path lies strictly inside one of f.Read's
+// resolved directory roots.
+func (f *FS) allowsRead(resource string) bool {
+	if len(f.Read) == 0 || resource == "" || strings.IndexFunc(resource, unicode.IsControl) >= 0 || !filepath.IsAbs(resource) {
+		return false
+	}
+	target, err := filepath.EvalSymlinks(resource)
+	if err != nil {
+		return false
+	}
+	target = filepath.Clean(target)
+	info, err := os.Stat(target)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	for _, root := range f.Read {
+		if root == "" || strings.IndexFunc(root, unicode.IsControl) >= 0 || !filepath.IsAbs(root) {
+			continue
+		}
+		resolvedRoot, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			continue
+		}
+		resolvedRoot = filepath.Clean(resolvedRoot)
+		rootInfo, err := os.Stat(resolvedRoot)
+		if err != nil || !rootInfo.IsDir() {
+			continue
+		}
+		if pathStrictlyWithinDir(resolvedRoot, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathStrictlyWithinDir(root, target string) bool {
+	rel, err := filepath.Rel(root, target)
+	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) {
+		return false
+	}
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func (n *Network) allows(resource, method string) bool {
@@ -503,10 +601,7 @@ func (r *HTTPRule) allows(u *url.URL, method string) bool {
 	if len(r.Paths) == 0 && len(r.PathPrefixes) == 0 {
 		return true
 	}
-	path := u.EscapedPath()
-	if path == "" {
-		path = "/"
-	}
+	path := cleanURLPath(u.Path)
 	if slices.Contains(r.Paths, path) {
 		return true
 	}
@@ -516,6 +611,41 @@ func (r *HTTPRule) allows(u *url.URL, method string) bool {
 		}
 	}
 	return false
+}
+
+// cleanURLPath resolves "." and ".." segments and re-escapes the path so
+// dot-segment traversal cannot bypass Paths or PathPrefixes rules.
+func cleanURLPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if strings.Contains(p, ".") {
+		var out []string
+		segs := strings.Split(p, "/")
+		for i, s := range segs {
+			last := i == len(segs)-1
+			switch s {
+			case ".":
+				if last {
+					out = append(out, "")
+				}
+			case "..":
+				if len(out) > 1 {
+					out = out[:len(out)-1]
+				}
+				if last {
+					out = append(out, "")
+				}
+			default:
+				out = append(out, s)
+			}
+		}
+		p = strings.Join(out, "/")
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return (&url.URL{Path: p}).EscapedPath()
 }
 
 // hostAllowed reports whether a pattern of patterns allows host: "*"

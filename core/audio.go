@@ -236,34 +236,40 @@ func (cx *Scope) AudioOutputLatency(done func(latency time.Duration, known bool)
 }
 
 // audioRefusal is AudioNotAllowed when the running owner's or cx's Access refuses audio, or src's URI when it is no bytes the app holds, wrapping the refusal.
-func audioRefusal(cx *Scope, src AudioSource) error {
+func audioRefusal(cx *Scope, src *AudioSource) (func(string) error, error) {
 	var err error
+	var check func(string) error
 	if cx.denied(serviceAudio, "") {
 		err = AccessDenied(AccessAudio, "")
 	} else if len(src.Data) == 0 {
-		o := cx.current()
-		if err = sourceRefusal(o, AccessNetwork, src.URI); err == nil && o != cx {
-			err = sourceRefusal(cx, AccessNetwork, src.URI)
+		if a := combinedAccess(cx); a != nil {
+			var resolved string
+			resolved, err = resolveSourceWithAccess(a, cx.current(), AccessNetwork, src.URI)
+			if err == nil {
+				src.URI = resolved
+				check = imageSourceCheck(a)
+			}
 		}
 	}
 	if err == nil {
-		return nil
+		return check, nil
 	}
-	return &audioFailure{code: AudioNotAllowed, message: err.Error(), cause: err}
+	return nil, &audioFailure{code: AudioNotAllowed, message: err.Error(), cause: err}
 }
 
 // audioUnplayable is why cx cannot play src at all, before the platform is asked: refused, no audio on the platform, or no source.
-func audioUnplayable(cx *Scope, src AudioSource) error {
-	if err := audioRefusal(cx, src); err != nil {
-		return err
+func audioUnplayable(cx *Scope, src *AudioSource) (func(string) error, error) {
+	check, err := audioRefusal(cx, src)
+	if err != nil {
+		return nil, err
 	}
 	if cx.tree() == nil || !Untracked(cx, cx.Env().CanPlayAudio) {
-		return AudioUnavailable
+		return nil, AudioUnavailable
 	}
 	if src.URI == "" && len(src.Data) == 0 {
-		return audioFail(AudioNotSupported, "no source")
+		return nil, audioFail(AudioNotSupported, "no source")
 	}
-	return nil
+	return check, nil
 }
 
 // soundBuffer is one sound the platform decoded, or decodes, which the Sounds over it share.
@@ -307,7 +313,8 @@ func (cx *Scope) LoadSound(src AudioSource, done func(*Sound, error)) {
 			owner.Post(func() { done(nil, err) })
 		}
 	}
-	if err := audioUnplayable(cx, src); err != nil {
+	check, err := audioUnplayable(cx, &src)
+	if err != nil {
 		fail(err)
 		return
 	}
@@ -347,7 +354,9 @@ func (cx *Scope) LoadSound(src AudioSource, done func(*Sound, error)) {
 		if restricted {
 			st.restrictedSounds++
 		}
-		t.sendAudio(b.id, driver.AudioRequest{Command: driver.AudioLoad, Source: driver.ImageSource{URI: src.URI, Data: src.Data},
+		audioSrc := driver.ImageSource{URI: src.URI, Data: src.Data}
+		driver.SetImageSourceCheck(&audioSrc, check)
+		t.sendAudio(b.id, driver.AudioRequest{Command: driver.AudioLoad, Source: audioSrc,
 			MaxBytes: limits.MaxEncodedBytes, MaxDuration: limits.MaxDuration, MaxDecodedBytes: limits.MaxDecodedBytes})
 	}
 	w := &soundWait{owner: owner, done: done}
@@ -543,6 +552,7 @@ type AudioPlayer struct {
 	owner *Scope
 	id    uint32
 	src   AudioSource
+	check func(string) error
 	opts  AudioPlayerOptions
 	// refused is why the owner's Access refuses it, nil when it does not.
 	refused error
@@ -563,8 +573,8 @@ type AudioPlayer struct {
 func (cx *Scope) NewAudioPlayer(src AudioSource, opts AudioPlayerOptions) *AudioPlayer {
 	owner := cx
 	opts.ProgressInterval = videoInterval(opts.ProgressInterval)
-	p := &AudioPlayer{rt: cx.rt, tree: cx.tree(), owner: owner, id: audioIDs.Add(1), src: src, opts: opts, volume: 1, rate: 1}
-	p.refused = audioRefusal(cx, src)
+	check, refused := audioRefusal(cx, &src)
+	p := &AudioPlayer{rt: cx.rt, tree: cx.tree(), owner: owner, id: audioIDs.Add(1), src: src, check: check, opts: opts, refused: refused, volume: 1, rate: 1}
 	owner.annotateCleanup(owner.addCleanup(p.Close), "audio-player")
 	return p
 }
@@ -609,7 +619,9 @@ func (p *AudioPlayer) open() {
 	}
 	p.opened = true
 	p.rt.audioState().players[p.id] = p
-	p.tree.sendAudio(p.id, driver.AudioRequest{Command: driver.AudioOpen, Source: driver.ImageSource{URI: p.src.URI, Data: p.src.Data},
+	audioSrc := driver.ImageSource{URI: p.src.URI, Data: p.src.Data}
+	driver.SetImageSourceCheck(&audioSrc, p.check)
+	p.tree.sendAudio(p.id, driver.AudioRequest{Command: driver.AudioOpen, Source: audioSrc,
 		Volume: p.effectiveVolume(), Rate: p.rate, Loop: p.loop, LoopStart: max(0, p.opts.LoopStart), Session: p.opts.AudioSession, ProgressInterval: p.opts.ProgressInterval,
 		Position: p.position})
 }

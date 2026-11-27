@@ -19,9 +19,10 @@ import (
 
 // What a msgFetch asks.
 const (
-	fetchStart  = 0
-	fetchCancel = 1
-	fetchToFile = 2
+	fetchStart      = 0
+	fetchCancel     = 1
+	fetchToFile     = 2
+	fetchNoRedirect = 3
 )
 
 // The parts of a msgFetched.
@@ -44,15 +45,25 @@ type download struct {
 
 // httpGet is imageload.HTTP: a msgFetch, and its answer.
 func (s *surface) httpGet(ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
-	return s.fetch(ctx, url, "", header, progress)
+	return s.fetch(ctx, fetchStart, url, "", header, progress)
+}
+
+// httpGetNoRedirect is imageload.HTTPNoRedirect: returns 3xx responses without
+// following redirects so imageload can validate every hop against grants.
+// Runtimes without capFetchNoRedirect fail closed.
+func (s *surface) httpGetNoRedirect(ctx context.Context, url string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
+	if !s.fetchNoRedirect.Load() {
+		return nil, errors.New("android: runtime cannot check image redirects")
+	}
+	return s.fetch(ctx, fetchNoRedirect, url, "", header, progress)
 }
 
 // httpGetToFile is imageload.HTTPToFile: streams the response body to dst in the Java runtime so large update packages do not enter the Java heap or pipe. A runtime without capFetchToFile, which would misread the request, sends the whole body, which this writes to dst.
 func (s *surface) httpGetToFile(ctx context.Context, url string, header imageload.Header, dst string, progress imageload.Progress) (*imageload.Response, error) {
 	if s.fetchToFile.Load() {
-		return s.fetch(ctx, url, dst, header, progress)
+		return s.fetch(ctx, fetchToFile, url, dst, header, progress)
 	}
-	resp, err := s.fetch(ctx, url, "", header, progress)
+	resp, err := s.fetch(ctx, fetchStart, url, "", header, progress)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +76,7 @@ func (s *surface) httpGetToFile(ctx context.Context, url string, header imageloa
 	return resp, nil
 }
 
-func (s *surface) fetch(ctx context.Context, url, dst string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
+func (s *surface) fetch(ctx context.Context, op byte, url, dst string, header imageload.Header, progress imageload.Progress) (*imageload.Response, error) {
 	f := &s.downloads
 	d := &download{progress: progress, done: make(chan *reader, 1)}
 	f.mu.Lock()
@@ -78,13 +89,10 @@ func (s *surface) fetch(ctx context.Context, url, dst string, header imageload.H
 	f.mu.Unlock()
 	s.send(msgFetch, func(w *writer) {
 		w.u32(n)
-		if dst != "" {
-			w.byte(fetchToFile)
-			w.str(url)
+		w.byte(op)
+		w.str(url)
+		if op == fetchToFile {
 			w.str(dst)
-		} else {
-			w.byte(fetchStart)
-			w.str(url)
 		}
 		count := 0
 		for _, vs := range header {

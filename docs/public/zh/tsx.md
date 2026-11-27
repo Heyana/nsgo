@@ -88,6 +88,8 @@ tsx.RegisterFunctions("app/native", map[string]any{
 capabilities:
   network:
     hosts: [api.example.com, "*.cdn.example.com"]
+  fs:
+    read: ["/path/to/media"] # 图片、视频、音频和菜单图标可读取的本地目录根路径
   open_url: true # 或 { schemes: [https] }
   host: [search, "player.*"] # 它可以调用的应用处理函数
   # webview: { hosts: [...], input: true, media: [microphone, camera] }、clipboard、picker、speech、text_to_speech、status_bar、notifications、biometrics、sign_in_with_apple、purchases、secrets、audio、gamepad、auth_session

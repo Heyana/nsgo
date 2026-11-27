@@ -2,6 +2,7 @@ package core
 
 import (
 	"log"
+	goruntime "runtime"
 	"strings"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -13,7 +14,10 @@ import (
 //
 // Elements are held by the Access of the owner that rendered them, services by the running owner's, the one whose render, effect, handler or Run is running, or outside one by that of the scope they are called on. A Host's handlers run outside the owner that called them, so they are held to the scope they call services on.
 type Access interface {
-	// Allows reports whether req is granted. It is called on the engine's goroutine, so it may read only what does not change.
+	// Allows reports whether req is granted. It is called on the engine's
+	// goroutine and may also be called from image-loading worker goroutines
+	// when validating HTTP redirects or local files, so it must read only
+	// immutable state.
 	Allows(req AccessRequest) bool
 	// WebHosts are the hosts a web view's pages may navigate to at the top level: "*", "*.example.com" or a host. The platform refuses navigations to other http and https hosts, and to other schemes but the pages' own (AccessWebSchemes) and the app's (Scope.ServeScheme), as they start.
 	WebHosts() []string
@@ -42,6 +46,10 @@ const (
 	// AccessNetwork is fetch and the images and videos loaded from the
 	// network, by URL.
 	AccessNetwork = "network"
+	// AccessFS is local files read for media (images, videos, audio and menu
+	// item icons) under granted roots, with AccessRead as Method and the
+	// symlink-resolved canonical local file path as Resource.
+	AccessFS = "fs"
 	// AccessWebView is the pages a web view shows, by URL, with AccessInput the trusted input Ref.SendInput gives them, with AccessMedia the devices WebView.Media lets them capture, and with AccessCookies the cookies SetWebCookies writes and WebCookies lists, by a URL each goes to, "" standing for the whole store WebCookies lists and ClearWebsiteData clears.
 	AccessWebView = "webview"
 	// AccessOpenURL is OpenURL, by URL.
@@ -94,11 +102,12 @@ const (
 	AccessCursorPoint = "cursorPoint"
 )
 
-// AccessInput is AccessRequest.Method for a web view's trusted input, AccessMedia for the devices its pages capture, and AccessCookies for writing, listing or clearing the store every web view of the app shares, which no TSX capability grants.
+// AccessInput is AccessRequest.Method for a web view's trusted input, AccessMedia for the devices its pages capture, AccessCookies for writing, listing or clearing the store every web view of the app shares, which no TSX capability grants, and AccessRead for reading local media files under AccessFS.
 const (
 	AccessInput   = "input"
 	AccessMedia   = "media"
 	AccessCookies = "cookies"
+	AccessRead    = "read"
 )
 
 // accessKey is where ProvideAccess keeps an owner's Access.
@@ -299,36 +308,162 @@ func webSchemes(a Access) []string {
 	return driver.PageSchemes
 }
 
-// sourceRefusal is the refusal of what a node of owner o loads from uri:
-// one from the network needs permission's grant, as fetch does, and a
-// file on the device is refused. Bytes the app holds (data:, blob:) and
-// its assets need nothing.
+// sourceRefusal is the refusal of what a node of owner o loads from uri.
 func sourceRefusal(o *Scope, permission, uri string) error {
-	a := accessOf(o)
-	if a == nil || uri == "" {
-		return nil
-	}
-	scheme, _, _ := strings.Cut(uri, ":")
-	switch strings.ToLower(scheme) {
-	case "data", "blob", "asset", "about":
-		return nil
-	case "http", "https":
-		return refusal(a, AccessRequest{Permission: permission, Resource: uri, Method: "GET"})
-	}
-	if servesWebScheme(o, strings.ToLower(scheme)) {
-		return nil
-	}
-	return AccessDenied(permission, uri)
+	_, err := resolveSource(o, permission, uri)
+	return err
 }
 
-// refuseSource empties *uri when the Access of n's owner refuses it, and
-// has report hear each refused URI once, after the commit.
+// isURLScheme reports whether s is a multi-character RFC 3986 scheme, so a
+// single-letter Windows drive prefix ("C:") is treated as a local path.
+func isURLScheme(s string) bool {
+	if len(s) < 2 {
+		return false
+	}
+	for i := range len(s) {
+		c := s[i]
+		letter := 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z'
+		digit := '0' <= c && c <= '9'
+		if i == 0 {
+			if !letter {
+				return false
+			}
+			continue
+		}
+		if !letter && !digit && c != '+' && c != '-' && c != '.' {
+			return false
+		}
+	}
+	return true
+}
+
+// resolveSource validates uri against the Access of owner o and returns the
+// exact canonical URL to load: http(s) URLs are canonicalized and checked
+// against permission ("GET"); for media (AccessNetwork), file: URLs and bare
+// absolute local paths are symlink-resolved, checked against AccessFS ("read")
+// and returned as canonical file:/// URLs; bytes (data:, blob:) and bundled
+// assets (asset:) need no grant. Web views (AccessWebView) also allow about:
+// and registered ServeScheme schemes, and never allow local fs.read files.
+func resolveSource(o *Scope, permission, uri string) (string, error) {
+	a := accessOf(o)
+	if a == nil || uri == "" {
+		return uri, nil
+	}
+	return resolveSourceWithAccess(a, o, permission, uri)
+}
+
+func resolveSourceWithAccess(a Access, o *Scope, permission, uri string) (string, error) {
+	if a == nil || uri == "" {
+		return uri, nil
+	}
+	if scheme, _, ok := strings.Cut(uri, ":"); ok && isURLScheme(scheme) {
+		switch strings.ToLower(scheme) {
+		case "data", "blob", "asset":
+			return uri, nil
+		case "about":
+			if permission == AccessWebView {
+				return uri, nil
+			}
+			return "", AccessDenied(permission, uri)
+		case "http", "https":
+			canon, err := driver.CanonicalHTTPURL(uri)
+			if err != nil {
+				return "", AccessDenied(permission, uri)
+			}
+			if err := refusal(a, AccessRequest{Permission: permission, Resource: canon, Method: "GET"}); err != nil {
+				return "", err
+			}
+			return canon, nil
+		case "file":
+			if permission != AccessNetwork {
+				return "", AccessDenied(permission, uri)
+			}
+			return resolveLocalFileGrant(a, uri)
+		}
+		if permission == AccessWebView && o != nil && servesWebScheme(o, strings.ToLower(scheme)) {
+			return uri, nil
+		}
+		return "", AccessDenied(permission, uri)
+	}
+	if permission != AccessNetwork {
+		return "", AccessDenied(permission, uri)
+	}
+	return resolveLocalFileGrant(a, uri)
+}
+
+func resolveLocalFileGrant(a Access, raw string) (string, error) {
+	win := goruntime.GOOS == "windows"
+	canonPath, err := driver.ResolveLocalMediaPath(raw, win)
+	if err != nil {
+		return "", AccessDenied(AccessFS, raw)
+	}
+	if err := refusal(a, AccessRequest{Permission: AccessFS, Resource: canonPath, Method: AccessRead}); err != nil {
+		return "", err
+	}
+	return driver.CanonicalFileURL(canonPath, win), nil
+}
+
+// combinedAccess returns the effective Access for service calls on cx: both
+// cx.current()'s Access and cx's own Access when they differ.
+func combinedAccess(cx *Scope) Access {
+	if !cx.rt.restricted {
+		return nil
+	}
+	o := cx.current()
+	ao := accessOf(o)
+	if o == cx {
+		return ao
+	}
+	ac := accessOf(cx)
+	switch {
+	case ao == nil:
+		return ac
+	case ac == nil || ao == ac:
+		return ao
+	default:
+		return bothAccess{ao, ac}
+	}
+}
+
+// imageSourceCheck returns a redirect and local-file validator for a, or nil
+// when a is nil. Called by imageload on every HTTP redirect hop and before
+// reading restricted local files.
+func imageSourceCheck(a Access) func(string) error {
+	if a == nil {
+		return nil
+	}
+	win := goruntime.GOOS == "windows"
+	return func(raw string) error {
+		switch {
+		case driver.HasSchemePrefix(raw, "http"), driver.HasSchemePrefix(raw, "https"):
+			canon, err := driver.CanonicalHTTPURL(raw)
+			if err != nil {
+				return AccessDenied(AccessNetwork, raw)
+			}
+			return refusal(a, AccessRequest{Permission: AccessNetwork, Resource: canon, Method: "GET"})
+		case driver.HasSchemePrefix(raw, "file"):
+			canonPath, err := driver.ResolveLocalMediaPath(raw, win)
+			if err != nil {
+				return AccessDenied(AccessFS, raw)
+			}
+			return refusal(a, AccessRequest{Permission: AccessFS, Resource: canonPath, Method: AccessRead})
+		default:
+			return AccessDenied(AccessNetwork, raw)
+		}
+	}
+}
+
+// refuseSource validates *uri against the Access of n's owner, replacing it
+// with the canonical checked URL when granted, or emptying *uri and having
+// report hear each refused URI once after the commit.
 func (t *Tree) refuseSource(n *node, permission string, uri, refused *string, report func(error)) {
-	err := sourceRefusal(n.owner, permission, *uri)
+	raw := *uri
+	resolved, err := resolveSource(n.owner, permission, raw)
 	if err == nil {
+		*uri = resolved
 		return
 	}
-	if *refused != *uri && report != nil && t.rt.post != nil {
+	if *refused != raw && report != nil && t.rt.post != nil {
 		owner := n.owner
 		t.rt.post(func() {
 			if !owner.disposed {
@@ -336,10 +471,12 @@ func (t *Tree) refuseSource(n *node, permission string, uri, refused *string, re
 			}
 		})
 	}
-	*refused, *uri = *uri, ""
+	*refused, *uri = raw, ""
 }
 
-// refuseImage empties the image sources n's Access refuses; one the app holds the bytes, pixels or offscreen drawing of loads nothing.
+// refuseImage empties the image sources n's Access refuses, canonicalizes
+// granted URIs so backends load the exact URL that was checked, and attaches
+// the scope's redirect/local-file validator for imageload.
 func (t *Tree) refuseImage(n *node, src *ImageSource, refused *string, report func(error)) {
 	if len(src.Data) > 0 || src.Pixels != nil || src.Offscreen != nil {
 		return
@@ -347,37 +484,47 @@ func (t *Tree) refuseImage(n *node, src *ImageSource, refused *string, report fu
 	t.refuseSource(n, AccessNetwork, &src.URI, refused, report)
 	if src.URI == "" {
 		src.Variants = nil
+		driver.SetImageSourceCheck(src, nil)
 		return
 	}
 	var kept map[float32]string
 	for scale, uri := range src.Variants {
-		if sourceRefusal(n.owner, AccessNetwork, uri) == nil {
+		if resolved, err := resolveSource(n.owner, AccessNetwork, uri); err == nil {
 			if kept == nil {
 				kept = map[float32]string{}
 			}
-			kept[scale] = uri
+			kept[scale] = resolved
 		}
 	}
 	src.Variants = kept
+	driver.SetImageSourceCheck(src, imageSourceCheck(accessOf(n.owner)))
 }
 
 func (t *Tree) refuseImageOwner(owner *Scope, src *ImageSource) {
 	if len(src.Data) > 0 || src.Pixels != nil || src.Offscreen != nil {
 		return
 	}
-	if sourceRefusal(owner, AccessNetwork, src.URI) != nil {
-		src.URI = ""
-		src.Variants = nil
+	a := accessOf(owner)
+	if a == nil {
 		return
 	}
+	resolved, err := resolveSourceWithAccess(a, owner, AccessNetwork, src.URI)
+	if err != nil {
+		src.URI = ""
+		src.Variants = nil
+		driver.SetImageSourceCheck(src, nil)
+		return
+	}
+	src.URI = resolved
 	var kept map[float32]string
 	for scale, uri := range src.Variants {
-		if sourceRefusal(owner, AccessNetwork, uri) == nil {
+		if r, err := resolveSourceWithAccess(a, owner, AccessNetwork, uri); err == nil {
 			if kept == nil {
 				kept = map[float32]string{}
 			}
-			kept[scale] = uri
+			kept[scale] = r
 		}
 	}
 	src.Variants = kept
+	driver.SetImageSourceCheck(src, imageSourceCheck(a))
 }

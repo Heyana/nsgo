@@ -1,6 +1,8 @@
 package tsx
 
 import (
+	"strings"
+
 	"github.com/nsgo-dev/nsgo/tsx/internal/js"
 
 	"github.com/nsgo-dev/nsgo/core"
@@ -132,7 +134,7 @@ func (r *runtime) menuItems(v js.Value) []core.MenuItem {
 			out = append(out, core.MenuItem{Separator: true})
 			continue
 		}
-		item := core.MenuItem{Label: o.str("label", ""), Shortcut: o.str("shortcut", ""),
+		item := core.MenuItem{Label: o.str("label", ""), Icon: r.menuIcon(o.get("icon")), Shortcut: o.str("shortcut", ""),
 			Role: menuRoles[o.str("role", "")], Disabled: o.bool("disabled", false), Checkable: o.has("checked"),
 			Checked: o.bool("checked", false), Radio: o.bool("radio", false), Items: r.menuItems(o.get("submenu")),
 			When: map[string]core.MenuWhen{"auto": core.MenuAuto, "notEditing": core.MenuNotEditing}[o.str("when", "")]}
@@ -142,6 +144,40 @@ func (r *runtime) menuItems(v js.Value) []core.MenuItem {
 		out = append(out, item)
 	}
 	return out
+}
+
+// menuIcon reads a menu item's icon: a URI/SVG string, an ImageSource/ImageAsset
+// object, or { source?, svg?, template? }.
+func (r *runtime) menuIcon(v js.Value) core.MenuIcon {
+	if !defined(v) {
+		return core.MenuIcon{}
+	}
+	o, ok := v.(*js.Object)
+	if !ok {
+		s := strings.TrimSpace(stringOf(v))
+		if s == "" {
+			return core.MenuIcon{}
+		}
+		if strings.HasPrefix(s, "<") {
+			if svg, err := core.ParseSVG([]byte(s)); err == nil {
+				return core.MenuIcon{SVG: svg}
+			}
+			return core.MenuIcon{}
+		}
+		return core.MenuIcon{Source: r.imageSource(v)}
+	}
+	op := opts{o}
+	if op.has("source") || op.has("svg") || op.has("template") {
+		icon := core.MenuIcon{Template: op.bool("template", false)}
+		if doc := op.str("svg", ""); doc != "" {
+			icon.SVG, _ = core.ParseSVG([]byte(doc))
+		}
+		if src := op.get("source"); defined(src) {
+			icon.Source = r.imageSource(src)
+		}
+		return icon
+	}
+	return core.MenuIcon{Source: r.imageSource(v)}
 }
 
 func (r *runtime) menuModule() js.Value {

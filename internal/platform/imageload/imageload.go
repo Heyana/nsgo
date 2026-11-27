@@ -137,6 +137,10 @@ type call struct {
 
 // Load returns src's bytes. It blocks; call it on a goroutine of its own.
 // Cancelling ctx stops waiting, and stops the fetch once nobody waits.
+// When core attached a source check to src (for a restricted scope), every
+// HTTP redirect hop is validated before it is followed, cached entries are
+// served only after every recorded hop passes the check, and local files are
+// re-verified right before reading.
 func Load(ctx context.Context, src driver.ImageSource, progress Progress) ([]byte, error) {
 	if len(src.Data) > 0 {
 		return src.Data, nil
@@ -145,10 +149,13 @@ func Load(ctx context.Context, src driver.ImageSource, progress Progress) ([]byt
 	if uri == "" {
 		return nil, errors.New("imageload: empty source")
 	}
+	if check := driver.ImageSourceCheck(src); check != nil {
+		return loadChecked(ctx, uri, check, progress)
+	}
 	mu.Lock()
-	if data, ok := cache.get(uri); ok {
+	if ent, ok := cache.get(uri); ok {
 		mu.Unlock()
-		return data, nil
+		return ent.data, nil
 	}
 	c := inflight[uri]
 	if c == nil || c.waiters == 0 {
@@ -175,6 +182,118 @@ func Load(ctx context.Context, src driver.ImageSource, progress Progress) ([]byt
 		mu.Unlock()
 		return nil, ctx.Err()
 	}
+}
+
+const maxCheckedRedirects = 10
+
+func loadChecked(ctx context.Context, uri string, check func(string) error, progress Progress) ([]byte, error) {
+	switch {
+	case strings.HasPrefix(uri, "data:"):
+		return decodeDataURI(uri)
+	case strings.HasPrefix(uri, "asset:"):
+		return readResource(strings.TrimLeft(uri[len("asset:"):], "/"))
+	case driver.HasSchemePrefix(uri, "http"), driver.HasSchemePrefix(uri, "https"):
+		canon, err := driver.CanonicalHTTPURL(uri)
+		if err != nil {
+			return nil, err
+		}
+		if err := check(canon); err != nil {
+			return nil, err
+		}
+		mu.Lock()
+		ent, ok := cache.get(canon)
+		mu.Unlock()
+		if ok && ent.hopsVerified {
+			for _, hop := range ent.hops {
+				if err := check(hop); err != nil {
+					return nil, err
+				}
+			}
+			return ent.data, nil
+		}
+		data, hops, err := fetchCheckedHTTP(ctx, canon, check, progress)
+		if err != nil {
+			return nil, err
+		}
+		mu.Lock()
+		cache.put(canon, data, hops, true)
+		mu.Unlock()
+		return data, nil
+	default:
+		// Local file (file: URL or bare path): re-resolve symlinks and verify
+		// against fs.read right before reading to prevent symlink-swap TOCTOU.
+		win := runtime.GOOS == "windows"
+		canonPath, err := driver.ResolveLocalMediaPath(uri, win)
+		if err != nil {
+			return nil, check(uri)
+		}
+		canonURL := driver.CanonicalFileURL(canonPath, win)
+		if err := check(canonURL); err != nil {
+			return nil, err
+		}
+		return os.ReadFile(canonPath)
+	}
+}
+
+func fetchCheckedHTTP(ctx context.Context, startURL string, check func(string) error, progress Progress) ([]byte, []string, error) {
+	cur := startURL
+	hops := []string{cur}
+	for range maxCheckedRedirects + 1 {
+		resp, err := getNoRedirect(ctx, cur, Header{}, progress)
+		if err != nil {
+			return nil, nil, err
+		}
+		switch resp.Status {
+		case 200, 203:
+			return resp.Body, hops, nil
+		case 301, 302, 303, 307, 308:
+			if len(hops) > maxCheckedRedirects {
+				return nil, nil, fmt.Errorf("imageload: %s: too many redirects", startURL)
+			}
+			loc := resp.Header.Get("Location")
+			if loc == "" {
+				return nil, nil, fmt.Errorf("imageload: %s: redirect without Location", cur)
+			}
+			next, err := resolveCheckedRedirect(cur, loc)
+			if err != nil {
+				if checkErr := check(loc); checkErr != nil {
+					return nil, nil, checkErr
+				}
+				return nil, nil, err
+			}
+			if err := check(next); err != nil {
+				return nil, nil, err
+			}
+			hops = append(hops, next)
+			cur = next
+		default:
+			return nil, nil, fmt.Errorf("imageload: %s: status %d", cur, resp.Status)
+		}
+	}
+	return nil, nil, fmt.Errorf("imageload: %s: too many redirects", startURL)
+}
+
+func resolveCheckedRedirect(baseRaw, loc string) (string, error) {
+	if strings.ContainsAny(loc, "\r\n\x00") {
+		return "", errors.New("imageload: redirect Location contains control characters")
+	}
+	beforeQuery := loc
+	if i := strings.IndexAny(beforeQuery, "?#"); i >= 0 {
+		beforeQuery = beforeQuery[:i]
+	}
+	if strings.ContainsRune(beforeQuery, '\\') {
+		return "", errors.New("imageload: redirect Location contains backslash")
+	}
+	base, err := url.Parse(baseRaw)
+	if err != nil {
+		return "", err
+	}
+	ref, err := url.Parse(loc)
+	if err != nil {
+		return "", err
+	}
+	resolved := base.ResolveReference(ref)
+	return driver.CanonicalHTTPURL(resolved.String())
 }
 
 // Info answers an ItemImageInfo: it loads the item's source, which keeps
@@ -204,7 +323,7 @@ func (c *call) fetch(ctx context.Context, uri string) {
 		delete(inflight, uri)
 	}
 	if err == nil {
-		cache.put(uri, data)
+		cache.put(uri, data, nil, false)
 	}
 	c.data, c.err = data, err
 	mu.Unlock()
@@ -324,8 +443,10 @@ type lru struct {
 }
 
 type entry struct {
-	key  string
-	data []byte
+	key          string
+	data         []byte
+	hops         []string
+	hopsVerified bool
 }
 
 func newLRU(limit int64) *lru {
@@ -341,15 +462,15 @@ func newLRU(limit int64) *lru {
 	}
 }
 
-func (c *lru) get(key string) ([]byte, bool) {
+func (c *lru) get(key string) (*entry, bool) {
 	if e, ok := c.items[key]; ok {
 		c.order.MoveToFront(e)
-		return e.Value.(*entry).data, true
+		return e.Value.(*entry), true
 	}
 	return nil, false
 }
 
-func (c *lru) put(key string, data []byte) {
+func (c *lru) put(key string, data []byte, hops []string, hopsVerified bool) {
 	n := int64(len(data))
 	isKept := c.kept[key] > 0
 	if e, ok := c.items[key]; ok {
@@ -365,7 +486,7 @@ func (c *lru) put(key string, data []byte) {
 		c.evict()
 		return
 	}
-	c.items[key] = c.order.PushFront(&entry{key, data})
+	c.items[key] = c.order.PushFront(&entry{key: key, data: data, hops: hops, hopsVerified: hopsVerified})
 	c.totalBytes += n
 	if !isKept {
 		c.unkeptBytes += n

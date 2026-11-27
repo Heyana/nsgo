@@ -8,4 +8,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload/imageloadtest"
 )
 
-func TestHTTP(t *testing.T) { imageloadtest.CheckHTTP(t, httpGet) }
+func TestHTTP(t *testing.T) {
+	imageloadtest.CheckHTTP(t, httpGet)
+	imageloadtest.CheckHTTPNoRedirect(t, httpGetNoRedirect)
+}

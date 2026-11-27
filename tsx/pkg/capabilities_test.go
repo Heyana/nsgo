@@ -2,6 +2,8 @@ package pkg
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -55,6 +57,9 @@ func TestParseCapabilitiesStrictly(t *testing.T) {
 		`{"host": ["a/../b"]}`,
 		`{"clipboard": "yes"}`,
 		`{"webview": {"hosts": ["a.com"], "media": ["screen"]}}`,
+		`{"fs": {"read": ["relative/dir"]}}`,
+		`{"fs": {"read": [""]}}`,
+		`{"fs": {"read": ["/tmp"], "write": ["/tmp"]}}`,
 	} {
 		if _, _, err := ParseCapabilities([]byte(bad), true); !errors.Is(err, ErrFormat) {
 			t.Errorf("%s: %v", bad, err)
@@ -90,6 +95,9 @@ func TestCapabilitiesAllow(t *testing.T) {
 		{"network", "https://api.com/v1/x?q=1", "get", true},
 		{"network", "https://api.com/v1", "GET", true},
 		{"network", "https://api.com/v10", "GET", false},
+		{"network", "https://api.com/v1/../v2/secret", "GET", false},
+		{"network", "https://api.com/v1/%2e%2e/secret", "GET", false},
+		{"network", "https://api.com\\@evil.io/v1/x", "GET", false},
 		{"network", "https://api.com/v1/x", "POST", false},
 		{"network", "http://api.com/v1/x", "GET", false},
 		{"network", "https://api.com@evil.io/v1/", "GET", false},
@@ -123,5 +131,59 @@ func TestCapabilitiesAllow(t *testing.T) {
 		if got := c.Allows(tc.permission, tc.resource, tc.method); got != tc.want {
 			t.Errorf("Allows(%s, %s, %s) = %v", tc.permission, tc.resource, tc.method, got)
 		}
+	}
+}
+
+func TestFSReadCapability(t *testing.T) {
+	base := t.TempDir()
+	allowed := filepath.Join(base, "media")
+	sibling := filepath.Join(base, "media2")
+	outside := filepath.Join(base, "secret")
+	for _, d := range []string{filepath.Join(allowed, "sub"), sibling, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inFile := filepath.Join(allowed, "sub", "photo.png")
+	siblingFile := filepath.Join(sibling, "other.png")
+	secretFile := filepath.Join(outside, "key.png")
+	for _, f := range []string{inFile, siblingFile, secretFile} {
+		if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	safeLink := filepath.Join(allowed, "safe-link.png")
+	escapeLink := filepath.Join(allowed, "escape-link.png")
+	_ = os.Symlink(inFile, safeLink)
+	_ = os.Symlink(secretFile, escapeLink)
+
+	c := Capabilities{FS: &FS{Read: []string{allowed}}}
+	cases := []struct {
+		name   string
+		path   string
+		method string
+		want   bool
+	}{
+		{"inside root", inFile, "read", true},
+		{"cleaned inside root", filepath.Join(allowed, "sub", "..", "sub", "photo.png"), "read", true},
+		{"symlink staying inside root", safeLink, "read", true},
+		{"symlink escaping root", escapeLink, "read", false},
+		{"parent traversal outside root", filepath.Join(allowed, "..", "secret", "key.png"), "read", false},
+		{"sibling prefix dir", siblingFile, "read", false},
+		{"outside root", secretFile, "read", false},
+		{"root directory itself", allowed, "read", false},
+		{"nonexistent file inside root", filepath.Join(allowed, "missing.png"), "read", false},
+		{"write method refused", inFile, "write", false},
+	}
+	for _, tc := range cases {
+		if got := c.Allows("fs", tc.path, tc.method); got != tc.want {
+			t.Errorf("%s: Allows(fs, %q, %q) = %v, want %v", tc.name, tc.path, tc.method, got, tc.want)
+		}
+	}
+
+	// Unknown keys in fs drop the capability leniently so newer fields never widen access.
+	parsed, ignored, err := ParseCapabilities([]byte(`{"fs":{"read":["/tmp"],"future":true}}`), false)
+	if err != nil || parsed.FS != nil || !slices.Equal(ignored, []string{"capability fs"}) {
+		t.Fatalf("lenient fs = %+v, ignored %v, err %v", parsed.FS, ignored, err)
 	}
 }

@@ -411,6 +411,7 @@ func (t *Tree) menuEntries(items []MenuItem, owner *Scope, actions map[uint32]me
 	for _, it := range items {
 		icon := it.Icon.Clone()
 		if !icon.Source.Empty() {
+			icon.Source = t.pickScale(icon.Source)
 			t.refuseImageOwner(owner, &icon.Source)
 		}
 		e := driver.MenuEntry{Label: it.Label, Icon: icon, Shortcut: it.Shortcut, Role: it.Role, Disabled: it.Disabled,
