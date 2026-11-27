@@ -31,15 +31,27 @@ import (
 type addOptions struct {
 	dryRun bool // print the plan and write nothing
 	yes    bool // apply the plan without asking
-	list   bool // list libraries and components in NSGo's index
+	list   bool // list libraries and components from NSGo's index and configured registries
 }
 
-// addRequest is a module named on nsgo add's command line: its path, the version typed after @ (else the index entry's version or the query upgrade, which takes the newest release and never lowers a version), and the bare index name it was resolved from when named by one.
+// addRequest is a module named on nsgo add's command line: its path, the version typed after @ (else the index entry's version or the query upgrade, which takes the newest release and never lowers a version), and the bare or @registry/name index name it was resolved from when named by one.
 type addRequest struct {
 	path, version   string
 	typed           bool
 	fromName        string
 	registryLicense string // SPDX expression from a registry entry, when added by name
+}
+
+// addSpec is a parsed argument to nsgo add: a @registry/name[@version]
+// reference, a bare name in NSGo's built-in index, or a direct module[@version] path.
+type addSpec struct {
+	registry        string
+	item            string
+	path            string
+	version         string
+	typed           bool
+	fromName        string
+	registryLicense string
 }
 
 // parseAddRequests reads nsgo add's arguments, resolving bare names in NSGo's built-in index.
@@ -49,13 +61,50 @@ func parseAddRequests(args []string) ([]addRequest, error) {
 
 // parseAddRequestsWithIndex reads nsgo add's arguments, each a bare name in idx or a module[@version], without #name.
 func parseAddRequestsWithIndex(args []string, idx *registryIndex) ([]addRequest, error) {
-	if len(args) == 0 {
-		return nil, fmt.Errorf("add: name a module or library: %s add name|module[@version]", nsgoCommand())
+	specs, err := parseAddSpecsWithIndex(args, idx)
+	if err != nil {
+		return nil, err
 	}
-	var reqs []addRequest
+	reqs := make([]addRequest, 0, len(specs))
+	for _, s := range specs {
+		if s.registry != "" {
+			return nil, fmt.Errorf("add: %q is a registry reference, not a module path", s.registry+"/"+s.item)
+		}
+		reqs = append(reqs, addRequest{
+			path:            s.path,
+			version:         s.version,
+			typed:           s.typed,
+			fromName:        s.fromName,
+			registryLicense: s.registryLicense,
+		})
+	}
+	return reqs, nil
+}
+
+// parseAddSpecsWithIndex reads nsgo add's arguments: module[@version],
+// @registry/name[@version], or a bare name in NSGo's built-in index idx.
+// Bare names resolve only in idx so custom registries can never shadow bare names (#2461, #2464).
+func parseAddSpecsWithIndex(args []string, idx *registryIndex) ([]addSpec, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("add: name a module, library or @registry/name: %s add name|@registry/name|module[@version]", nsgoCommand())
+	}
+	var specs []addSpec
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "-") {
 			return nil, fmt.Errorf("add: flags go before the modules: %s add %s %s", nsgoCommand(), arg, args[0])
+		}
+		if strings.HasPrefix(arg, "@") {
+			spec, err := parseRegistryAddSpec(arg)
+			if err != nil {
+				return nil, err
+			}
+			if slices.ContainsFunc(specs, func(s addSpec) bool {
+				return s.registry == spec.registry && s.item == spec.item
+			}) {
+				return nil, fmt.Errorf("add: %s/%s is named twice", spec.registry, spec.item)
+			}
+			specs = append(specs, spec)
+			continue
 		}
 		if strings.Contains(arg, "#") {
 			return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
@@ -65,7 +114,7 @@ func parseAddRequestsWithIndex(args []string, idx *registryIndex) ([]addRequest,
 			return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
 		}
 		domain, _, _ := strings.Cut(spec, "/")
-		var req addRequest
+		var s addSpec
 		if strings.Contains(domain, ".") {
 			if err := module.CheckPath(spec); err != nil {
 				return nil, fmt.Errorf("add: %q: %w", arg, err)
@@ -76,7 +125,7 @@ func parseAddRequestsWithIndex(args []string, idx *registryIndex) ([]addRequest,
 			if version == "none" {
 				return nil, fmt.Errorf("add: %s@none would remove %s; add never removes a module", spec, spec)
 			}
-			req = addRequest{path: spec, version: version, typed: hasVersion}
+			s = addSpec{path: spec, version: version, typed: hasVersion}
 		} else if isValidRegistryName(spec) {
 			item, ok := idx.lookup(spec)
 			if !ok {
@@ -94,19 +143,243 @@ func parseAddRequestsWithIndex(args []string, idx *registryIndex) ([]addRequest,
 			} else {
 				version = "upgrade"
 			}
-			req = addRequest{path: item.Module, version: version, typed: hasVersion, fromName: spec, registryLicense: item.License}
+			s = addSpec{path: item.Module, version: version, typed: hasVersion, fromName: spec, registryLicense: item.License}
 		} else {
 			return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
 		}
-		if slices.ContainsFunc(reqs, func(r addRequest) bool { return r.path == req.path }) {
-			return nil, fmt.Errorf("add: %s is named twice", req.path)
+		if slices.ContainsFunc(specs, func(existing addSpec) bool { return existing.registry == "" && existing.path == s.path }) {
+			return nil, fmt.Errorf("add: %s is named twice", s.path)
 		}
-		reqs = append(reqs, req)
+		specs = append(specs, s)
 	}
-	return reqs, nil
+	return specs, nil
 }
 
-// addModules runs nsgo add using NSGo's built-in index: -list prints matching items without needing a module; otherwise it plans reqs in the module holding the working directory, writes the plan to out, and applies it with -y, or once ask, which is nil when nobody can be asked, says yes.
+func parseRegistryAddSpec(arg string) (addSpec, error) {
+	regKey, rest, ok := strings.Cut(arg, "/")
+	if !ok || rest == "" {
+		return addSpec{}, fmt.Errorf("add: %q must be @registry/name[@version]", arg)
+	}
+	if regKey == "@nsgo" {
+		return addSpec{}, fmt.Errorf("add: %q is reserved for NSGo's built-in index", regKey)
+	}
+	if !isValidRegistryName(regKey[1:]) {
+		return addSpec{}, fmt.Errorf("add: %q has invalid registry name %q", arg, regKey)
+	}
+	if strings.Contains(rest, "#") {
+		return addSpec{}, fmt.Errorf("add: %q is not a valid @registry/name[@version]", arg)
+	}
+	itemName, version, hasVersion := strings.Cut(rest, "@")
+	if !isValidRegistryName(itemName) {
+		return addSpec{}, fmt.Errorf("add: %q has invalid item name %q", arg, itemName)
+	}
+	if hasVersion {
+		if version == "" {
+			return addSpec{}, fmt.Errorf("add: %q is missing a version after @", arg)
+		}
+		if version == "none" {
+			return addSpec{}, fmt.Errorf("add: %s/%s@none would remove it; add never removes a module", regKey, itemName)
+		}
+	}
+	return addSpec{
+		registry: regKey,
+		item:     itemName,
+		version:  version,
+		typed:    hasVersion,
+	}, nil
+}
+
+// resolveAddSpecs resolves any @registry/name specs through nsgo.yaml's
+// configured registries, refusing unconfigured registries without modifying
+// nsgo.yaml (#2464).
+func resolveAddSpecs(ctx context.Context, specs []addSpec, modDir string) ([]addRequest, []*loadedRegistry, error) {
+	needsRegistry := slices.ContainsFunc(specs, func(s addSpec) bool { return s.registry != "" })
+	if !needsRegistry {
+		reqs := make([]addRequest, len(specs))
+		for i, s := range specs {
+			reqs[i] = addRequest{
+				path:            s.path,
+				version:         s.version,
+				typed:           s.typed,
+				fromName:        s.fromName,
+				registryLicense: s.registryLicense,
+			}
+		}
+		return reqs, nil, nil
+	}
+
+	regMap, _, err := loadProjectRegistries(".", modDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("add: %w", err)
+	}
+
+	loaded := map[string]*loadedRegistry{}
+	var used []*loadedRegistry
+	reqs := make([]addRequest, 0, len(specs))
+
+	for _, s := range specs {
+		if s.registry == "" {
+			if slices.ContainsFunc(reqs, func(r addRequest) bool { return r.path == s.path }) {
+				return nil, nil, fmt.Errorf("add: %s is named twice", s.path)
+			}
+			reqs = append(reqs, addRequest{
+				path:            s.path,
+				version:         s.version,
+				typed:           s.typed,
+				fromName:        s.fromName,
+				registryLicense: s.registryLicense,
+			})
+			continue
+		}
+		rc, ok := regMap[s.registry]
+		if !ok {
+			return nil, nil, fmt.Errorf("add: registry %s is not configured in nsgo.yaml; add it under registries:\n  registries:\n    %q: https://...", s.registry, s.registry)
+		}
+		lr, ok := loaded[s.registry]
+		if !ok {
+			lr, err = loadRegistry(ctx, rc)
+			if err != nil {
+				return nil, nil, fmt.Errorf("add: %w", err)
+			}
+			loaded[s.registry] = lr
+			used = append(used, lr)
+		}
+		item, ok := lr.Index.lookup(s.item)
+		if !ok {
+			return nil, nil, fmt.Errorf("add: %s/%s was not found in registry %s (%s); run %s add -list %s to see its items", s.registry, s.item, s.registry, rc.Raw, nsgoCommand(), s.registry)
+		}
+		if item.Component != "" {
+			return nil, nil, fmt.Errorf("add: %s/%s is a component, not a library; adding components is not supported yet", s.registry, s.item)
+		}
+		version := s.version
+		if !s.typed {
+			if item.Version != "" {
+				version = item.Version
+			} else {
+				version = "upgrade"
+			}
+		}
+		if slices.ContainsFunc(reqs, func(r addRequest) bool { return r.path == item.Module }) {
+			return nil, nil, fmt.Errorf("add: %s is named twice", item.Module)
+		}
+		reqs = append(reqs, addRequest{
+			path:            item.Module,
+			version:         version,
+			typed:           s.typed,
+			fromName:        s.registry + "/" + s.item,
+			registryLicense: item.License,
+		})
+	}
+	return reqs, used, nil
+}
+
+// listAddItems lists items from NSGo's built-in index and every registry
+// configured in nsgo.yaml (or only the @registry prefixes named in args),
+// filtered by any search words across name, description and tags. It works
+// inside or outside a Go module.
+func listAddItems(ctx context.Context, idx *registryIndex, args []string, out io.Writer) error {
+	var regFilters []string
+	var needles []string
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			return fmt.Errorf("add: flags go before the filter words: %s add -list %s", nsgoCommand(), arg)
+		}
+		if strings.HasPrefix(arg, "@") && !strings.Contains(arg, "/") {
+			if arg == "@nsgo" {
+				return fmt.Errorf("add: %q is reserved for NSGo's built-in index", arg)
+			}
+			if !isValidRegistryName(arg[1:]) {
+				return fmt.Errorf("add: invalid registry name %q", arg)
+			}
+			if !slices.Contains(regFilters, arg) {
+				regFilters = append(regFilters, arg)
+			}
+			continue
+		}
+		needles = append(needles, strings.ToLower(arg))
+	}
+
+	var modDir string
+	if gomod, err := enclosingGoMod("."); err == nil && gomod != "" {
+		modDir = filepath.Dir(gomod)
+	}
+	regMap, regList, err := loadProjectRegistries(".", modDir)
+	if err != nil {
+		return fmt.Errorf("add: %w", err)
+	}
+
+	var targets []registryConfig
+	if len(regFilters) > 0 {
+		for _, name := range regFilters {
+			rc, ok := regMap[name]
+			if !ok {
+				return fmt.Errorf("add: registry %s is not configured in nsgo.yaml; add it under registries:\n  registries:\n    %q: https://...", name, name)
+			}
+			targets = append(targets, rc)
+		}
+	} else {
+		targets = regList
+	}
+
+	type row struct {
+		name, kind, mod, desc string
+	}
+	var rows []row
+	if len(regFilters) == 0 && idx != nil {
+		for _, item := range idx.Items {
+			if !item.matchesWords(item.Name, needles) {
+				continue
+			}
+			rows = append(rows, row{
+				name: item.Name,
+				kind: item.kind(),
+				mod:  item.Module,
+				desc: item.Description,
+			})
+		}
+	}
+	for _, rc := range targets {
+		lr, err := loadRegistry(ctx, rc)
+		if err != nil {
+			return fmt.Errorf("add: %w", err)
+		}
+		if lr.FromCache {
+			warn("registry %s (%s): offline; using cached copy (%s ago)", rc.Name, rc.Raw, formatCacheAge(lr.CacheAge))
+		}
+		for _, item := range lr.Index.Items {
+			display := rc.Name + "/" + item.Name
+			if !item.matchesWords(display, needles) {
+				continue
+			}
+			rows = append(rows, row{
+				name: display,
+				kind: item.kind(),
+				mod:  item.Module,
+				desc: item.Description,
+			})
+		}
+	}
+	slices.SortFunc(rows, func(a, b row) int {
+		return cmp.Compare(a.name, b.name)
+	})
+	if len(rows) == 0 {
+		return nil
+	}
+	var wName, wKind, wMod int
+	for _, r := range rows {
+		wName = max(wName, len(r.name))
+		wKind = max(wKind, len(r.kind))
+		wMod = max(wMod, len(r.mod))
+	}
+	var b bytes.Buffer
+	for _, r := range rows {
+		fmt.Fprintf(&b, "%-*s  %-*s  %-*s  %s\n", wName, r.name, wKind, r.kind, wMod, r.mod, r.desc)
+	}
+	_, err = out.Write(b.Bytes())
+	return err
+}
+
+// addModules runs nsgo add using NSGo's built-in index and any registries configured in nsgo.yaml: -list prints matching items without needing a module; otherwise it plans reqs in the module holding the working directory, writes the plan to out, and applies it with -y, or once ask, which is nil when nobody can be asked, says yes.
 func addModules(ctx context.Context, o addOptions, args []string, out io.Writer, ask func(context.Context) (bool, error)) error {
 	return addModulesWithIndex(ctx, o, args, builtinRegistry(), out, ask)
 }
@@ -114,16 +387,11 @@ func addModules(ctx context.Context, o addOptions, args []string, out io.Writer,
 func addModulesWithIndex(ctx context.Context, o addOptions, args []string, idx *registryIndex, out io.Writer, ask func(context.Context) (bool, error)) error {
 	if o.list {
 		if o.dryRun || o.yes {
-			return errors.New("add: -list takes no -dry-run or -y")
+			return errors.New("add: -list cannot be combined with -dry-run or -y")
 		}
-		for _, arg := range args {
-			if strings.HasPrefix(arg, "-") {
-				return fmt.Errorf("add: flags go before filter words: %s add -list [words...]", nsgoCommand())
-			}
-		}
-		return listRegistryItems(idx, args, out)
+		return listAddItems(ctx, idx, args, out)
 	}
-	reqs, err := parseAddRequestsWithIndex(args, idx)
+	specs, err := parseAddSpecsWithIndex(args, idx)
 	if err != nil {
 		return err
 	}
@@ -140,11 +408,17 @@ func addModulesWithIndex(ctx context.Context, o addOptions, args []string, idx *
 	}
 	// The plan says what planning found, so the step leaves no line of its own.
 	s := begin("planning %s", strings.Join(args, " "))
+	reqs, usedRegistries, err := resolveAddSpecs(withStep(ctx, s), specs, m.dir)
+	if err != nil {
+		s.remove()
+		return planning(err)
+	}
 	p, err := m.plan(withStep(ctx, s), reqs)
 	s.remove()
 	if err != nil {
 		return planning(err)
 	}
+	p.registries = usedRegistries
 	if err := p.write(out); err != nil {
 		return err
 	}
@@ -370,10 +644,11 @@ func (m *addModule) packageNames(ctx context.Context, flags []string, paths []st
 
 // addPlan is what nsgo add would write: go.mod and go.sum as go get writes them for the requests, with what each request resolved to, and why any of it is refused.
 type addPlan struct {
-	m       *addModule
-	app     *addAppConfig
-	items   []addItem
-	already []module.Version // requests go.mod required already, which change nothing
+	m          *addModule
+	app        *addAppConfig
+	registries []*loadedRegistry // custom registries resolved for this plan, in order
+	items      []addItem
+	already    []module.Version // requests go.mod required already, which change nothing
 
 	oldMod, newMod, oldSum, newSum []byte
 	hadSum, hasSum                 bool
@@ -592,7 +867,7 @@ func (p *addPlan) refusal() error {
 			reasons = append(reasons, reason)
 			continue
 		}
-		if item.fromName != "" && module.IsPseudoVersion(item.selected) {
+		if item.fromName != "" && !item.typed && module.IsPseudoVersion(item.selected) {
 			reasons = append(reasons, fmt.Sprintf("%s has no release; add its module by path with a version: %s add %s@%s", item.fromName, nsgoCommand(), item.path, item.selected))
 			continue
 		}
@@ -644,9 +919,15 @@ func moduleOwner(path string) string {
 	return host
 }
 
-// write prints the plan: the requests go.mod required already, then a block for each module planned and one for the changes to this module's go.mod and go.sum.
+// write prints the plan: any custom registries used, the requests go.mod required already, then a block for each module planned and one for the changes to this module's go.mod and go.sum.
 func (p *addPlan) write(w io.Writer) error {
 	var b bytes.Buffer
+	for _, lr := range p.registries {
+		fmt.Fprintf(&b, "%s\n", lr.headerLine())
+	}
+	if len(p.registries) > 0 && p.changes() {
+		b.WriteString("\n")
+	}
 	for _, v := range p.already {
 		fmt.Fprintf(&b, "%s %s is already in go.mod\n", v.Path, v.Version)
 	}

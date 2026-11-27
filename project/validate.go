@@ -13,8 +13,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/nsgo-dev/nsgo/tsx/pkg"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -786,4 +788,194 @@ func rel(path string) string {
 		}
 	}
 	return path
+}
+
+func parseRegistries(node *yaml.Node, dir string) ([]Registry, error) {
+	if node == nil || node.IsZero() {
+		return nil, nil
+	}
+	if node.Kind == yaml.ScalarNode && node.Tag == "!!null" {
+		return nil, nil
+	}
+	if err := checkRegistryYAMLNode(node); err != nil {
+		return nil, fmt.Errorf("nsgo.yaml: %w", err)
+	}
+	if node.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("nsgo.yaml: line %d: registries must be a mapping of @name to an https URL or relative path", node.Line)
+	}
+	var out []Registry
+	seen := make(map[string]int, len(node.Content)/2)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		keyNode, valNode := node.Content[i], node.Content[i+1]
+		if keyNode.Kind != yaml.ScalarNode || keyNode.Tag != "!!str" {
+			return nil, fmt.Errorf("nsgo.yaml: line %d: registry key must be a string", keyNode.Line)
+		}
+		key := keyNode.Value
+		if !strings.HasPrefix(key, "@") {
+			return nil, fmt.Errorf("nsgo.yaml: line %d: invalid registry key %q: must start with @", keyNode.Line, key)
+		}
+		name := key[1:]
+		if name == "nsgo" {
+			return nil, fmt.Errorf("nsgo.yaml: line %d: %q is reserved for NSGo's built-in index", keyNode.Line, key)
+		}
+		if !validRegistryName(name) {
+			return nil, fmt.Errorf("nsgo.yaml: line %d: invalid registry key %q: name after @ must be 1 to 64 characters of [a-z0-9-], not starting or ending with '-'", keyNode.Line, key)
+		}
+		if prev, dup := seen[key]; dup {
+			return nil, fmt.Errorf("nsgo.yaml: line %d: duplicate registry %q (first defined on line %d)", keyNode.Line, key, prev)
+		}
+		seen[key] = keyNode.Line
+
+		if valNode.Kind != yaml.ScalarNode || valNode.Tag != "!!str" {
+			return nil, fmt.Errorf("nsgo.yaml: line %d: registry %s value must be an https URL or relative path", valNode.Line, key)
+		}
+		raw := valNode.Value
+		remoteURL, localPath, err := validateRegistryValue(raw, dir)
+		if err != nil {
+			return nil, fmt.Errorf("nsgo.yaml: line %d: registry %s: %w", valNode.Line, key, err)
+		}
+		out = append(out, Registry{
+			Name: key,
+			Raw:  raw,
+			URL:  remoteURL,
+			Path: localPath,
+			Line: keyNode.Line,
+		})
+	}
+	slices.SortFunc(out, func(a, b Registry) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return out, nil
+}
+
+func checkRegistryYAMLNode(n *yaml.Node) error {
+	if n == nil {
+		return nil
+	}
+	if n.Anchor != "" {
+		return fmt.Errorf("line %d: YAML anchors are not allowed", n.Line)
+	}
+	if n.Kind == yaml.AliasNode {
+		return fmt.Errorf("line %d: YAML aliases are not allowed", n.Line)
+	}
+	if n.Tag == "!!merge" {
+		return fmt.Errorf("line %d: YAML merge keys are not allowed", n.Line)
+	}
+	switch n.Kind {
+	case yaml.ScalarNode:
+		if containsForbiddenRune(n.Value) {
+			return fmt.Errorf("line %d: string contains a control or Unicode format character", n.Line)
+		}
+	case yaml.MappingNode:
+		seen := make(map[string]int, len(n.Content)/2)
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k, v := n.Content[i], n.Content[i+1]
+			if k.Tag == "!!merge" || (k.Kind == yaml.ScalarNode && k.Value == "<<" && k.Style == 0) {
+				return fmt.Errorf("line %d: YAML merge keys are not allowed", k.Line)
+			}
+			if err := checkRegistryYAMLNode(k); err != nil {
+				return err
+			}
+			if k.Kind == yaml.ScalarNode {
+				if prev, dup := seen[k.Value]; dup {
+					return fmt.Errorf("line %d: duplicate key %q (first defined on line %d)", k.Line, k.Value, prev)
+				}
+				seen[k.Value] = k.Line
+			}
+			if err := checkRegistryYAMLNode(v); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, child := range n.Content {
+		if err := checkRegistryYAMLNode(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func containsForbiddenRune(s string) bool {
+	for _, r := range s {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
+			return true
+		}
+	}
+	return false
+}
+
+func validRegistryName(s string) bool {
+	if len(s) == 0 || len(s) > 64 {
+		return false
+	}
+	if s[0] == '-' || s[len(s)-1] == '-' {
+		return false
+	}
+	for i := range len(s) {
+		c := s[i]
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func validateRegistryValue(raw, dir string) (remoteURL, localPath string, err error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", "", errors.New("value must not be empty")
+	}
+	if strings.TrimSpace(raw) != raw {
+		return "", "", errors.New("value must not have leading or trailing whitespace")
+	}
+	if strings.Contains(raw, "://") {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid URL: %w", err)
+		}
+		switch u.Scheme {
+		case "https":
+		case "http":
+			if !isLoopbackHost(u.Hostname()) {
+				return "", "", errors.New("URL must use https (http is allowed only for a loopback host)")
+			}
+		default:
+			return "", "", fmt.Errorf("unsupported URL scheme %q; use https", u.Scheme)
+		}
+		if u.Hostname() == "" {
+			return "", "", errors.New("URL must include a host")
+		}
+		if u.User != nil {
+			return "", "", errors.New("URL must not include user credentials")
+		}
+		if u.RawQuery != "" || u.ForceQuery {
+			return "", "", errors.New("URL must not include a query string")
+		}
+		if u.Fragment != "" || strings.Contains(raw, "#") {
+			return "", "", errors.New("URL must not include a fragment")
+		}
+		return raw, "", nil
+	}
+	if u, parseErr := url.Parse(raw); parseErr == nil && u.Scheme != "" {
+		return "", "", fmt.Errorf("unsupported URL scheme %q; use https or a path relative to nsgo.yaml", u.Scheme)
+	}
+	if filepath.IsAbs(raw) || strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "\\") || filepath.VolumeName(raw) != "" {
+		return "", "", errors.New("local registry path must be relative to nsgo.yaml")
+	}
+	if strings.Contains(raw, "\\") {
+		return "", "", errors.New("local registry path must use forward slashes")
+	}
+	clean := filepath.Clean(filepath.FromSlash(raw))
+	if clean == "." || clean == ".." {
+		return "", "", errors.New("local registry path must name a file")
+	}
+	return "", filepath.Join(dir, clean), nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

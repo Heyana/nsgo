@@ -102,6 +102,7 @@ build:
 # release: { github: me/hello }  # 安装脚本和自动更新从其 Releases 安装的 GitHub 仓库，省略时取 Git 远程 origin 的；tag_prefix 默认为 v
 # updates: { key: <公钥> }  # 应用按平台和渠道更新的方式，见“自动更新”
 # store: { dir: store }     # 商店列表目录（按语言存放的 YAML 和 Markdown）
+# registries: { "@acme": https://nsgo.acme.example/registry.yaml, "@team": tools/registry.yaml }  # 供 nsgo add @名称/条目 使用的自定义注册表
 # miniprogram: { appid: { wechat: wx0123456789abcdef, alipay: "2021000000000000" }, custom_navigation: false }  # 小程序的设置
 ```
 
@@ -209,6 +210,27 @@ Apply these changes? [y/N]
 只有在规划之后 `go.mod` 和 `go.sum` 都没有改变时，它才写入这两个文件，各自先写入临时文件再改名覆盖；出错或被中断时，两个文件都恢复原样。有 `vendor` 目录的模块，计划会把 `go mod vendor` 列为下一步。
 
 `add` 是 NSGo 0.3.4 之后新增的。在固定为 0.3.4 或更早正式版本的模块中，已安装的 `nsgo` 不会为它运行[模块的 nsgo](#模块的-nsgo)，而是打印引入 `add` 的 `go get github.com/nsgo-dev/nsgo@<版本>`；在那里，`go tool nsgo add` 运行的是固定的 nsgo，它不认识 `add`。
+
+### 自定义注册表
+
+团队可以在 `nsgo.yaml` 的 `registries:` 下为自己的库和分支命名，同时不会覆盖 NSGo 自己的短名：
+
+```yaml
+registries:
+  "@acme": https://nsgo.acme.example/registry.yaml
+  "@team": tools/registry.yaml
+```
+
+每个键都是 `@` 加上 1 到 64 个小写字母、数字或连字符（不能以 `-` 开头或结尾，`@nsgo` 为保留名）。每个值都是不带用户凭据、查询参数和片段的 `https` URL（仅回环主机允许 `http`），或相对于 `nsgo.yaml` 的路径。未知字段和非法条目都会带行号报错，`nsgo` 也绝不会自行把未配置的注册表写入 `nsgo.yaml`。
+
+```sh
+nsgo add @acme/chart                 # 通过 @acme 解析 chart；不带前缀的短名不会查找自定义注册表
+nsgo add @acme/chart@v1.3.0          # 指定版本
+nsgo add -list                       # 列出 NSGo 内置索引及所有已配置注册表的条目（自定义条目带 @前缀）
+nsgo add -list @acme charts          # 按注册表前缀和关键词（名称、描述、标签）筛选
+```
+
+注册表文件是单个不超过 4 MiB 的严格 YAML 文档，包含 `version: 1` 和 `items` 列表（`name`、`module`、可选 `component`、可选标签 `version`、单行 `description`、SPDX `license`、可选 `https` `homepage` 以及可选小写 `tags`），禁止锚点、别名、合并键、控制字符和 Unicode 格式字符。远程注册表最多跟随 10 次重定向（拒绝重定向到明文 HTTP 或非回环 HTTP），连接超时 30 秒、总超时 5 分钟，并带 ETag 原子缓存到 `<用户缓存目录>/nsgo/registries/<sha256>.yaml`。离线时 `nsgo add` 会复用缓存副本，并在计划第一行与注册表和 URL 一起显示缓存时长；没有缓存副本时，错误信息会指明 URL。私有注册表可使用仓库内的文件或内网服务器，私有 Go 模块继续沿用 `GOPRIVATE` 和 `GOAUTH`。
 
 ## 来自 Go 包的库
 

@@ -38,6 +38,7 @@ build:
 # release: { github: me/hello, tag_prefix: v }
 # updates: { key: <public key from nsgo keygen> }
 # store: { dir: store }       # YAML and Markdown store listings per language
+# registries: { "@acme": https://nsgo.acme.example/registry.yaml, "@team": tools/registry.yaml }  # custom registries for nsgo add @name/item
 # steam: { app_id: 480 }      # use your Steamworks App ID for native dev
 ```
 

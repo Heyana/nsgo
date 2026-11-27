@@ -38,6 +38,7 @@ type (
 	itchConfig       = projectcfg.ItchConfig
 	assetPackConfig  = projectcfg.AssetPack
 	signing          = projectcfg.Signing
+	registryConfig   = projectcfg.Registry
 )
 
 // project is an app's nsgo.yaml configuration beside the tool's run-time state.

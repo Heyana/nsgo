@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 // addAppConfig is what nsgo add reads from the app's nsgo.yaml (or defaults when there is no nsgo.yaml): the expanded build targets, the app's build tags and its license policy.
@@ -325,7 +327,7 @@ func (p *addPlan) inspectItem(ctx context.Context, overlay string, item *addItem
 	for i, target := range p.app.targets {
 		report := addTargetReport{target: target}
 		scratch := &project{
-			Dir:             p.m.dir,
+			Config:          projectcfg.Config{Dir: p.m.dir},
 			nativeLibraries: map[string][]nativeLibrary{},
 			nativeLinuxDeps: map[string][]nativeLinuxDeps{},
 		}

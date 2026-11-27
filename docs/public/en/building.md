@@ -117,6 +117,7 @@ build:
 # release: { github: me/hello }  # the GitHub repository the install scripts and updates install from, else the Git remote origin's; tag_prefix: v by default
 # updates: { key: <public key> }  # how the app updates, by platform and channel: see Updates
 # store: { dir: store }           # store listings directory (YAML and Markdown per language)
+# registries: { "@acme": https://nsgo.acme.example/registry.yaml, "@team": tools/registry.yaml }  # custom registries for nsgo add @name/item
 # miniprogram: { appid: { wechat: wx0123456789abcdef, alipay: "2021000000000000" }, custom_navigation: false }  # the mini programs'
 ```
 
@@ -241,6 +242,27 @@ Whether or not `-y` is given, `add` refuses:
 It writes `go.mod` and `go.sum` only when neither has changed since planning, each through a temporary file renamed over it, and puts both back on an error or an interrupt. In a module with a `vendor` directory, the plan names `go mod vendor` as the next step.
 
 `add` is new after NSGo 0.3.4. In a module that pins 0.3.4 or an earlier release, an installed `nsgo` does not run [the module's nsgo](#the-modules-nsgo) for it but prints the `go get github.com/nsgo-dev/nsgo@<version>` that brings `add`; there, `go tool nsgo add` runs the pinned nsgo, which does not know `add`.
+
+### Custom registries
+
+Teams can name their own libraries and forks in `nsgo.yaml` under `registries:` without shadowing NSGo's own names:
+
+```yaml
+registries:
+  "@acme": https://nsgo.acme.example/registry.yaml
+  "@team": tools/registry.yaml
+```
+
+Each key is `@` followed by 1 to 64 lowercase letters, digits or hyphens (not starting or ending with `-`; `@nsgo` is reserved). Each value is an `https` URL without user credentials, query or fragment (`http` is accepted only for a loopback host), or a path relative to `nsgo.yaml`. Unknown keys and bad entries fail with their line number, and `nsgo` never adds an unconfigured registry to `nsgo.yaml` on its own.
+
+```sh
+nsgo add @acme/chart                 # resolve chart in @acme; bare names never check custom registries
+nsgo add @acme/chart@v1.3.0          # pin a specific version
+nsgo add -list                       # list NSGo's index and every configured registry's items (with their @prefix)
+nsgo add -list @acme charts          # filter one registry by words across name, description and tags
+```
+
+A registry file is a single strict YAML document of at most 4 MiB with `version: 1` and an `items` list (`name`, `module`, optional `component`, optional tagged `version`, single-line `description`, SPDX `license`, optional `https` `homepage`, and optional lowercase `tags`), without anchors, aliases, merge keys, control characters or Unicode format characters. Remote registries follow up to 10 redirects (refusing redirects to plain HTTP or non-loopback HTTP), use a 30-second connect timeout and 5-minute total timeout, and cache their copy and ETag at `<user cache dir>/nsgo/registries/<sha256>.yaml`. Offline, `nsgo add` reuses the cached copy and shows its age on the plan's first line alongside the registry and URL; with no cached copy, the error names the URL. Private registries use a file in the repository or an intranet server, and private Go modules keep `GOPRIVATE` and `GOAUTH`.
 
 ## Libraries from Go packages
 

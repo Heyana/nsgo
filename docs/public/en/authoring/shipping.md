@@ -57,6 +57,8 @@ Libraries listed in NSGo's built-in index ([`cmd/nsgo/registry.yaml`](https://gi
 - a resolved dependency graph that keeps apps on a released NSGo;
 - an SPDX license expression.
 
+Teams can also publish their own `version: 1` YAML registry index and configure it under `registries:` in `nsgo.yaml` so apps install with `nsgo add @team/name` and browse with `nsgo add -list` ([Custom registries](../building.md#custom-registries)).
+
 ### Registry checks
 
 NSGo's [registry workflow](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/registry.yml) runs weekly and on pull requests that change `cmd/nsgo/registry.yaml`. For each listed item it checks that:

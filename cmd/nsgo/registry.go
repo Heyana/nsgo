@@ -90,18 +90,18 @@ func (idx *registryIndex) list(words []string) []registryItem {
 	}
 	var matched []registryItem
 	for _, item := range idx.Items {
-		if item.matchesWords(needles) {
+		if item.matchesWords(item.Name, needles) {
 			matched = append(matched, item)
 		}
 	}
 	return matched
 }
 
-func (item registryItem) matchesWords(needles []string) bool {
+func (item registryItem) matchesWords(displayName string, needles []string) bool {
 	if len(needles) == 0 {
 		return true
 	}
-	name := strings.ToLower(item.Name)
+	name := strings.ToLower(displayName)
 	desc := strings.ToLower(item.Description)
 	for _, needle := range needles {
 		if strings.Contains(name, needle) || strings.Contains(desc, needle) {

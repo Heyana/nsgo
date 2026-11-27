@@ -13,9 +13,11 @@
 //	                                                      on a platform
 //	nsgo check [-target T] [-jobs N] [dir]               vet the app and type-check its TSX
 //	nsgo i18n  [-source L] [dir]                         check catalogs and write their Go code
-//	nsgo add   [-dry-run] [-y] name|module[@version] ... go get libraries once their plan is shown and
+//	nsgo add   [-dry-run] [-y] name|@registry/name|module[@version] ...
+//	                                                      go get libraries once their plan is shown and
 //	                                                      confirmed, never moving NSGo off its releases;
-//	                                                      -list [words...] lists NSGo's built-in index
+//	                                                      -list [@registry] [words...] lists NSGo's index
+//	                                                      and configured registries
 //	nsgo version                                         print which nsgo runs
 //	nsgo doctor                                          show which targets this machine builds and runs
 //	nsgo keygen                                          print a key pair for updates or signed packages
@@ -193,7 +195,7 @@ func main() {
 		var o addOptions
 		fs.BoolVar(&o.dryRun, "dry-run", false, "print the plan and write nothing")
 		fs.BoolVar(&o.yes, "y", false, "apply the plan without asking")
-		fs.BoolVar(&o.list, "list", false, "list libraries and components in NSGo's index")
+		fs.BoolVar(&o.list, "list", false, "list libraries and components from NSGo's index and configured registries, filtered by optional @registry or words")
 		if err = fs.Parse(args); err != nil {
 			break
 		}
@@ -325,8 +327,8 @@ func usage() {
   nsgo test  [-run REGEXP] [-bench REGEXP] [-junit FILE] [-trace] [-target macos|windows|linux|web|ios_simulator|tvos_simulator|android [-fps]] [packages... | dir | App.tsx < steps] [-- go test flags]
   nsgo check [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [dir]
   nsgo i18n  [-source L] [dir]
-  nsgo add   [-dry-run] [-y] name|module[@version] ...
-  nsgo add   -list [words...]
+  nsgo add   [-dry-run] [-y] name|@registry/name|module[@version] ...
+  nsgo add   -list [@registry] [words...]
   nsgo doctor
   nsgo version
   nsgo keygen

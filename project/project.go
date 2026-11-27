@@ -72,6 +72,9 @@ type Config struct {
 	// Capabilities are what a TSX app's code may reach once signed into a
 	// package (nsgo publish), and under nsgo dev -limits.
 	Capabilities yaml.Node `yaml:"capabilities"`
+	// Registries maps @name prefixes to custom registry YAML URLs or paths
+	// relative to nsgo.yaml.
+	Registries yaml.Node `yaml:"registries"`
 	// StatusBar is a TSX app's default status bar on iOS and Android, under its
 	// pages' and dialogs': foreground (auto, light or dark) and hidden.
 	StatusBar yaml.Node `yaml:"status_bar"`
@@ -136,6 +139,15 @@ type Config struct {
 
 	idDefault  bool
 	allTargets bool
+}
+
+// Registry is one custom registry entry declared under nsgo.yaml's registries map.
+type Registry struct {
+	Name string // prefixed with '@', e.g. "@acme"
+	Raw  string // URL or relative path as written in nsgo.yaml
+	URL  string // non-empty for remote registries
+	Path string // absolute path on disk for local file registries
+	Line int    // line in nsgo.yaml
 }
 
 // Widget is an app's home-screen card on HarmonyOS: what its 2x2 card says.
@@ -570,6 +582,9 @@ func (c *Config) Validate() error {
 	if _, err := c.ParseCapabilities(); err != nil {
 		return err
 	}
+	if _, err := c.ParseRegistries(); err != nil {
+		return err
+	}
 	if err := c.validateLicenses(); err != nil {
 		return fmt.Errorf("nsgo.yaml: %w", err)
 	}
@@ -846,6 +861,12 @@ func (c *Config) ParseCapabilities() (*pkg.Capabilities, error) {
 		return nil, fmt.Errorf("nsgo.yaml: %w", err)
 	}
 	return &caps, nil
+}
+
+// ParseRegistries reads and validates nsgo.yaml's registries mapping strictly,
+// returning entries sorted by Name, or nil when none are configured.
+func (c *Config) ParseRegistries() ([]Registry, error) {
+	return parseRegistries(&c.Registries, c.Dir)
 }
 
 // GeneratedID is the bundle ID of a project whose nsgo.yaml gives none, made

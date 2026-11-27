@@ -57,6 +57,8 @@ func TestToggle(t *testing.T) {
 - 解析后的依赖图使应用停留在已发布的 NSGo 版本上；
 - 使用合法的 SPDX 许可证表达式。
 
+团队也可以发布自己的 `version: 1` YAML 注册表索引，并在 `nsgo.yaml` 的 `registries:` 中配置，让应用通过 `nsgo add @team/name` 添加并用 `nsgo add -list` 浏览（[自定义注册表](../building.md#自定义注册表)）。
+
 ### 索引检查
 
 NSGo 的[索引检查工作流](https://github.com/nsgo-dev/nsgo/blob/main/.github/workflows/registry.yml)每周运行一次，并在修改 `cmd/nsgo/registry.yaml` 的 Pull Request 上触发。它对收录的每一项检查：
