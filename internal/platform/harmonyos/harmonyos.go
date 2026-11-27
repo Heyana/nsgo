@@ -53,6 +53,8 @@ type surface struct {
 	display  driver.DisplayClock
 	lastPerf time.Time
 	dirty    bool
+	// dispatchFn overrides engine.Dispatch in unit tests that exercise surface without a running engine.
+	dispatchFn func(driver.Event)
 }
 
 // Run runs app in ArkWeb. Call it from main; it does not return.
@@ -196,7 +198,17 @@ func (s *surface) frame(at time.Time) {
 func (s *surface) submit(ops []byte) { s.bridge.Call("submit", string(ops)) }
 
 // dispatch hands an event to the engine.
-func (s *surface) dispatch(ev driver.Event) { s.engine.Dispatch(ev) }
+func (s *surface) dispatch(ev driver.Event) {
+	if s.dispatchFn != nil {
+		s.dispatchFn(ev)
+		return
+	}
+	s.engine.Dispatch(ev)
+}
+
+func (s *surface) canDispatch() bool {
+	return s != nil && (s.dispatchFn != nil || s.engine != nil)
+}
 
 func (s *surface) device() deviceData {
 	var d deviceData
@@ -232,6 +244,7 @@ func (s *surface) changed() {
 		s.engine.SetEnvironment(env)
 		if s.m != nil {
 			s.m.reportScreenInsets()
+			s.m.reportTabBarSizes()
 		}
 	}
 	size := s.size()
@@ -240,6 +253,7 @@ func (s *surface) changed() {
 		s.engine.Resize(size, driver.Geometry{})
 		if s.m != nil {
 			s.m.reportScreenInsets()
+			s.m.reportTabBarSizes()
 		}
 	}
 }
@@ -383,6 +397,8 @@ func (s *surface) event(args []js.Value) {
 		s.m.scrollPhase(id, driver.EventScrollEnd)
 	case "back":
 		s.dispatch(driver.Event{Kind: driver.EventBack, ID: id})
+	case "tabselect":
+		s.m.tabSelected(id, int(num(2)))
 	case "imageinfo":
 		s.dispatch(driver.Event{Kind: driver.EventImageInfo, Count: uint32(id),
 			Size: driver.Size{Width: driver.Points(num(2)), Height: driver.Points(num(3))}, Text: str(4)})

@@ -5,6 +5,7 @@ package harmonyos
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -407,6 +408,21 @@ func (t *testSurface) Answer(id uint32, index int) error {
 func (t *testSurface) ChooseDockMenu(uint32) error { return testhost.ErrNoMenu }
 func (t *testSurface) ChooseMenu(uint32) error     { return testhost.ErrNoMenu }
 func (t *testSurface) ChoosePopup(uint32) error    { return testhost.ErrNoMenu }
+
+var _ testhost.TabBarSurface = (*testSurface)(nil)
+
+// SelectTab selects the native tab bar's item at index, as tapping it would.
+func (t *testSurface) SelectTab(id driver.NodeID, index int) error {
+	v := t.s.m.views[id]
+	if v == nil || v.kind != driver.KindNative || v.tabBar == nil {
+		return fmt.Errorf("view %d is not a native tab bar", id)
+	}
+	if index < 0 || index >= len(v.tabBar.spec.Items) {
+		return fmt.Errorf("tab index %d out of range for %d tabs", index, len(v.tabBar.spec.Items))
+	}
+	t.s.m.tabSelected(id, index)
+	return nil
+}
 
 // screenshot requests answers a test's picture: the page snapshots the
 // root view and calls nsgoSnapshotReply with the PNG's base64.

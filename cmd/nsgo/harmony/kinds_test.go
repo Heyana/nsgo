@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -35,7 +36,12 @@ func TestHostKindsMatchDriver(t *testing.T) {
 			t.Errorf("%s has no driver kind %s", m[1], name)
 			continue
 		}
-		if want := int(m[2][0] - '0'); got != want {
+		want, err := strconv.Atoi(m[2])
+		if err != nil {
+			t.Errorf("%s has invalid number %q: %v", m[1], m[2], err)
+			continue
+		}
+		if got != want {
 			t.Errorf("%s is %d, driver's %s is %d", m[1], want, name, got)
 		}
 	}

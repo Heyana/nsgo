@@ -51,6 +51,7 @@ const KIND_MODAL: number = 6;
 const KIND_CANVAS: number = 7;
 const KIND_WEB: number = 8;
 const KIND_VIDEO: number = 9;
+const KIND_NATIVE: number = 10;
 
 // DENSITY is the screen's pixels per vp, which a canvas needs to size an
 // image drawn from its pixels. The device reading sets it, and density
@@ -292,6 +293,38 @@ interface CanvasStop {
   c: string;
 }
 
+// TabBarItemSpec, TabBarBadgeSpec and TabBarSpec are the JSON payload of op "tb"
+// for a native core.TabBar mounted as KIND_NATIVE.
+interface TabBarItemSpec {
+  t: string;
+  i?: string;
+  d?: string;
+}
+
+interface TabBarBadgeSpec {
+  d?: boolean;
+  t?: string;
+  a?: string;
+}
+
+interface TabBarSpec {
+  items?: TabBarItemSpec[];
+  badges?: TabBarBadgeSpec[];
+  selected?: number;
+  edge?: string;
+  label?: string;
+  tint?: string;
+  bg?: string;
+  inactive?: string;
+  indicator?: string;
+  active?: string;
+  badgeColor?: string;
+  dark?: boolean;
+  insetBottom?: number;
+  insetLeft?: number;
+  insetRight?: number;
+}
+
 // fitOf turns the engine's resize mode into ArkUI's fit.
 function fitOf(fit: string): ImageFit {
   switch (fit) {
@@ -396,6 +429,8 @@ class VNode {
   pv: number = 0;
   // A canvas's drawing, as operations to replay.
   drawing: string = '';
+  // A native core.TabBar's JSON config from op "tb".
+  tabBar: string = '';
   // A web view's configuration, queued commands, and live controller state.
   webSrc: string = '';
   webHTML: string = '';
@@ -826,6 +861,8 @@ class Tree {
           v.pv++;
         } else if (code === 'cv') {
           v.drawing = o[2] as string;
+        } else if (code === 'tb') {
+          v.tabBar = o[2] as string;
         } else if (code === 'tr') {
           v.runs = JSON.parse(o[2] as string) as TextRun[];
         } else if (code === 'sc') {
@@ -4140,6 +4177,457 @@ struct HeaderView {
   HeaderView({ v: v })
 }
 
+// TabIconView draws a 24x24 tab bar SVG icon replaying CanvasOp[] tinted in
+// the tab's active or idle color, matching iOS template images and Android's
+// tinted ImageView without extra PixelMap allocations.
+@Component
+struct TabIconView {
+  @Prop @Watch('paint') drawing: string = '';
+  @Prop @Watch('paint') color: string = '#000000';
+  private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
+  private ready: boolean = false;
+  private cachedSrc: string = '';
+  private cachedOps: CanvasOp[] = [];
+
+  aboutToDisappear(): void {
+    this.ready = false;
+  }
+
+  private roundRect(x: number, y: number, w: number, h: number, r: number): void {
+    const ctx = this.ctx;
+    const rr = Math.min(r, Math.min(w, h) / 2);
+    ctx.moveTo(x + rr, y);
+    ctx.lineTo(x + w - rr, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+    ctx.lineTo(x + w, y + h - rr);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+    ctx.lineTo(x + rr, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+    ctx.lineTo(x, y + rr);
+    ctx.quadraticCurveTo(x, y, x + rr, y);
+    ctx.closePath();
+  }
+
+  private paint(): void {
+    if (!this.ready || this.drawing === '') {
+      return;
+    }
+    if (this.drawing !== this.cachedSrc) {
+      this.cachedSrc = this.drawing;
+      try {
+        this.cachedOps = JSON.parse(this.drawing) as CanvasOp[];
+      } catch (e) {
+        console.error('NSGO harmony: tab icon failed: ' + e);
+        this.cachedOps = [];
+        return;
+      }
+    }
+    const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    ctx.miterLimit = 10;
+    ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
+    ctx.clearRect(0, 0, 24, 24);
+    ctx.fillStyle = this.color;
+    ctx.strokeStyle = this.color;
+    const caps: CanvasLineCap[] = ['butt', 'round', 'square'];
+    const joins: CanvasLineJoin[] = ['miter', 'round', 'bevel'];
+    const ops = this.cachedOps;
+    for (let i = 0; i < ops.length; i++) {
+      const o = ops[i];
+      switch (o.k) {
+        case 1:
+          ctx.save();
+          break;
+        case 2:
+          ctx.restore();
+          break;
+        case 3:
+          ctx.translate(o.x ?? 0, o.y ?? 0);
+          break;
+        case 4:
+          ctx.scale(o.x ?? 1, o.y ?? 1);
+          break;
+        case 5:
+          ctx.rotate(o.a ?? 0);
+          break;
+        case 6:
+          ctx.beginPath();
+          break;
+        case 7:
+          ctx.moveTo(o.x ?? 0, o.y ?? 0);
+          break;
+        case 8:
+          ctx.lineTo(o.x ?? 0, o.y ?? 0);
+          break;
+        case 9:
+          ctx.quadraticCurveTo(o.x1 ?? 0, o.y1 ?? 0, o.x ?? 0, o.y ?? 0);
+          break;
+        case 10:
+          ctx.bezierCurveTo(o.x1 ?? 0, o.y1 ?? 0, o.x2 ?? 0, o.y2 ?? 0, o.x ?? 0, o.y ?? 0);
+          break;
+        case 11:
+          ctx.arc(o.x ?? 0, o.y ?? 0, o.r ?? 0, o.a0 ?? 0, o.a1 ?? 0, o.ccw === true);
+          break;
+        case 12:
+          ctx.rect(o.x ?? 0, o.y ?? 0, o.w ?? 0, o.h ?? 0);
+          break;
+        case 13:
+          this.roundRect(o.x ?? 0, o.y ?? 0, o.w ?? 0, o.h ?? 0, o.r ?? 0);
+          break;
+        case 14:
+          ctx.ellipse(o.x ?? 0, o.y ?? 0, o.r ?? 0, o.ry ?? 0, 0, 0, Math.PI * 2);
+          break;
+        case 15:
+          ctx.closePath();
+          break;
+        case 16:
+          ctx.fill(o.eo === true ? 'evenodd' : 'nonzero');
+          break;
+        case 17:
+          ctx.stroke();
+          break;
+        case 18:
+          ctx.clip(o.eo === true ? 'evenodd' : 'nonzero');
+          break;
+        case 19:
+          ctx.fillStyle = this.color;
+          break;
+        case 20:
+          ctx.strokeStyle = this.color;
+          break;
+        case 21:
+          ctx.lineWidth = o.w ?? 1;
+          break;
+        case 22:
+          ctx.lineCap = caps[(o.cap ?? 1) - 1] ?? 'butt';
+          break;
+        case 23:
+          ctx.lineJoin = joins[(o.join ?? 1) - 1] ?? 'miter';
+          break;
+        case 24:
+          ctx.globalAlpha = o.a ?? 1;
+          break;
+        case 26:
+          ctx.clearRect(o.x ?? 0, o.y ?? 0, o.w ?? 0, o.h ?? 0);
+          break;
+        case 29:
+          ctx.transform(o.x1 ?? 1, o.y1 ?? 0, o.x2 ?? 0, o.y2 ?? 1, o.x ?? 0, o.y ?? 0);
+          break;
+        case 30:
+          ctx.setTransform(o.x1 ?? 1, o.y1 ?? 0, o.x2 ?? 0, o.y2 ?? 1, o.x ?? 0, o.y ?? 0);
+          break;
+        case 32:
+          ctx.setLineDash(o.d ?? []);
+          break;
+        case 33:
+          ctx.lineDashOffset = o.w ?? 0;
+          break;
+        case 34:
+          ctx.miterLimit = o.w ?? 10;
+          break;
+      }
+    }
+  }
+
+  build() {
+    Canvas(this.ctx)
+      .width(24)
+      .height(24)
+      .onReady(() => {
+        this.ready = true;
+        this.paint();
+      })
+  }
+}
+
+// TabBarView renders core.TabBar with ArkUI's native Tabs, TabContent and
+// Badge components and reports tab taps back to Go as "tabselect".
+@Component
+struct TabBarView {
+  @Prop vid: number = 0;
+  @Prop @Watch('onSpecChange') spec: string = '';
+  @State private items: TabBarItemSpec[] = [];
+  @State private badges: TabBarBadgeSpec[] = [];
+  @State private selected: number = 0;
+  @State private edge: string = 'bottom';
+  @State private barLabel: string = '';
+  @State private tint: string = '';
+  @State private bg: string = '';
+  @State private inactive: string = '';
+  @State private indicator: string = '';
+  @State private activeContent: string = '';
+  @State private badgeColor: string = '';
+  @State private dark: boolean = false;
+  @State private insetBottom: number = 0;
+  @State private insetLeft: number = 0;
+  @State private insetRight: number = 0;
+  private controller: TabsController = new TabsController();
+
+  aboutToAppear(): void {
+    this.onSpecChange();
+  }
+
+  private onSpecChange(): void {
+    if (this.spec === '') {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(this.spec) as TabBarSpec;
+      this.items = parsed.items ?? [];
+      this.badges = parsed.badges ?? [];
+      this.selected = parsed.selected ?? 0;
+      this.edge = parsed.edge !== undefined && parsed.edge !== '' ? parsed.edge : 'bottom';
+      this.barLabel = parsed.label ?? '';
+      this.tint = parsed.tint ?? '';
+      this.bg = parsed.bg ?? '';
+      this.inactive = parsed.inactive ?? '';
+      this.indicator = parsed.indicator ?? '';
+      this.activeContent = parsed.active ?? '';
+      this.badgeColor = parsed.badgeColor ?? '';
+      this.dark = parsed.dark === true;
+      this.insetBottom = parsed.insetBottom ?? 0;
+      this.insetLeft = parsed.insetLeft ?? 0;
+      this.insetRight = parsed.insetRight ?? 0;
+      if (this.items.length > 0 && this.selected >= 0 && this.selected < this.items.length) {
+        try {
+          this.controller.changeIndex(this.selected);
+        } catch (_e) {
+          // Controller attaches when Tabs builds on the first render.
+        }
+      }
+    } catch (e) {
+      console.error('NSGO harmony: tabbar failed: ' + e);
+    }
+  }
+
+  private isVertical(): boolean {
+    return this.edge === 'leading' || this.edge === 'trailing';
+  }
+
+  private barPos(): BarPosition {
+    return this.edge === 'leading' ? BarPosition.Start : BarPosition.End;
+  }
+
+  private tabsIndex(): number {
+    return this.selected >= 0 && this.selected < this.items.length ? this.selected : 0;
+  }
+
+  private bgColor(): string {
+    if (this.bg !== '') {
+      return this.bg;
+    }
+    return this.dark ? '#1c1c1e' : '#f1f3f5';
+  }
+
+  private dividerColor(): string {
+    return this.dark ? '#2c2c2e' : '#e5e5ea';
+  }
+
+  private activeColor(): string {
+    if (this.activeContent !== '') {
+      return this.activeContent;
+    }
+    if (this.tint !== '') {
+      return this.tint;
+    }
+    return this.dark ? '#317af7' : '#0a59f7';
+  }
+
+  private idleColor(): string {
+    if (this.inactive !== '') {
+      return this.inactive;
+    }
+    return this.dark ? '#99ffffff' : '#99182431';
+  }
+
+  private itemColor(idx: number): string {
+    return idx === this.selected ? this.activeColor() : this.idleColor();
+  }
+
+  private itemPillColor(idx: number): ResourceColor {
+    if (idx === this.selected && this.indicator !== '') {
+      return this.indicator;
+    }
+    return Color.Transparent;
+  }
+
+  private resolvedBadgeColor(): string {
+    return this.badgeColor !== '' ? this.badgeColor : '#e84026';
+  }
+
+  private badgeAt(idx: number): TabBarBadgeSpec | undefined {
+    return idx >= 0 && idx < this.badges.length ? this.badges[idx] : undefined;
+  }
+
+  private hasTextBadge(idx: number): boolean {
+    const b = this.badgeAt(idx);
+    return b !== undefined && b.t !== undefined && b.t !== '';
+  }
+
+  private hasDotBadge(idx: number): boolean {
+    const b = this.badgeAt(idx);
+    return b !== undefined && (b.t === undefined || b.t === '') && b.d === true;
+  }
+
+  private badgeText(idx: number): string {
+    const b = this.badgeAt(idx);
+    return b !== undefined && b.t !== undefined ? b.t : '';
+  }
+
+  private tabAccessibility(item: TabBarItemSpec, idx: number): string {
+    const b = this.badgeAt(idx);
+    if (b !== undefined && b.a !== undefined && b.a !== '') {
+      return item.t + ', ' + b.a;
+    }
+    return item.t;
+  }
+
+  @Builder
+  tabLabel(item: TabBarItemSpec, idx: number) {
+    Text(item.t)
+      .fontSize(10)
+      .fontWeight(idx === this.selected ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(this.itemColor(idx))
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+  }
+
+  @Builder
+  tabBadgedIcon(item: TabBarItemSpec, idx: number) {
+    if (this.hasTextBadge(idx)) {
+      Badge({
+        value: this.badgeText(idx),
+        position: BadgePosition.RightTop,
+        style: {
+          badgeColor: this.resolvedBadgeColor(),
+          color: '#ffffff',
+          fontSize: 10,
+          badgeSize: 16
+        }
+      }) {
+        TabIconView({ drawing: item.d ?? '', color: this.itemColor(idx) })
+      }
+    } else if (this.hasDotBadge(idx)) {
+      Badge({
+        value: '',
+        position: BadgePosition.RightTop,
+        style: {
+          badgeColor: this.resolvedBadgeColor(),
+          badgeSize: 6
+        }
+      }) {
+        TabIconView({ drawing: item.d ?? '', color: this.itemColor(idx) })
+      }
+    } else {
+      TabIconView({ drawing: item.d ?? '', color: this.itemColor(idx) })
+    }
+  }
+
+  @Builder
+  tabBadgedLabel(item: TabBarItemSpec, idx: number) {
+    if (this.hasTextBadge(idx)) {
+      Badge({
+        value: this.badgeText(idx),
+        position: BadgePosition.RightTop,
+        style: {
+          badgeColor: this.resolvedBadgeColor(),
+          color: '#ffffff',
+          fontSize: 10,
+          badgeSize: 16
+        }
+      }) {
+        this.tabLabel(item, idx)
+      }
+    } else if (this.hasDotBadge(idx)) {
+      Badge({
+        value: '',
+        position: BadgePosition.RightTop,
+        style: {
+          badgeColor: this.resolvedBadgeColor(),
+          badgeSize: 6
+        }
+      }) {
+        this.tabLabel(item, idx)
+      }
+    } else {
+      this.tabLabel(item, idx)
+    }
+  }
+
+  @Builder
+  tabBarItem(item: TabBarItemSpec, idx: number) {
+    Column({ space: 2 }) {
+      if (item.d !== undefined && item.d !== '') {
+        Stack({ alignContent: Alignment.Center }) {
+          this.tabBadgedIcon(item, idx)
+        }
+        .width(48)
+        .height(28)
+        .borderRadius(14)
+        .backgroundColor(this.itemPillColor(idx))
+        this.tabLabel(item, idx)
+      } else {
+        this.tabBadgedLabel(item, idx)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .accessibilityText(this.tabAccessibility(item, idx))
+  }
+
+  build() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      if (this.items.length > 0) {
+        Tabs({ barPosition: this.barPos(), index: this.tabsIndex(), controller: this.controller }) {
+          ForEach(this.items, (item: TabBarItemSpec, idx: number) => {
+            TabContent() {
+            }
+            .tabBar(this.tabBarItem(item, idx))
+          }, (item: TabBarItemSpec, idx: number) => idx + ':' + item.t + ':' + (item.d ?? '').length)
+        }
+        .vertical(this.isVertical())
+        .barMode(BarMode.Fixed)
+        .barWidth('100%')
+        .barHeight('100%')
+        .barBackgroundColor(Color.Transparent)
+        .scrollable(false)
+        .animationDuration(0)
+        .width('100%')
+        .height('100%')
+        .onTabBarClick((index: number) => {
+          this.selected = index;
+          const host = nsgoHost;
+          if (host !== undefined) {
+            host.send('tabselect', this.vid, index, 0, '');
+          }
+        })
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.bgColor())
+    .border({
+      width: this.isVertical()
+        ? (this.edge === 'leading' ? { right: 0.5 } : { left: 0.5 })
+        : { top: 0.5 },
+      color: this.dividerColor()
+    })
+    .padding({ bottom: this.insetBottom, left: this.insetLeft, right: this.insetRight })
+    .accessibilityText(this.barLabel)
+  }
+}
+
+@Builder function tabBarBuilder(v: VNode) {
+  TabBarView({ vid: v.id, spec: v.tabBar })
+}
+
 // density is the screen's pixels per vp.
 function density(): number {
   if (DENSITY <= 0) {
@@ -4386,6 +4874,9 @@ class Renderer {
       v.videoPausedShown = v.videoPaused;
       return this.leaf(v, KIND_VIDEO);
     }
+    if (v.kind === KIND_NATIVE) {
+      return this.leaf(v, KIND_NATIVE);
+    }
     const s = typeNode.createNode(ui, 'Stack');
     const a = typeNode.getAttribute(s, 'Stack');
     if (a !== undefined) {
@@ -4409,6 +4900,8 @@ class Renderer {
       b.build(wrapBuilder(webBuilder), v);
     } else if (kind === KIND_VIDEO) {
       b.build(wrapBuilder(videoBuilder), v);
+    } else if (kind === KIND_NATIVE) {
+      b.build(wrapBuilder(tabBarBuilder), v);
     } else {
       b.build(wrapBuilder(canvasBuilder), v);
     }
@@ -4512,6 +5005,11 @@ class Renderer {
         this.image(v, node);
       }
     } else if (v.kind === KIND_CANVAS) {
+      const b = this.leaves.get(v.id);
+      if (b !== undefined) {
+        b.update(v);
+      }
+    } else if (v.kind === KIND_NATIVE) {
       const b = this.leaves.get(v.id);
       if (b !== undefined) {
         b.update(v);
