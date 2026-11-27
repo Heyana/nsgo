@@ -269,7 +269,7 @@ final class Protocol {
 
     /** Reads a bundled file: its request ID and the path under assets/. */
     static final int EXT_ASSET_READ = 9;
-    /** A JSON command for package gameservices to the Play Games Services hook (NsgoView answers it unavailable when the runtime has none). */
+    /** A JSON command for package gameservices to the Play Games Services hook (GameServices), answered by GAME_SERVICES_REPORT. */
     static final int EXT_GAME_SERVICES = 8;
 
     // Java to Go.

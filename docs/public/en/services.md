@@ -863,7 +863,17 @@ if cx.Env().CanUseGameServices() {
 }
 ```
 
-`gameservices.ReportAchievement` clamps progress to `0..100` (`100` unlocks the achievement). `gameservices.LoadScores` reads ranked `gameservices.ScoreEntry` rows for `Global` or `Friends` over `AllTime`, `Week` or `Today`, and `gameservices.ShowAchievements` and `gameservices.ShowLeaderboard` open the platform's native overlays. macOS, iOS and tvOS reach GameKit via purego; Android will reach Play Games Services through a Java runtime hook that is not in the runtime yet, so it reports `CanUseGameServices() == false` for now; Windows, Linux, the web, watchOS and mini programs report `CanUseGameServices() == false` and answer `gameservices.ErrUnsupported`.
+`gameservices.ReportAchievement` clamps progress to `0..100` (`100` unlocks the achievement). `gameservices.LoadScores` reads ranked `gameservices.ScoreEntry` rows for `Global` or `Friends` over `AllTime`, `Week` or `Today`, and `gameservices.ShowAchievements` and `gameservices.ShowLeaderboard` open the platform's native overlays. macOS, iOS and tvOS reach GameKit via purego; Android reaches Google Play Games Services v2 via reflection when `com.google.android.gms:play-services-games-v2` is packaged in the app (setting `CanUseGameServices() == true`, with partial achievement progress using incremental 100-step achievements and `LoadScores` capped at Play Games' 25-row page size), and reports `CanUseGameServices() == false` with `gameservices.ErrUnavailable` when the SDK is absent; Windows, Linux, the web, watchOS and mini programs report `CanUseGameServices() == false` and answer `gameservices.ErrUnsupported`.
+
+On Android, add `com.google.android.gms:play-services-games-v2` to the app or Gradle host and declare the Play Games project ID in `AndroidManifest.xml`:
+
+```xml
+<meta-data
+    android:name="com.google.android.gms.games.APP_ID"
+    android:value="@string/game_services_project_id" />
+```
+
+If code shrinking is enabled, keep `com.google.android.gms.games.**` and `com.google.android.gms.tasks.**` so reflection reaches the Play Games Services v2 clients.
 
 In tests, enable game services with `nsgotest.Environment(core.Environment{CanUseGameServices: true})` and drive each app's isolated fake with `App.SetGameServicesPlayer`, `App.SetGameServicesFriends`, `App.SeedLeaderboardScores`, `App.SetGameServicesError`, `App.GameServicesAchievements`, `App.GameServicesScores`, `App.GameServicesShownAchievements` and `App.GameServicesShownLeaderboards`.
 

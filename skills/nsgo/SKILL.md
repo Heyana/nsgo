@@ -153,6 +153,7 @@ func main() { nsgo.Run(Root) }
 - `Limits.Memory` budgets metered native storage, including array copies and spread, string concatenation and replacement, and typed-array buffers. The browser uses its own heap. [TSX apps](https://nsgo.dev/docs/tsx.md)
 - Register a getter's nonzero default with `tsx.Default("Max", float64(100))` so forwarded undefined props keep that default as they change.
 - Publish system media controls with `Scope.SetNowPlaying` and handle them with `Scope.OnMediaCommand` where `Env.CanShowNowPlaying` reports support. For playback state and test steps, see [Now Playing](https://nsgo.dev/docs/services.md#now-playing).
+- Gate `gameservices` (`Authenticate`, `ReportAchievement`, `SubmitScore`, `LoadScores`, `ShowAchievements`, `ShowLeaderboard`) on `cx.Env().CanUseGameServices()`. On Android, package `com.google.android.gms:play-services-games-v2` and declare `com.google.android.gms.games.APP_ID` in `AndroidManifest.xml`; configure partial-progress achievements as 100-step incremental achievements ([game services](https://nsgo.dev/docs/services.md#game-services)).
 
 ## Layout and styles
 

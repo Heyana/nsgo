@@ -713,6 +713,36 @@ mobile.RequestOverlayPermission(cx, func(p core.OverlayPermission) {
 
 用 `audio.Now(cx)` 读取预约播放的时钟。`audio.CanSchedule(cx)` 为 true 时，可将 `audio.Voice.StartAt` 设置为将来的时刻。调用 `audio.OutputLatency(cx, func(latency time.Duration, known bool) { ... })` 可读取当前音频输出路径的延迟。macOS、iOS、Linux 和 Web 支持预约播放；在 Windows 和 Android 上 `CanSchedule` 为 false，设置了 `StartAt` 的声音会立即播放。回调中的 `known` 表示当前路径是否报告了延迟，Windows 和 Android 不报告延迟。
 
+## 游戏服务
+
+`gameservices` 包在 `cx.Env().CanUseGameServices()` 为 true 的平台上提供与服务商无关的接口，用于玩家登录、成就、排行榜以及原生的 Game Center / Play Games 界面。所有回调都在引擎 goroutine 上执行，可直接更新信号而不阻塞渲染帧。
+
+```go
+if cx.Env().CanUseGameServices() {
+	gameservices.Authenticate(cx, func(p gameservices.Player, err error) {
+		if err == nil && p.Authenticated {
+			playerName.Set(p.DisplayName)
+			gameservices.ReportAchievement(cx, "first-run", 100, nil)
+			gameservices.SubmitScore(cx, "high-scores", 1250, nil)
+		}
+	})
+}
+```
+
+`gameservices.ReportAchievement` 将进度限制在 `0..100`（`100` 解锁成就）。`gameservices.LoadScores` 按 `Global` 或 `Friends` 以及 `AllTime`、`Week` 或 `Today` 读取带排名的 `gameservices.ScoreEntry` 列表，`gameservices.ShowAchievements` 和 `gameservices.ShowLeaderboard` 打开平台原生界面。macOS、iOS 和 tvOS 通过 purego 调用 GameKit；Android 在应用打包了 `com.google.android.gms:play-services-games-v2` 时通过反射调用 Google Play Games Services v2（此时 `CanUseGameServices()` 为 true，部分进度对应 Play Console 中配置的 100 步增量成就，`LoadScores` 受限于 Play Games 每页最多 25 条），缺少该 SDK 时报告 `CanUseGameServices() == false` 并返回 `gameservices.ErrUnavailable`；Windows、Linux、Web、watchOS 和小程序报告 `CanUseGameServices() == false` 并返回 `gameservices.ErrUnsupported`。
+
+在 Android 上，请在应用或 Gradle 宿主中加入 `com.google.android.gms:play-services-games-v2` 依赖，并在 `AndroidManifest.xml` 中声明 Play Games 项目 ID：
+
+```xml
+<meta-data
+    android:name="com.google.android.gms.games.APP_ID"
+    android:value="@string/game_services_project_id" />
+```
+
+若启用了代码压缩，请保留 `com.google.android.gms.games.**` 和 `com.google.android.gms.tasks.**`，以便反射找到 Play Games Services v2 客户端。
+
+测试时，用 `nsgotest.Environment(core.Environment{CanUseGameServices: true})` 开启游戏服务，并用 `App.SetGameServicesPlayer`、`App.SetGameServicesFriends`、`App.SeedLeaderboardScores`、`App.SetGameServicesError`、`App.GameServicesAchievements`、`App.GameServicesScores`、`App.GameServicesShownAchievements` 和 `App.GameServicesShownLeaderboards` 驱动每个应用隔离的测试替身。
+
 ## 下一步
 
 - [通知](notifications.md)：权限、图标角标和点按。

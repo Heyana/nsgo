@@ -735,6 +735,9 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 ui.post(this::environment);
             });
         }
+        if (GameServices.isSdkPresent()) {
+            GameServices.probeState(activity(), report -> write(Protocol.GAME_SERVICES_REPORT, report));
+        }
         if (measuring) startTicking();
     }
 
@@ -1527,7 +1530,8 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
                 break;
             }
             case Protocol.EXT_GAME_SERVICES:
-                gameServicesUnavailable(payload);
+                // The command's JSON follows the kind byte.
+                GameServices.handle(activity(), Arrays.copyOfRange(payload, 1, payload.length), report -> write(Protocol.GAME_SERVICES_REPORT, report));
                 break;
             case Protocol.EXT_CLOUD_STORAGE:
                 // The command's JSON follows the kind byte.
@@ -1673,6 +1677,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             // The first byte's eight bits are taken: what else the device can do follows in a second.
             d.writeByte((Speaker.available(getContext()) ? 1 : 0) | (Scanner.available(getContext()) ? 2 : 0)
                     | (Services.canRequestReview(activity()) ? 4 : 0) | first.networkFlags
+                    | (GameServices.isSdkPresent() ? 64 : 0)
                     | (CloudStorage.signedIn ? 128 : 0));
             int idiom = config.smallestScreenWidthDp >= 600 ? Protocol.IDIOM_TABLET : Protocol.IDIOM_PHONE;
             if ((config.uiMode & Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION) {
@@ -5469,23 +5474,6 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             throw new AssertionError(impossible);
         }
         write(Protocol.COOKIES_SET, bytes.toByteArray());
-    }
-
-    /** Answers an EXT_GAME_SERVICES command, whose JSON follows the kind byte in payload: this runtime has no Play Games Services hook, so a command's request hears that game services are unavailable rather than waiting for a report. */
-    private void gameServicesUnavailable(byte[] payload) {
-        long id = 0;
-        try {
-            id = new JSONObject(new String(payload, 1, payload.length - 1, java.nio.charset.StandardCharsets.UTF_8)).optLong("id");
-        } catch (JSONException e) {
-            Log.w(TAG, "invalid game services message from app");
-        }
-        if (id == 0) return;
-        try {
-            JSONObject report = new JSONObject().put("type", "result").put("id", id).put("error", "unavailable");
-            write(Protocol.GAME_SERVICES_REPORT, report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        } catch (JSONException impossible) {
-            throw new AssertionError(impossible);
-        }
     }
 
     /** Takes a RECORDING message, on the engine's reader thread: a stop and the app's taking of an earlier recording go to the service at once, a start and an authorize to the UI thread. */
