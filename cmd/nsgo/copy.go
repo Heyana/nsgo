@@ -203,35 +203,42 @@ func (m *addModule) downloadVerifiedModule(ctx context.Context, modPath, query s
 		return nil, fmt.Errorf("download %s@%s returned no zip archive", modPath, query)
 	}
 
-	mv := module.Version{Path: dl.Path, Version: dl.Version}
-	if _, err := modzip.CheckZip(mv, dl.Zip); err != nil {
-		return nil, fmt.Errorf("%s@%s: invalid module zip: %w", dl.Path, dl.Version, err)
+	return openAndVerifyModuleZip(dl.Path, dl.Version, dl.Zip, dl.Sum, appGoSum)
+}
+
+// openAndVerifyModuleZip validates zipPath with x/mod/zip.CheckZip and
+// dirhash.HashZip (against expectedSum and appGoSum) and opens it with parsed
+// go.mod and optional nsgo-module.yaml.
+func openAndVerifyModuleZip(modPath, version, zipPath, expectedSum string, appGoSum []byte) (*downloadedModule, error) {
+	mv := module.Version{Path: modPath, Version: version}
+	if _, err := modzip.CheckZip(mv, zipPath); err != nil {
+		return nil, fmt.Errorf("%s@%s: invalid module zip: %w", modPath, version, err)
 	}
 
-	actualHash, err := dirhash.HashZip(dl.Zip, dirhash.Hash1)
+	actualHash, err := dirhash.HashZip(zipPath, dirhash.Hash1)
 	if err != nil {
-		return nil, fmt.Errorf("%s@%s: hash zip: %w", dl.Path, dl.Version, err)
+		return nil, fmt.Errorf("%s@%s: hash zip: %w", modPath, version, err)
 	}
-	if dl.Sum != "" && actualHash != dl.Sum {
-		return nil, fmt.Errorf("%s@%s: zip hash mismatch: archive hashes to %s, download reported %s", dl.Path, dl.Version, actualHash, dl.Sum)
+	if expectedSum != "" && actualHash != expectedSum {
+		return nil, fmt.Errorf("%s@%s: zip hash mismatch: archive hashes to %s, download reported %s", modPath, version, actualHash, expectedSum)
 	}
-	if sumHash := goSumEntry(appGoSum, dl.Path, dl.Version); sumHash != "" && actualHash != sumHash {
-		return nil, fmt.Errorf("%s@%s: go.sum mismatch: archive hashes to %s, go.sum has %s", dl.Path, dl.Version, actualHash, sumHash)
+	if sumHash := goSumEntry(appGoSum, modPath, version); sumHash != "" && actualHash != sumHash {
+		return nil, fmt.Errorf("%s@%s: go.sum mismatch: archive hashes to %s, go.sum has %s", modPath, version, actualHash, sumHash)
 	}
 
-	zr, err := zip.OpenReader(dl.Zip)
+	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return nil, fmt.Errorf("%s@%s: open zip: %w", dl.Path, dl.Version, err)
+		return nil, fmt.Errorf("%s@%s: open zip: %w", modPath, version, err)
 	}
 	dm := &downloadedModule{
-		path:    dl.Path,
-		version: dl.Version,
-		zipPath: dl.Zip,
+		path:    modPath,
+		version: version,
+		zipPath: zipPath,
 		sum:     actualHash,
 		zr:      zr,
 		entries: make(map[string]*zip.File, len(zr.File)),
 	}
-	prefix := dl.Path + "@" + dl.Version + "/"
+	prefix := modPath + "@" + version + "/"
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
 			continue
@@ -248,37 +255,37 @@ func (m *addModule) downloadVerifiedModule(ctx context.Context, modPath, query s
 	goModRaw, err := dm.readFile("go.mod", maxModuleManifestBytes)
 	if err != nil {
 		dm.close()
-		return nil, fmt.Errorf("%s@%s: read go.mod from zip: %w", dl.Path, dl.Version, err)
+		return nil, fmt.Errorf("%s@%s: read go.mod from zip: %w", modPath, version, err)
 	}
 	mf, err := modfile.ParseLax("go.mod", goModRaw, nil)
 	if err != nil {
 		dm.close()
-		return nil, fmt.Errorf("%s@%s: parse go.mod: %w", dl.Path, dl.Version, err)
+		return nil, fmt.Errorf("%s@%s: parse go.mod: %w", modPath, version, err)
 	}
 	dm.goModRaw = goModRaw
 	dm.goMod = mf
 
-	if modSum := goSumEntry(appGoSum, dl.Path, dl.Version+"/go.mod"); modSum != "" {
+	if modSum := goSumEntry(appGoSum, modPath, version+"/go.mod"); modSum != "" {
 		actualModSum, err := dirhash.Hash1([]string{"go.mod"}, func(string) (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(goModRaw)), nil
 		})
 		if err == nil && actualModSum != modSum {
 			dm.close()
-			return nil, fmt.Errorf("%s@%s: go.sum mismatch for go.mod: archive hashes to %s, go.sum has %s", dl.Path, dl.Version, actualModSum, modSum)
+			return nil, fmt.Errorf("%s@%s: go.sum mismatch for go.mod: archive hashes to %s, go.sum has %s", modPath, version, actualModSum, modSum)
 		}
 	}
 
 	if manifestRaw, err := dm.readFile(moduleManifestName, maxModuleManifestBytes); err == nil {
 		reqNSGo := requiredVersion(mf, nsgoModule)
-		manifest, err := parseModuleManifest(manifestRaw, dl.Path, reqNSGo, moduleManifestNSGoVersion())
+		manifest, err := parseModuleManifest(manifestRaw, modPath, reqNSGo, moduleManifestNSGoVersion())
 		if err != nil {
 			dm.close()
-			return nil, fmt.Errorf("%s@%s: %w", dl.Path, dl.Version, err)
+			return nil, fmt.Errorf("%s@%s: %w", modPath, version, err)
 		}
 		dm.manifest = manifest
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		dm.close()
-		return nil, fmt.Errorf("%s@%s: %w", dl.Path, dl.Version, err)
+		return nil, fmt.Errorf("%s@%s: %w", modPath, version, err)
 	}
 
 	return dm, nil

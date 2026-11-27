@@ -259,6 +259,33 @@ func readCopyRecord(copyDir string) (*copyRecord, error) {
 	return parseCopyRecord(data)
 }
 
+// checkRootNoSymlinks verifies via root.Lstat that neither relPath nor any of
+// its ancestor directory segments is a symlink. Returns (false, nil) when the
+// file does not exist.
+func checkRootNoSymlinks(root *os.Root, relPath string) (exists bool, err error) {
+	parts := strings.Split(relPath, "/")
+	for i := range parts {
+		sub := strings.Join(parts[:i+1], "/")
+		st, statErr := root.Lstat(filepath.FromSlash(sub))
+		if errors.Is(statErr, fs.ErrNotExist) {
+			return false, nil
+		}
+		if statErr != nil {
+			return false, fmt.Errorf("%s: %w", sub, statErr)
+		}
+		if st.Mode()&os.ModeSymlink != 0 {
+			return false, fmt.Errorf("%s: symlinks are not allowed", sub)
+		}
+		if i < len(parts)-1 && !st.IsDir() {
+			return false, fmt.Errorf("%s: not a directory", sub)
+		}
+		if i == len(parts)-1 && !st.Mode().IsRegular() {
+			return false, fmt.Errorf("%s: not a regular file", relPath)
+		}
+	}
+	return true, nil
+}
+
 // readCopyFile reads relPath from copyDir through os.Root after validating
 // relPath and refusing any symlink along the path or at the file itself.
 func readCopyFile(copyDir, relPath string) ([]byte, error) {
@@ -270,18 +297,14 @@ func readCopyFile(copyDir, relPath string) ([]byte, error) {
 		return nil, err
 	}
 	defer root.Close()
-	local := filepath.FromSlash(relPath)
-	st, err := root.Lstat(local)
+	exists, err := checkRootNoSymlinks(root, relPath)
 	if err != nil {
 		return nil, err
 	}
-	if st.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("%s: symlinks are not allowed", relPath)
+	if !exists {
+		return nil, fs.ErrNotExist
 	}
-	if !st.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s: not a regular file", relPath)
-	}
-	f, err := root.Open(local)
+	f, err := root.Open(filepath.FromSlash(relPath))
 	if err != nil {
 		return nil, err
 	}

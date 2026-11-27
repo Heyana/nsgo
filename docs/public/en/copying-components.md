@@ -1,6 +1,6 @@
 ---
 title: Copying components
-description: Copy declared Go components such as chat and file-picker into your app with nsgo add, rewrite imports, and keep their license notices and source records.
+description: Copy declared Go components such as chat and file-picker into your app with nsgo add, rewrite imports, inspect changes with nsgo diff, and keep their license notices and source records.
 group: Components
 order: 35
 ---
@@ -54,9 +54,9 @@ A typed version higher than `go.mod`'s requirement announces the raise on the fi
 
 License and notice documents from the source module root and directories between it and the component (such as NSGo's `LICENSE` and `NOTICE`) are copied beside the component (duplicate filenames are refused). `nsgo add` classifies every license document the copy brings—including nested asset licenses such as `icons/OFL.txt`—and applies the app's `licenses` policy immediately.
 
-During `nsgo build`, a directory holding `nsgo-copy.yaml` receives its own section in `THIRD_PARTY_NOTICES.txt` headed `<import path>, copied from <module> <version>`, keeping those texts separate from the app's own license section. For Apache-2.0 components such as `chat` and `file-picker`, mark files you modify as required by section 4(b).
+During `nsgo build`, a directory holding `nsgo-copy.yaml` receives its own section in `THIRD_PARTY_NOTICES.txt` headed `<import path>, copied from <module> <version>`, keeping those texts separate from the app's own license section. For Apache-2.0 components such as `chat` and `file-picker`, mark files you modify as required by section 4(b); `nsgo diff -stat` lists every changed file.
 
-Each copied directory contains `nsgo-copy.yaml`, recording the source module, version, component name, test choice, copied files, and generated files (with no timestamps or hashes):
+Each copied directory holds a deterministic, hash-free `nsgo-copy.yaml` recording its source module, version, component name, test choice, copied files and generated files:
 
 ```yaml
 # Written by nsgo add. nsgo diff compares this directory with the copy of this version.
@@ -87,4 +87,25 @@ generated:
   - locales/catalog_gen.go
 ```
 
-Running `nsgo add` again at the same version is a no-op that prints the copy's version and directory. Moving a copied directory requires no command because `nsgo-copy.yaml` moves with it.
+Running `nsgo add` again at the same version reports the existing copy's version and directory without making changes. Moving a copy needs no extra command; `nsgo-copy.yaml` moves with it.
+
+## Comparing copies with `nsgo diff`
+
+Use `nsgo diff` to inspect what your app changed in a copy, what another version would change, or which copies in the module have local edits:
+
+```sh
+nsgo diff                              # list each copy, its version, and edited/unedited status
+nsgo diff chat                         # unified diff of local edits against the recorded version
+nsgo diff components/chat              # target a copy by directory path
+nsgo diff chat@v0.5.0                  # unified diff from the recorded version to v0.5.0
+nsgo diff chat@upgrade                 # unified diff from the recorded version to the newest release
+nsgo diff -stat chat                   # changed lines per file (also lists modified files for Apache-2.0 §4(b))
+nsgo diff -exit-code chat              # exit with status 1 when there are differences
+```
+
+- **Target resolution.** A directory holding `nsgo-copy.yaml` matches directly. A bare name matches the module's own `nsgo-copy.yaml` records first so it works offline; if two copies from different modules share the same component name, `nsgo diff` asks for the directory (or `module#component`). Otherwise it resolves the name through the built-in index or a configured `@registry/name` and matches a record by module and component.
+- **Clean reference copy.** `nsgo diff` reconstructs the recorded (or requested) version directly from the verified module zip (`zip.CheckZip` and `dirhash.HashZip` checked against `go.sum`), applying the record's `tests` choice, ancestor licenses, Go import and comment rewrites (with sibling copies at their current record directories) and `go/format`, excluding generated catalog files such as `locales/catalog_gen.go`.
+- **Git-compatible output.** Unified diffs use `diff --git` headers and module-root-relative paths with three lines of context, so `git apply` and `git apply -R` apply them directly. Binary files report `Binary files ... differ`.
+- **Line endings and formatting.** Files are compared with CRLF read as LF, and Go files whose `go/format` output matches the recorded version count as unedited.
+- **Offline use and unavailable versions.** Recorded versions are read from `GOMODCACHE` first so `nsgo diff` works offline under `GOPROXY=off`; otherwise they download through Go module proxies with `GOTOOLCHAIN=local`. When a recorded version can no longer be downloaded, every non-generated file counts as edited and the output explains why.
+- **Safety.** Every path in `nsgo-copy.yaml` is validated on read (refusing escapes such as `../form/form.go` with the line number), all reads stay inside an `os.Root` at the copy's directory, and symlinks are refused.

@@ -18,6 +18,9 @@
 //	                                                      their plan is shown and confirmed, never moving NSGo
 //	                                                      off its releases; -list [@registry] [words...] lists
 //	                                                      NSGo's index and configured registries
+//	nsgo diff   [-stat] [-exit-code] [name | dir][@version]
+//	                                                      show what the app changed in a copied component,
+//	                                                      what another version would change, or list copies
 //	nsgo remove [-dry-run] [-y] name|@registry/name|module ...
 //	                                                      drop libraries the module no longer imports,
 //	                                                      through a go mod tidy shown and confirmed first
@@ -216,6 +219,19 @@ func main() {
 			report(err)
 			os.Exit(130)
 		}
+	case "diff":
+		fs := flag.NewFlagSet("diff", flag.ExitOnError)
+		var o diffOptions
+		fs.BoolVar(&o.stat, "stat", false, "print changed lines per file")
+		fs.BoolVar(&o.exitCode, "exit-code", false, "exit with status 1 when there are differences")
+		if err = parseCommand(fs, args, 1); err != nil {
+			break
+		}
+		var changed bool
+		changed, err = diffCommand(ctx, o, fs.Arg(0), os.Stdout, os.Stderr)
+		if err == nil && o.exitCode && changed {
+			os.Exit(1)
+		}
 	case "remove":
 		fs := flag.NewFlagSet("remove", flag.ExitOnError)
 		var o removeOptions
@@ -354,6 +370,7 @@ func usage() {
   nsgo i18n  [-source L] [dir]
   nsgo add    [-dry-run] [-y] [-diff] [-dir D] [-tests=false] name|@registry/name|module[@version][#component] ...
   nsgo add    -list [@registry] [words...]
+  nsgo diff   [-stat] [-exit-code] [name | dir][@version]
   nsgo remove [-dry-run] [-y] name|@registry/name|module ...
   nsgo doctor
   nsgo version

@@ -1,6 +1,6 @@
 ---
 title: 复制组件
-description: 使用 nsgo add 将 chat、file-picker 等声明的 Go 组件复制到应用中，重写导入路径并记录其来源模块、版本与许可证声明。
+description: 使用 nsgo add 将 chat、file-picker 等声明的 Go 组件复制到应用中，重写导入路径，使用 nsgo diff 查看修改，并记录其来源模块、版本与许可证声明。
 group: 组件
 order: 35
 ---
@@ -20,7 +20,7 @@ nsgo add -dry-run -diff chat                     # 预览计划及每个文件�
 
 复制完成后，这些文件即成为应用自己的 Go 代码。
 
-## 复制目标目录
+## 副本位置
 
 默认情况下，组件会复制到相对于 `nsgo.yaml`（没有 `nsgo.yaml` 时相对于模块根目录）的 `components/<包名>`，因此 `chat` 会复制到 `components/chat`，`file-picker` 会复制到 `components/filepicker`。可在 `nsgo.yaml` 中用 `components.dir` 修改基础目录：
 
@@ -54,7 +54,7 @@ components:
 
 源模块根目录及路径中间目录中的许可证与声明文件（如 NSGo 的 `LICENSE` 和 `NOTICE`）会一并复制到组件根目录（重名会被拒绝）。`nsgo add` 会使用构建时的分类器识别组件携带的全部许可证文件（包括 `icons/OFL.txt` 等资源许可证），并立即执行应用的 `licenses` 策略。
 
-在 `nsgo build` 中，带有 `nsgo-copy.yaml` 的目录会在 `THIRD_PARTY_NOTICES.txt` 中获得独立章节 `<导入路径>, copied from <模块> <版本>`，不会混入应用自身的许可证章节。对于 `chat` 和 `file-picker` 这类 Apache-2.0 许可的组件，请按第 4(b) 条要求标明修改过的文件。
+在 `nsgo build` 中，带有 `nsgo-copy.yaml` 的目录会在 `THIRD_PARTY_NOTICES.txt` 中获得独立章节 `<导入路径>, copied from <模块> <版本>`，不会混入应用自身的许可证章节。对于 `chat` 和 `file-picker` 这类 Apache-2.0 许可的组件，请按第 4(b) 条要求标明修改过的文件；`nsgo diff -stat` 会列出所有改动文件。
 
 每个复制目录都包含 `nsgo-copy.yaml`，以确定性格式记录来源模块、版本、组件名、测试选择、已复制文件和生成文件（不含时间戳和哈希）：
 
@@ -88,3 +88,24 @@ generated:
 ```
 
 以相同版本再次执行 `nsgo add` 会直接报告已有副本的版本和目录而不做修改。移动副本目录无需额外命令，`nsgo-copy.yaml` 会随之移动。
+
+## 使用 `nsgo diff` 对比副本
+
+使用 `nsgo diff` 查看应用对副本的本地修改、另一个上游版本会带来的变更，或列出模块中所有副本的修改状态：
+
+```sh
+nsgo diff                              # 列出每个副本、版本以及是否被修改
+nsgo diff chat                         # 输出本地修改相对记录版本的统一 diff
+nsgo diff components/chat              # 按目录路径指定副本
+nsgo diff chat@v0.5.0                  # 输出从记录版本到 v0.5.0 的统一 diff
+nsgo diff chat@upgrade                 # 输出从记录版本到最新正式版的统一 diff
+nsgo diff -stat chat                   # 按文件输出增删行数（也用于 Apache-2.0 第 4(b) 条标明修改文件）
+nsgo diff -exit-code chat              # 存在差异时以状态码 1 退出
+```
+
+- **目标解析。** 包含 `nsgo-copy.yaml` 的目录可直接匹配。短名称优先匹配模块自身的 `nsgo-copy.yaml` 记录，因此离线也可用；若来自不同模块的两个副本同名，`nsgo diff` 会提示传入目录（或 `module#component`）。否则按内置索引或已配置的 `@registry/name` 解析并按模块与组件匹配记录。
+- **干净基准副本。** `nsgo diff` 直接从经校验的模块 zip（通过 `zip.CheckZip` 与 `dirhash.HashZip` 核验并比对 `go.sum`）重建记录版本（或目标版本），应用记录中的 `tests` 选择、祖先许可证复制、Go 导入与注释重写（其他已复制组件按其当前记录所在目录定位）以及 `go/format` 格式化；`locales/catalog_gen.go` 等生成文件不参与对比。
+- **兼容 Git 的输出。** 统一 diff 使用 `diff --git` 头和相对模块根目录的路径，附带三行上下文，可直接交给 `git apply` 和 `git apply -R`。二进制文件输出 `Binary files ... differ`。
+- **行尾与格式。** 对比时将 CRLF 视作 LF，且经 `go/format` 格式化后与记录版本一致的 Go 文件视为未修改。
+- **离线与不可用版本。** 记录版本优先从 `GOMODCACHE` 读取，支持在 `GOPROXY=off` 下离线使用；未命中缓存时在 `GOTOOLCHAIN=local` 的仅代理环境中下载。若记录版本无法再下载，副本中所有非生成文件均视为已修改，并输出不可用原因。
+- **安全约束。** 每次读取都会重新校验 `nsgo-copy.yaml` 中的路径（包含 `../form/form.go` 等越界路径会被拒绝并指出行号），所有文件读取均限制在副本目录的 `os.Root` 内，并拒绝符号链接。

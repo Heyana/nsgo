@@ -40,7 +40,7 @@ func delegate(ctx context.Context, args []string) (int, bool) {
 }
 
 // commandReleases are the built-in commands newer than delegation, by the first release that has them: the module's nsgo of an older release would not know one, so an nsgo that does runs nothing and names the release to get. A pin before a command is a module's choice, so the command is not run with this nsgo either.
-var commandReleases = map[string]string{"add": "v0.3.5", "remove": "v0.3.5"}
+var commandReleases = map[string]string{"add": "v0.3.5", "diff": "v0.3.5", "remove": "v0.3.5"}
 
 // predates reports whether pinned is a release older than release. A pseudo-version or a pre-release, which a build of any commit may carry, is not one, and is delegated to.
 func predates(pinned, release string) bool {
