@@ -231,29 +231,39 @@ func TestApplyBatchesDoesNotDrainRecursively(t *testing.T) {
 // gtk_widget_queue_allocate during allocateSurface's resize drain, while
 // forwarding normally to GTK outside it.
 func TestQueueAllocateDefersGTKDuringSurfaceResize(t *testing.T) {
-	oldAlloc, oldDraw := gtkWidgetQueueAllocate, gtkWidgetQueueDraw
-	defer func() {
+	oldAlloc, oldDraw, oldParent := gtkWidgetQueueAllocate, gtkWidgetQueueDraw, gtkWidgetGetParent
+	t.Cleanup(func() {
 		gtkWidgetQueueAllocate = oldAlloc
 		gtkWidgetQueueDraw = oldDraw
-	}()
+		gtkWidgetGetParent = oldParent
+	})
 	var allocCalls, drawCalls []uintptr
+	parents := map[uintptr]uintptr{}
 	gtkWidgetQueueAllocate = func(widget uintptr) { allocCalls = append(allocCalls, widget) }
 	gtkWidgetQueueDraw = func(widget uintptr) { drawCalls = append(drawCalls, widget) }
+	gtkWidgetGetParent = func(widget uintptr) uintptr { return parents[widget] }
 
 	w := &window{surface: 0x100}
 	root := &view{win: w, widget: 0x101}
 	mid := &view{win: w, widget: 0x102, parent: root}
 	leaf := &view{win: w, widget: 0x103, parent: mid}
+	dying := &view{win: w, widget: 0x104, dying: true} // detached Go parent, still parented in GTK
+	parents[root.widget] = w.surface
+	parents[mid.widget] = root.widget
+	parents[leaf.widget] = mid.widget
+	parents[dying.widget] = mid.widget
 	setWidget(w.surface, widgetRef{w: w})
 	setWidget(root.widget, widgetRef{w: w, v: root})
 	setWidget(mid.widget, widgetRef{w: w, v: mid})
 	setWidget(leaf.widget, widgetRef{w: w, v: leaf})
-	defer func() {
+	setWidget(dying.widget, widgetRef{w: w, v: dying})
+	t.Cleanup(func() {
 		forgetWidget(w.surface)
 		forgetWidget(root.widget)
 		forgetWidget(mid.widget)
 		forgetWidget(leaf.widget)
-	}()
+		forgetWidget(dying.widget)
+	})
 
 	w.deferAllocate = 1
 	w.queueAllocate(mid.widget)
@@ -272,6 +282,17 @@ func TestQueueAllocateDefersGTKDuringSurfaceResize(t *testing.T) {
 	}
 	if leaf.allocNeeded || leaf.childAllocNeeded {
 		t.Errorf("leaf flags = (alloc=%v, child=%v), want (false, false)", leaf.allocNeeded, leaf.childAllocNeeded)
+	}
+
+	// Detached retiring views still bubble through their GTK parent widget.
+	root.childAllocNeeded, mid.allocNeeded, mid.childAllocNeeded = false, false, false
+	w.queueAllocate(dying.widget)
+	if len(allocCalls) != 0 {
+		t.Fatalf("gtk_widget_queue_allocate called %d times for retiring view, want 0", len(allocCalls))
+	}
+	if !dying.allocNeeded || !mid.childAllocNeeded || !root.childAllocNeeded {
+		t.Errorf("retiring view flags = (dying=%v, midChild=%v, rootChild=%v), want all true",
+			dying.allocNeeded, mid.childAllocNeeded, root.childAllocNeeded)
 	}
 
 	w.deferAllocate = 0
