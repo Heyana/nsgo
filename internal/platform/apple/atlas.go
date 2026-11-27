@@ -21,6 +21,7 @@ func (im *loadedImage) release() {
 	}
 	atlasCropPixels -= im.atlasPixels
 	im.atlasPixels, im.atlasCrops = 0, nil
+	im.meshPixels = nil
 	Release(im.image)
 	im.image = 0
 	Release(im.canvasTint)
@@ -55,18 +56,33 @@ func (im *loadedImage) crop(b driver.Bounds) (tile uintptr, temporary bool) {
 }
 
 func (p *player) atlas(op *driver.DrawOp) {
-	if op.Image == nil || op.Atlas == nil {
+	if op.Image == nil || op.Atlas == nil || len(*op.Atlas) == 0 {
 		return
 	}
 	if op.Image.Offscreen != nil {
 		p.atlasImages(op)
 		return
 	}
-	im := canvasImage(*op.Image, p.host)
-	if im == nil || im.image == 0 {
-		p.waited = p.waited || im == nil || !im.failed
+	var im *loadedImage
+	if p.host.image != nil {
+		im = p.host.image(*op.Image, p.host.Ratio)
+		if im == nil || im.image == 0 {
+			return
+		}
+	} else {
+		im = canvasImage(*op.Image, p.host)
+		if im == nil || im.image == 0 {
+			p.waited = p.waited || im == nil || !im.failed
+			return
+		}
+	}
+	if p.atlasFast(op, im) {
 		return
 	}
+	p.atlasCG(op, im)
+}
+
+func (p *player) atlasCG(op *driver.DrawOp, im *loadedImage) {
 	st := p.st()
 	flat := !st.shadow && !st.composite.Unbounded()
 	for _, sprite := range *op.Atlas {

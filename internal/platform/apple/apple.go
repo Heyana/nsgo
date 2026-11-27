@@ -129,6 +129,7 @@ func init() {
 	loadSystem()
 	loadImage(cf, cg)
 	loadCanvas(cg)
+	loadAtlas(cf, cg)
 	loadCanvasLayer(cg)
 	loadBorders(cg)
 	qc := load("/System/Library/Frameworks/QuartzCore.framework/QuartzCore")

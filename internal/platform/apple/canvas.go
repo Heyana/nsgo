@@ -217,6 +217,7 @@ type canvasState struct {
 	fill, stroke         driver.Color
 	fillGrad, strokeGrad *driver.CanvasGradient
 	shadow               bool
+	clipped              bool
 	alpha                float64
 	composite            driver.CompositeOp
 	// dash and phase are the dash pattern, which an offset sets again.
@@ -478,6 +479,7 @@ func (p *player) play(at int) {
 	case driver.DrawStroke:
 		p.keep(at, p.strokePath)
 	case driver.DrawClip:
+		p.st().clipped = true
 		p.keep(at, func() {
 			if op.EvenOdd {
 				cgContextEOClip(ctx)
