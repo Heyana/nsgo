@@ -99,3 +99,18 @@ func TestHTTPCookieExpiryOutsideNanoseconds(t *testing.T) {
 		})
 	}
 }
+
+func TestPrepareHTTPCookiesFailsBeforeWriting(t *testing.T) {
+	built, failure := prepareHTTPCookies([]driver.WebCookie{
+		{Name: "ok", Value: "1", Domain: ".example.com"},
+		{Name: "bad", Value: "2", Domain: ".example.com"},
+	}, func(c driver.WebCookie) objc.ID {
+		if c.Name == "bad" {
+			return 0
+		}
+		return 42
+	})
+	if built != nil || failure == "" {
+		t.Fatalf("prepareHTTPCookies = %v, %q; want failure with no handles", built, failure)
+	}
+}

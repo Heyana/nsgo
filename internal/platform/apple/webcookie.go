@@ -34,23 +34,37 @@ func WebCookies(id uint32, r driver.WebCookiesRequest, dispatch func(driver.Even
 	}
 }
 
-// setWebCookies sets each of cookies in store and answers once WebKit has taken them all.
+// prepareHTTPCookies builds every NSHTTPCookie before any is written to WebKit, failing the whole batch if Foundation refuses any cookie.
+func prepareHTTPCookies(cookies []driver.WebCookie, build func(driver.WebCookie) objc.ID) ([]objc.ID, string) {
+	built := make([]objc.ID, len(cookies))
+	for i, c := range cookies {
+		cookie := build(c)
+		if cookie == 0 {
+			return nil, fmt.Sprintf("nsgo: Foundation refused the cookie %q of %s", c.Name, c.Domain)
+		}
+		built[i] = cookie
+	}
+	return built, ""
+}
+
+// setWebCookies sets each of cookies in store and answers once WebKit has taken them all, building every cookie before writing any.
 func setWebCookies(id uint32, store objc.ID, cookies []driver.WebCookie, dispatch func(driver.Event)) {
-	pending, failure := len(cookies), ""
+	built, failure := prepareHTTPCookies(cookies, httpCookie)
+	if failure != "" {
+		dispatch(driver.Event{Kind: driver.EventWebCookies, Count: id, Text: failure})
+		return
+	}
+	if len(built) == 0 {
+		dispatch(driver.Event{Kind: driver.EventWebCookies, Count: id})
+		return
+	}
+	pending := len(built)
 	finish := func() {
 		if pending--; pending == 0 {
-			dispatch(driver.Event{Kind: driver.EventWebCookies, Count: id, Text: failure})
+			dispatch(driver.Event{Kind: driver.EventWebCookies, Count: id})
 		}
 	}
-	for _, c := range cookies {
-		cookie := httpCookie(c)
-		if cookie == 0 {
-			if failure == "" {
-				failure = fmt.Sprintf("nsgo: Foundation refused the cookie %q of %s", c.Name, c.Domain)
-			}
-			finish()
-			continue
-		}
+	for _, cookie := range built {
 		// WebKit calls the handler on the main thread; OnMain keeps the count there whatever it does.
 		set := objcblock.New(func(objc.Block) { OnMain(finish) })
 		store.Send(sel("setCookie:completionHandler:"), cookie, set)

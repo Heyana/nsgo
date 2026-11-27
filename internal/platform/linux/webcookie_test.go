@@ -262,7 +262,21 @@ func cookieListApp(t *testing.T, phase string) {
 						if err != nil || len(cookies) != 0 {
 							t.Errorf("after ClearWebsiteData the store listed %+v, %v", cookies, err)
 						}
-						page.Set("/check")
+						// A public suffix libsoup drops must fail before any cookie in the batch is written.
+						cx.SetWebCookies([]core.WebCookie{
+							{Name: "before", Value: "1", Domain: ".example.test", Path: "/"},
+							{Name: "pub", Value: "2", Domain: ".httpbin.org", Path: "/"},
+						}, func(err error) {
+							if err == nil {
+								t.Errorf("SetWebCookies with public suffix .httpbin.org succeeded, want error")
+							}
+							cx.WebCookies(core.WebCookieFilter{}, func(cookies []core.WebCookie, err error) {
+								if err != nil || len(cookies) != 0 {
+									t.Errorf("after refused public-suffix batch the store listed %+v, %v", cookies, err)
+								}
+								page.Set("/check")
+							})
+						})
 					})
 				})
 			})

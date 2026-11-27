@@ -3,7 +3,6 @@
 package linux
 
 import (
-	"fmt"
 	"time"
 	"unsafe"
 
@@ -30,6 +29,8 @@ var (
 	soupCookieGetHTTPOnly              func(cookie uintptr) int32
 	soupCookieGetSameSitePolicy        func(cookie uintptr) int32
 	soupCookieSetExpires               func(cookie, dateTime uintptr)
+	soupTLDIsPublicSuffix              func(domain *byte) int32
+	gHostnameIsIPAddress               func(hostname *byte) int32
 	gDateTimeToUnix                    func(dateTime uintptr) int64
 	gDateTimeNewFromUnixUTC            func(unix int64) uintptr
 	gDateTimeUnref                     func(dateTime uintptr)
@@ -58,6 +59,8 @@ func bindWebCookies(webkit, soup uintptr) {
 	purego.RegisterLibFunc(&soupCookieGetHTTPOnly, soup, "soup_cookie_get_http_only")
 	purego.RegisterLibFunc(&soupCookieGetSameSitePolicy, soup, "soup_cookie_get_same_site_policy")
 	purego.RegisterLibFunc(&soupCookieSetExpires, soup, "soup_cookie_set_expires")
+	purego.RegisterLibFunc(&soupTLDIsPublicSuffix, soup, "soup_tld_domain_is_public_suffix")
+	purego.RegisterLibFunc(&gHostnameIsIPAddress, glibLib, "g_hostname_is_ip_address")
 	purego.RegisterLibFunc(&gDateTimeToUnix, glibLib, "g_date_time_to_unix")
 	purego.RegisterLibFunc(&gDateTimeNewFromUnixUTC, glibLib, "g_date_time_new_from_unix_utc")
 	purego.RegisterLibFunc(&gDateTimeUnref, glibLib, "g_date_time_unref")
@@ -99,9 +102,20 @@ func (w *window) webCookies(id uint32, r driver.WebCookiesRequest) {
 	setWebCookies(manager, r.Cookies, answer)
 }
 
-// setWebCookies adds cookies in manager and answers once WebKit has added them all.
+// setWebCookies adds cookies in manager and answers once WebKit has added them all, rejecting any cookie libsoup would refuse or silently drop before writing any.
 func setWebCookies(manager uintptr, cookies []driver.WebCookie, answer func(driver.Event)) {
-	pending, failure := len(cookies), ""
+	isIP := func(d string) bool { return gHostnameIsIPAddress(cstr(d)) != 0 }
+	isPublicSuffix := func(d string) bool { return soupTLDIsPublicSuffix(cstr(d)) != 0 }
+	built, failure := prepareSoupCookies(cookies, isIP, isPublicSuffix, soupCookie, soupCookieFree)
+	if failure != "" {
+		answer(driver.Event{Text: failure})
+		return
+	}
+	if len(built) == 0 {
+		answer(driver.Event{})
+		return
+	}
+	pending := len(built)
 	finish := func(text string) {
 		if failure == "" {
 			failure = text
@@ -110,19 +124,15 @@ func setWebCookies(manager uintptr, cookies []driver.WebCookie, answer func(driv
 			answer(driver.Event{Text: failure})
 		}
 	}
-	for _, c := range cookies {
-		cookie := soupCookie(c)
-		if cookie == 0 {
-			finish(fmt.Sprintf("nsgo: libsoup refused the cookie %q of %s", c.Name, c.Domain))
-			continue
-		}
+	for i, cookie := range built {
+		name := cookies[i].Name
 		webkitCookieManagerAddCookie(manager, cookie, 0, cbAsync, async(func(source, result uintptr) {
 			var gerr uintptr
 			if webkitCookieManagerAddCookieFinish(source, result, uintptr(unsafe.Pointer(&gerr))) != 0 {
 				finish("")
 				return
 			}
-			text := "nsgo: WebKitGTK did not add the cookie " + c.Name
+			text := "nsgo: WebKitGTK did not add the cookie " + name
 			if err := dialogError(gerr); err != nil {
 				text = "nsgo: " + err.Error()
 			}
@@ -220,19 +230,17 @@ const (
 
 // soupCookie returns c as a SoupCookie the caller frees, 0 when libsoup refuses it. libsoup's domain takes the leading dot of a cookie every host under it shares, as c's does, and a max age of -1 makes a session cookie.
 func soupCookie(c driver.WebCookie) uintptr {
-	maxAge := int32(-1)
-	if !c.Expires.IsZero() {
-		maxAge = int32(min(max(time.Until(c.Expires)/time.Second, 0), 1<<31-1))
-	}
+	maxAge := soupCookieMaxAge(c.Expires, time.Now())
 	cookie := soupCookieNew(cstr(c.Name), cstr(c.Value), cstr(c.Domain), cstr(c.CookiePath()), maxAge)
 	if cookie == 0 {
 		return 0
 	}
 	if maxAge > 0 {
 		// The max age counts from now, so it would end the cookie up to a second early; the expiry itself is the second asked for.
-		at := gDateTimeNewFromUnixUTC(c.Expires.Unix())
-		soupCookieSetExpires(cookie, at)
-		gDateTimeUnref(at)
+		if at := gDateTimeNewFromUnixUTC(c.Expires.Unix()); at != 0 {
+			soupCookieSetExpires(cookie, at)
+			gDateTimeUnref(at)
+		}
 	}
 	soupCookieSetSecure(cookie, boolInt(c.Secure))
 	soupCookieSetHTTPOnly(cookie, boolInt(c.HTTPOnly))

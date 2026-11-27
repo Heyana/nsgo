@@ -63,6 +63,11 @@ func TestSetWebCookiesKeepsThemInTheStore(t *testing.T) {
 	if !slices.Equal(app.WebCookies, want) {
 		t.Fatalf("store %+v, want %+v", app.WebCookies, want)
 	}
+	// Writing a past expiry removes only the matching name, domain and path.
+	set(core.WebCookie{Name: "SID", Domain: ".example.com", Path: "/", Expires: time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)})
+	if calls != 3 || got != nil || !slices.Equal(app.WebCookies, want[:1]) {
+		t.Fatalf("after expiry: calls %d, err %v, store %+v, want %+v", calls, got, app.WebCookies, want[:1])
+	}
 }
 
 func TestSetWebCookiesRefusesWhatNoPlatformTakes(t *testing.T) {

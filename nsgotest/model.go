@@ -1614,13 +1614,16 @@ func (a *App) setWebCookies(id uint32, cookies []core.WebCookie) {
 			return
 		}
 	}
+	now := a.Clock.WallTime()
 	for _, c := range cookies {
 		// The store keeps a cookie without a path at "/", as the platforms list it.
 		c.Path = c.CookiePath()
 		a.WebCookies = slices.DeleteFunc(a.WebCookies, func(o core.WebCookie) bool {
 			return o.Name == c.Name && strings.EqualFold(o.Domain, c.Domain) && o.CookiePath() == c.CookiePath()
 		})
-		a.WebCookies = append(a.WebCookies, c)
+		if c.Expires.IsZero() || c.Expires.After(now) {
+			a.WebCookies = append(a.WebCookies, c)
+		}
 	}
 	a.post(ev)
 }

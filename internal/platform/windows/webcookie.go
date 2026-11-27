@@ -135,12 +135,16 @@ func (w *window) webCookies(id uint32, r driver.WebCookiesRequest) {
 			})
 			return
 		}
-		for _, c := range r.Cookies {
-			if err := addWebCookie(manager, c); err != nil {
-				manager.release()
-				fail("nsgo: " + err.Error())
-				return
-			}
+		prepared, err := prepareWebCookies(manager, r.Cookies, time.Now())
+		if err != nil {
+			manager.release()
+			fail("nsgo: " + err.Error())
+			return
+		}
+		if err := applyWebCookies(manager, prepared); err != nil {
+			manager.release()
+			fail("nsgo: " + err.Error())
+			return
 		}
 		deadline := time.Now().Add(webCookieSettle)
 		var settle func()
@@ -313,34 +317,84 @@ func cookieManagerOf(web *comObject) *comObject {
 	return manager
 }
 
-// addWebCookie adds or replaces c in manager's store, or removes its key when expired. A cookie without an expiry is a session one, as CreateCookie makes it.
-func addWebCookie(manager *comObject, c driver.WebCookie) error {
-	if !c.Expires.IsZero() && !c.Expires.After(time.Now()) {
-		// WebView2 refuses negative expiry times (except -1, a session cookie), so delete expired cookies by their key instead.
-		hr := manager.call(cookieManagerDeleteByKey, uintptr(unsafe.Pointer(wide(c.Name))),
-			uintptr(unsafe.Pointer(wide(c.Domain))), uintptr(unsafe.Pointer(wide(c.CookiePath()))))
-		if failed(hr) {
-			return hresultError("DeleteCookiesWithDomainAndPath "+c.Name, hr)
+// preparedWebCookie is one cookie ready to apply to manager: either a built ICoreWebView2Cookie to add, or an expired cookie to delete by key.
+type preparedWebCookie struct {
+	spec   driver.WebCookie
+	cookie *comObject
+}
+
+// prepareWebCookies builds every non-expired ICoreWebView2Cookie before any store mutation, releasing all created objects if any cookie fails.
+func prepareWebCookies(manager *comObject, cookies []driver.WebCookie, now time.Time) ([]preparedWebCookie, error) {
+	prepared := make([]preparedWebCookie, 0, len(cookies))
+	releaseBuilt := func() {
+		for i := range prepared {
+			if prepared[i].cookie != nil {
+				prepared[i].cookie.release()
+			}
 		}
-		return nil
 	}
+	for _, c := range cookies {
+		if !c.Expires.IsZero() && !c.Expires.After(now) {
+			prepared = append(prepared, preparedWebCookie{spec: c})
+			continue
+		}
+		cookie, err := buildWebCookie(manager, c)
+		if err != nil {
+			releaseBuilt()
+			return nil, err
+		}
+		prepared = append(prepared, preparedWebCookie{spec: c, cookie: cookie})
+	}
+	return prepared, nil
+}
+
+// applyWebCookies applies each prepared cookie to manager and releases every ICoreWebView2Cookie object.
+func applyWebCookies(manager *comObject, prepared []preparedWebCookie) error {
+	defer func() {
+		for i := range prepared {
+			if prepared[i].cookie != nil {
+				prepared[i].cookie.release()
+			}
+		}
+	}()
+	for _, p := range prepared {
+		if p.cookie == nil {
+			// WebView2 refuses negative expiry times (except -1, a session cookie), so delete expired cookies by their key instead.
+			hr := manager.call(cookieManagerDeleteByKey, uintptr(unsafe.Pointer(wide(p.spec.Name))),
+				uintptr(unsafe.Pointer(wide(p.spec.Domain))), uintptr(unsafe.Pointer(wide(p.spec.CookiePath()))))
+			if failed(hr) {
+				return hresultError("DeleteCookiesWithDomainAndPath "+p.spec.Name, hr)
+			}
+			continue
+		}
+		if hr := manager.call(cookieManagerAddOrUpdateCookie, p.cookie.ptr()); failed(hr) {
+			return hresultError("AddOrUpdateCookie "+p.spec.Name, hr)
+		}
+	}
+	return nil
+}
+
+// buildWebCookie creates and configures an ICoreWebView2Cookie the caller releases. A cookie without an expiry is a session one, as CreateCookie makes it.
+func buildWebCookie(manager *comObject, c driver.WebCookie) (*comObject, error) {
 	var cookie *comObject
 	hr := manager.call(cookieManagerCreateCookie, uintptr(unsafe.Pointer(wide(c.Name))), uintptr(unsafe.Pointer(wide(c.Value))),
 		uintptr(unsafe.Pointer(wide(c.Domain))), uintptr(unsafe.Pointer(wide(c.CookiePath()))), uintptr(unsafe.Pointer(&cookie)))
 	if failed(hr) || cookie == nil {
-		return hresultError("CreateCookie "+c.Name, hr)
+		return nil, hresultError("CreateCookie "+c.Name, hr)
 	}
-	defer cookie.release()
 	if !c.Expires.IsZero() {
 		if hr := cookie.callDouble(cookiePutExpires, cookieExpirySeconds(c.Expires)); failed(hr) {
-			return hresultError("put_Expires", hr)
+			cookie.release()
+			return nil, hresultError("put_Expires", hr)
 		}
 	}
 	if hr := cookie.call(cookiePutIsHttpOnly, boolArg(c.HTTPOnly)); failed(hr) {
-		return hresultError("put_IsHttpOnly", hr)
+		cookie.release()
+		return nil, hresultError("put_IsHttpOnly", hr)
 	}
 	if hr := cookie.call(cookiePutIsSecure, boolArg(c.Secure)); failed(hr) {
-		return hresultError("put_IsSecure", hr)
+		cookie.release()
+		return nil, hresultError("put_IsSecure", hr)
 	}
 	policy := -1
 	switch c.SameSite {
@@ -353,13 +407,11 @@ func addWebCookie(manager *comObject, c driver.WebCookie) error {
 	}
 	if policy >= 0 {
 		if hr := cookie.call(cookiePutSameSite, uintptr(policy)); failed(hr) {
-			return hresultError("put_SameSite", hr)
+			cookie.release()
+			return nil, hresultError("put_SameSite", hr)
 		}
 	}
-	if hr := manager.call(cookieManagerAddOrUpdateCookie, cookie.ptr()); failed(hr) {
-		return hresultError("AddOrUpdateCookie "+c.Name, hr)
-	}
-	return nil
+	return cookie, nil
 }
 
 // clearBrowsingData clears every kind of browsing data of web's profile, over all time, and calls done once WebView2 has.

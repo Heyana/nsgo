@@ -516,7 +516,7 @@ cx.AuthSession(func(redirect string) string {
 
 授权 URL 函数应原样使用收到的重定向地址。Web 和桌面回环重定向会先编码 Unicode 路径并解析点路径段，再把地址交给该函数；回环 `Path` 是未编码文本，所以字面上的 `%` 也会被转义。
 
-应用的 web view 要以用户在别处（例如自己的浏览器里）已有的登录状态打开页面时，用 `cx.SetWebCookies` 写入这次登录的 Cookie，包括页面脚本写不了的 HttpOnly Cookie，再加载页面：存储收下它们后 done 才会运行。写入的是应用所有 web view 共用的持久存储，带 `Expires` 的 Cookie 在应用退出后仍然保留；无痕（Incognito）web view 看不到它们，但 Android 每个应用只有一个存储，那里也看得到。HarmonyOS、Web、tvOS 和 watchOS 回答 `Unavailable`。
+应用的 web view 要以用户在别处（例如自己的浏览器里）已有的登录状态打开页面时，用 `cx.SetWebCookies` 写入这次登录的 Cookie，包括页面脚本写不了的 HttpOnly Cookie，再加载页面：存储收下它们后 done 才会运行。写入的是应用所有 web view 共用的持久存储，带 `Expires` 的 Cookie 在应用退出后仍然保留；无痕（Incognito）web view 看不到它们，但 Android 每个应用只有一个存储，那里也看得到。在 Linux 上，libsoup 会拒绝属于公共后缀列表（包括其私有部分）的域名，并在写入任何 Cookie 前使本次调用失败。HarmonyOS、Web、tvOS 和 watchOS 回答 `Unavailable`。
 
 ```go
 cx.SetWebCookies([]core.WebCookie{
