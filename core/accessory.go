@@ -31,9 +31,9 @@ type accessoryNode struct {
 // hand it to the keyboard.
 func (t *Tree) mountAccessory(cx *Scope, parent *node, a InputAccessoryView) {
 	n := t.newNode(driver.KindView, parent, cx)
-	n.accessory = &accessoryNode{name: a.ID}
+	n.ownExtra().accessory = &accessoryNode{name: a.ID}
 	t.bindStyle(cx, n, a.Style, a.StyleFunc)
-	n.props = driver.ViewProps{TestID: a.TestID}
+	n.setProps(driver.ViewProps{TestID: a.TestID})
 	t.accessories = append(t.accessories, n)
 	if p := n.parent; p != nil {
 		t.childrenChanged(p)
@@ -68,7 +68,7 @@ func (t *Tree) layoutAccessories() {
 		live = append(live, n)
 		if a := n.accessory; a.width != t.size.Width {
 			a.width = t.size.Width
-			n.lstyleOK = false
+			n.lstyle = nil
 			t.markLayout(n)
 		}
 		if !n.layoutDirty {

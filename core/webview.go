@@ -160,10 +160,12 @@ func (t *Tree) mountWebView(cx *Scope, parent *node, w WebView) {
 	t.setClasses(n, w.Class)
 	t.bindStyle(cx, n, w.Style, w.StyleFunc)
 	t.setRef(n, w.Ref)
-	n.h = handlers{layout: w.OnLayout}
-	n.props = driver.ViewProps{Label: w.Label, TestID: w.TestID}
-	t.bindAccessibilityText(cx, n, &n.props.Label, w.LabelFunc)
-	n.web = &webNode{
+	n.setHandlers(handlers{layout: w.OnLayout})
+	n.setProps(driver.ViewProps{Label: w.Label, TestID: w.TestID})
+	if w.LabelFunc != nil {
+		t.bindAccessibilityText(cx, n, &n.ownProps().Label, w.LabelFunc)
+	}
+	n.ownExtra().web = &webNode{
 		config: driver.WebConfig{Source: w.Source, InjectedJavaScript: w.InjectedJavaScript,
 			InjectedJavaScriptBeforeContent: w.InjectedJavaScriptBeforeContent, UserAgent: w.UserAgent, UserAgentSuffix: w.UserAgentSuffix,
 			Headers: cloneWebHeaders(w.Headers), Incognito: w.Incognito,

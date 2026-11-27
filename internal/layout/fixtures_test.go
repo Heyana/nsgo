@@ -538,7 +538,7 @@ func matches(n *testNode, e *expected, rounded bool) bool {
 		!near(l.ScrollHeight(), e.scrollHeight.Value)) {
 		return false
 	}
-	if g := n.state.grid; g != nil {
+	if g := n.state.gridInfo(); g != nil {
 		if e.hasRows && !trackListsMatch(e.rows, g.resolvedTrackList(Vertical, 1)) {
 			return false
 		}
@@ -631,7 +631,7 @@ func printActual(b *strings.Builder, n *testNode, rounded bool, indent string) {
 	l := finalLayout(n, rounded)
 	fmt.Fprintf(b, "%s[x: %-4g y: %-4g w: %-4g h: %-4g] [scroll_w: %g scroll_h: %g]", indent, l.Location.X,
 		l.Location.Y, l.Size.Width, l.Size.Height, l.ScrollWidth(), l.ScrollHeight())
-	if g := n.state.grid; g != nil {
+	if g := n.state.gridInfo(); g != nil {
 		fmt.Fprintf(b, " [rows: %s] [columns: %s]", g.resolvedTrackList(Vertical, 1),
 			g.resolvedTrackList(Horizontal, 1))
 	}

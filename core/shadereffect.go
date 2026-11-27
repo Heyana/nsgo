@@ -189,7 +189,7 @@ func (t *Tree) bindFx(cx *Scope, n *node, role driver.ShaderRole, p *ShaderProgr
 		panic("core: effects and transitions take WGSL programs (CompileWGSL)")
 	}
 	fx := &fxNode{role: role, program: p, progress: progress, overflow: overflow}
-	n.fx = fx
+	n.ownExtra().fx = fx
 	t.pictured = append(t.pictured, n)
 	if p == nil {
 		return
@@ -225,8 +225,8 @@ func (t *Tree) mountShaderEffect(cx *Scope, parent *node, e ShaderEffect) {
 	t.setClasses(n, e.Class)
 	t.bindStyle(cx, n, e.Style, e.StyleFunc)
 	t.setRef(n, e.Ref)
-	n.h = handlers{layout: e.OnLayout}
-	n.props = driver.ViewProps{TestID: e.TestID}
+	n.setHandlers(handlers{layout: e.OnLayout})
+	n.setProps(driver.ViewProps{TestID: e.TestID})
 	t.bindFx(cx, n, driver.ShaderEffect, e.Program, e.Uniforms, e.UniformsFunc, progressOf(e.Progress, e.ProgressNode), e.ProgressFunc, e.MaxSampleOffset, e.Paused, e.PausedFunc)
 	for _, c := range e.Children {
 		t.mount(cx, n, c)
@@ -239,8 +239,8 @@ func (t *Tree) mountShaderTransition(cx *Scope, parent *node, e ShaderTransition
 	t.setClasses(n, e.Class)
 	t.bindStyle(cx, n, e.Style, e.StyleFunc)
 	t.setRef(n, e.Ref)
-	n.h = handlers{layout: e.OnLayout}
-	n.props = driver.ViewProps{TestID: e.TestID}
+	n.setHandlers(handlers{layout: e.OnLayout})
+	n.setProps(driver.ViewProps{TestID: e.TestID})
 	p := e.Program
 	if p == nil && !e.NoFallback {
 		p = crossfade()
@@ -361,7 +361,7 @@ func (t *Tree) navShader(host *node, ts *TransitionShader, backward bool) bool {
 	fx := host.fx
 	if fx == nil {
 		fx = &fxNode{role: driver.ShaderNav}
-		host.fx = fx
+		host.ownExtra().fx = fx
 		t.pictured = append(t.pictured, host)
 		t.within(cx, func() { fx.value = NewAnimatedValue(cx, 0) })
 	}

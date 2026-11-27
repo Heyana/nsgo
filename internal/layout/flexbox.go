@@ -2152,8 +2152,11 @@ func flexFinalLayoutPass(lines []flexLine, c *flexConstants) Rect[float32] {
 // pass at their containing block.
 func flexCollectOofCandidates(n Node, c *flexConstants, items []flexItem) []oofCandidate {
 	st := n.LayoutState()
-	candidates := st.spare[:0]
-	st.spare = nil // in use until computeOofLayout is done with it
+	var candidates []oofCandidate
+	if st.extra != nil {
+		candidates = st.extra.spare[:0]
+		st.extra.spare = nil // in use until computeOofLayout is done with it
+	}
 	// Lines are contiguous runs of the items in document order (reversal
 	// applies to positions, not storage), so the items are sorted by order.
 	next := 0

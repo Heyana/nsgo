@@ -47,7 +47,12 @@ type a11y struct {
 // bindAccessibility sets n's accessibility props from a and binds those
 // that change.
 func (t *Tree) bindAccessibility(cx *Scope, n *node, a a11y) {
-	p := &n.props
+	if a.important == ImportantAuto && !a.accessible && len(a.actions) == 0 && a.actionsFunc == nil &&
+		a.labelFunc == nil && a.hintFunc == nil && a.descriptionFunc == nil &&
+		a.value == nil && a.expanded == nil && a.hidden == nil && n.props.Actions == nil && !n.props.ElementsHidden {
+		return
+	}
+	p := n.ownProps()
 	switch {
 	case a.important == ImportantNo || a.important == ImportantNoHideDescendants:
 		p.Accessible = driver.AccessibleNo
@@ -99,10 +104,11 @@ func (t *Tree) updateAccessibilityActions(n *node, actions []AccessibilityAction
 	if slices.Equal(n.props.ActionList(), actions) {
 		return
 	}
-	n.props.Actions = nil
+	p := n.ownProps()
+	p.Actions = nil
 	if len(actions) > 0 {
 		snapshot := slices.Clone(actions)
-		n.props.Actions = &snapshot
+		p.Actions = &snapshot
 	}
 	t.touch(n)
 }
@@ -122,9 +128,13 @@ func (t *Tree) bindAccessibilityText(cx *Scope, n *node, dst *string, text func(
 // bindIllustrationLabel makes a labeled icon, shader or GPU view an image and lets an unlabeled one remain decorative.
 func (t *Tree) bindIllustrationLabel(cx *Scope, n *node, text func() string) {
 	set := func(label string) {
-		n.props.Label, n.props.Role = label, RoleNone
+		role := RoleNone
 		if label != "" {
-			n.props.Role = RoleImage
+			role = RoleImage
+		}
+		if n.props.Label != label || n.props.Role != role {
+			p := n.ownProps()
+			p.Label, p.Role = label, role
 		}
 	}
 	if text == nil {

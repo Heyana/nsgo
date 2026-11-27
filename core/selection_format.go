@@ -28,11 +28,13 @@ func (s *selectionNode) resolve() *SelectionBlock {
 
 func setSelectionBlock(n *node, block *SelectionBlock, fn func() *SelectionBlock) {
 	if block == nil && fn == nil {
-		n.selection = nil
+		if n.nodeExtra != &zeroExtra {
+			n.nodeExtra.selection = nil
+		}
 		return
 	}
 	if n.selection == nil {
-		n.selection = &selectionNode{}
+		n.ownExtra().selection = &selectionNode{}
 	}
 	n.selection.block, n.selection.fn = block, fn
 }

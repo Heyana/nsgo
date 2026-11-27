@@ -61,12 +61,16 @@ func (t *Tree) mountNative(cx *Scope, parent *node, v Native) {
 	t.setLabels(n, nil, v.LabelledBy)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setRef(n, v.Ref)
-	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
-	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
-	t.bindBool(cx, n, v.Invalid, &n.props.Invalid)
+	n.setHandlers(handlers{press: v.OnPress, layout: v.OnLayout})
+	n.setProps(driver.ViewProps{Label: v.Label, TestID: v.TestID})
+	if v.LabelFunc != nil {
+		t.bindAccessibilityText(cx, n, &n.ownProps().Label, v.LabelFunc)
+	}
+	if v.Invalid != nil {
+		t.bindBool(cx, n, v.Invalid, &n.ownProps().Invalid)
+	}
 	nn := &nativeNode{component: v.Component, props: v.Props, event: v.OnEvent}
-	n.native = nn
+	n.ownExtra().native = nn
 	if v.PropsFunc != nil {
 		cx.renderEffect(func() {
 			nn.props = v.PropsFunc()

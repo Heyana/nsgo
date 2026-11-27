@@ -88,9 +88,9 @@ func Compute(root Node, available Size[AvailableSpace]) {
 	var hoisted []Node
 	var unclaimed []oofCandidate
 	performOofLayout(root, candidates, areaSize, areaOffset, direction, claimAll, overflow, &hoisted, &unclaimed)
-	if !rootIsCached {
-		st := root.LayoutState()
-		st.hoisted = append(st.hoisted, hoisted...)
+	if !rootIsCached && len(hoisted) > 0 {
+		ex := root.LayoutState().ensureExtra()
+		ex.hoisted = append(ex.hoisted, hoisted...)
 	}
 }
 
@@ -205,7 +205,7 @@ func minMaxDefiniteSize(min, max Size[Opt]) Size[Opt] {
 
 // hasFinalFor reports whether the cache holds the final layout for in.
 func (c *cache) hasFinalFor(in *layoutInput) bool {
-	return in.runMode == performLayout && c.hasFinal && c.mode == cacheModeOf(in) && c.finalKey == newCacheKey(in)
+	return in.runMode == performLayout && c.hasFinal && c.mode == cacheModeOf(in) && c.finalKey() == newCacheKey(in)
 }
 
 // computeChildLayout lays out or measures a node: Taffy's
@@ -218,7 +218,7 @@ func computeChildLayout(n Node, in layoutInput) layoutOutput {
 // its parent's block formatting context when bctx is set.
 func computeNodeLayout(n Node, in layoutInput, bctx *blockContext) layoutOutput {
 	st := n.LayoutState()
-	if begin := st.BeginWork; begin != nil {
+	if begin := st.beginWork(); begin != nil {
 		if end := begin(); end != nil {
 			defer end()
 		}
@@ -226,6 +226,7 @@ func computeNodeLayout(n Node, in layoutInput, bctx *blockContext) layoutOutput 
 	// An ancestor is display: none.
 	if in.runMode == performHiddenLayout {
 		st.hasLast = false
+		st.cache.final.oofCandidates = nil
 		return computeHiddenLayout(n)
 	}
 
@@ -237,7 +238,7 @@ func computeNodeLayout(n Node, in layoutInput, bctx *blockContext) layoutOutput 
 		}
 	}
 	if in.runMode == performLayout {
-		st.lastIn, st.lastOut, st.hasLast = in, out.clone(), true
+		st.lastIn, st.hasLast = in, true
 	}
 	return out
 }
@@ -394,7 +395,7 @@ var passes atomic.Uint64
 
 func roundLayout(n Node, cumulativeX, cumulativeY float32, ratio float64) {
 	st := n.LayoutState()
-	if begin := st.BeginWork; begin != nil {
+	if begin := st.beginWork(); begin != nil {
 		if end := begin(); end != nil {
 			defer end()
 		}
@@ -434,11 +435,12 @@ func roundLayout(n Node, cumulativeX, cumulativeY float32, ratio float64) {
 	// The children's layouts and where they are carried from are those
 	// they were snapped with: their rounding stands.
 	origin := Point[float32]{cumulativeX, cumulativeY}
-	if st.kidsRounded && st.kidsPerformed == st.performed && st.kidsRatio == ratio &&
+	ratio32 := float32(ratio)
+	if st.kidsRounded && st.kidsPerformed == st.performed && st.kidsRatio == ratio32 &&
 		sameSnap(st.kidsOrigin, origin, ratio) && exactSums(x, y, &u, ratio) {
 		return
 	}
-	st.kidsRounded, st.kidsPerformed, st.kidsOrigin, st.kidsRatio = true, st.performed, origin, ratio
+	st.kidsRounded, st.kidsPerformed, st.kidsOrigin, st.kidsRatio = true, st.performed, origin, ratio32
 	st.rounds++
 
 	// In-flow children are rounded relative to this node. Out-of-flow ones
@@ -452,7 +454,9 @@ func roundLayout(n Node, cumulativeX, cumulativeY float32, ratio float64) {
 			roundLayout(child, cumulativeX, cumulativeY, ratio)
 		}
 	}
-	for _, child := range st.hoisted {
-		roundLayout(child, cumulativeX, cumulativeY, ratio)
+	if st.extra != nil {
+		for _, child := range st.extra.hoisted {
+			roundLayout(child, cumulativeX, cumulativeY, ratio)
+		}
 	}
 }

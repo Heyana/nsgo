@@ -460,14 +460,15 @@ func computeGridLayout(n Node, in layoutInput) layoutOutput {
 	columnLineNames.resolver = names.columnLines
 	rowLineNames.resolver = names.rowLines
 	st := n.LayoutState()
-	info := st.grid
+	ex := st.ensureExtra()
+	info := ex.grid
 	if info == nil {
 		info = &gridInfo{}
+		ex.grid = info
 	}
 	info.rows.set(finalRowCounts, rows, rowLineNames)
 	info.columns.set(finalColCounts, columns, columnLineNames)
 	info.areas = names.areas
-	st.grid = info
 
 	// A scroll container's own end padding is part of its scrollable
 	// overflow; other boxes don't extend their overflow by their padding.

@@ -13,7 +13,8 @@ func (t *Tree) Remount() {
 			continue
 		}
 		n.created = false
-		n.sent = sent{}
+		n.sent = sent{viewStyle: &defaultViewStyle, props: &zeroViewProps}
+		n.flags &^= flagSentVSOwned
 		if n.deleted {
 			continue
 		}
@@ -53,7 +54,7 @@ func (t *Tree) Remount() {
 		}
 		if n.bound != nil {
 			b := *n.bound
-			n.bound = nil
+			n.nodeExtra.bound = nil
 			t.rebind(n, b)
 		}
 	}

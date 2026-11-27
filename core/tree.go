@@ -238,9 +238,10 @@ type Tree struct {
 	// replacing holds, by element and component type, the fields an
 	// XFunc beside them replaces (twins.go).
 	replacing map[reflect.Type][]twin
-	// lscratch is where restyle compares a node's layout style: a local
-	// one would move to the heap at every restyle.
+	// lscratch and sscratch are where restyle builds layout and resolved styles
+	// without escaping locals to the heap on every restyle.
 	lscratch layout.Style
+	sscratch Style
 	// lastItems is how many items the last commit sent, lastShared
 	// whether its batch was these items (CommitShared), and sharedBatch
 	// the MountBatch header reused by CommitShared.
@@ -271,12 +272,20 @@ type report struct {
 // after runs fn under n's owner once the commit's items are out.
 func (t *Tree) after(n *node, fn func()) { t.reports = append(t.reports, report{n, fn}) }
 
-type node struct {
-	id       NodeID          // 0 for regions
-	kind     driver.ViewKind // 0 for regions
-	parent   *node
-	children []*node
-	owner    *Scope
+// nodeFlags holds copy-on-write ownership bits for shared node sub-structs.
+type nodeFlags uint8
+
+const (
+	flagBaseOwned nodeFlags = 1 << iota
+	flagStyleOwned
+	flagPropsOwned
+	flagSentVSOwned
+)
+
+// nodeExtra holds rare per-node element payloads and feature state, allocated
+// lazily only when a node sets one of these fields; plain views and texts share
+// the read-only zeroExtra sentinel.
+type nodeExtra struct {
 	// contentBox is allocated only when a Ref observes its layout content box.
 	contentBox *Signal[Bounds]
 	// pointerLocked is allocated only when a Ref observes its pointer lock.
@@ -292,76 +301,34 @@ type node struct {
 	tooltipOwner       *node
 	tooltipDescription string
 
-	base   Style
-	dyn    *Style // the StyleFunc's, kept once and updated in place
-	style  Style  // base and dyn merged, with the states' styles
-	states uint8
-	// showsExpanded, ownPointer, pointerNone and pointerTarget: View's
-	// ShowsExpanded, its element's PointerEvents, and what
-	// updatePointerEvents worked out.
-	showsExpanded              bool
-	ownPointer                 PointerEvents
-	pointerNone, pointerTarget bool
-	// color is the text color the node has, for CurrentColor.
-	color  Color
-	ink    *textColorBinding
-	h      handlers
-	props  driver.ViewProps
 	labels *labelRelations
 	// bound are the animated values its gestures and scrolling set, as
 	// an element last bound them (rebind).
-	bound *boundValues
-	// material is a view's IOS.BackdropMaterial, elevation its
-	// Android.Elevation.
-	material  driver.BackdropMaterial
-	elevation Points
-	// appearance is what its subtree forces (Scope.SetSubtreeAppearance).
-	appearance Appearance
-	env        *envValues // what its padding's and margin's terms come to
-	// envBound is set once an element's terms are read in an effect of
-	// their own (followEnvTerms).
-	envBound     bool
-	text         *textNode
+	bound        *boundValues
+	env          *envValues // what its padding's and margin's terms come to
 	input        *inputNode
 	scroll       *scrollNode
 	image        *imageNode
 	cursorPixels *[2]pixelFrame
 	hoist        *hoistNode // an overlay's or a modal's
 	hosted       []*node    // the overlays and modals this root view, modal or frame hosts
-	// confines is set on a view that holds views of an owner Confine confined that does not own it: their frame, which clips them and hosts their overlays.
-	confines bool
-	// transformed is set once the view has been sent a transform, keyframes or a bound transform, and stays set: a transition back to none still draws it elsewhere for a while, so its parent's hit tests look for it outside the layout (ItemOverflow).
-	transformed bool
-	// hidden is set, as the last layout found, for a node DisplayNone
-	// hides: its own or a shadow ancestor's, across hoisting too.
-	hidden bool
-	attach *attachNode
-	screen *screenNode
-	list   *listNode
-	canvas *canvasNode
-	gpu    *gpuNode
-	shader *shaderNode
-	fx     *fxNode // an effect's, a transition's or a navigation's shader
-	icon   *iconNode
-	web    *webNode
-	video  *videoNode
-	native *nativeNode
+	attach       *attachNode
+	screen       *screenNode
+	list         *listNode
+	canvas       *canvasNode
+	gpu          *gpuNode
+	shader       *shaderNode
+	fx           *fxNode // an effect's, a transition's or a navigation's shader
+	icon         *iconNode
+	web          *webNode
+	video        *videoNode
+	native       *nativeNode
 	// accessory is an InputAccessoryView's: a layout root as wide as the
 	// surface that no view holds.
 	accessory *accessoryNode
 	pip       *pictureInPictureNode
-	// headerView is a view of a screen's system header: a layout root
-	// at its content size that the platform puts in the bar.
-	headerView bool
-	// inputBar is a multiline input's scrollbar host: laid out as its own root at the input's frame size so the input stays a leaf for text measurement, and drawn over the editor.
-	inputBar bool
-	panning  bool           // it follows pans: OnPan or PanValues
-	pinching bool           // it follows pinches: OnPinch or PinchValue
-	rotating bool           // it follows rotations: OnRotation or RotationValue
-	anim     *viewAnimation // the animated values bound to the view
-	part     PartStates     // the states it is styled in as a control's part
-	isStack  bool
-	ref      *Ref
+	anim      *viewAnimation // the animated values bound to the view
+	part      PartStates     // the states it is styled in as a control's part
 	// edgeBar is the scroll view side the view is a bar over.
 	edgeBar *EdgeBar
 	// place is the holder a place region shows; held the holder whose
@@ -369,43 +336,153 @@ type node struct {
 	place, held *Holder
 	// elem is the Element the node is, which its own owner releases.
 	elem *Element
-	// cls are its Tailwind classes.
-	cls *nodeClasses
 	// selection holds rich Markdown/HTML selection semantics when set (e.g. by base/textview).
 	selection *selectionNode
+	endStop   func() bool // stops the OnTransitionEnd waiting for its transition
+	fill      *Size       // the size a root fills, if it fills one
 
-	frame       Bounds
-	layoutDirty bool
+	elevation  Points // Android.Elevation
+	material   driver.BackdropMaterial
+	appearance Appearance // what its subtree forces (Scope.SetSubtreeAppearance)
+}
+
+type node struct {
+	parent   *node
+	owner    *Scope
+	children []*node
+	flat     []*node // native children, through regions
+
+	// base, style, props, h, and nodeExtra are always non-nil, pointing at
+	// read-only sentinels or shared interned values until a node needs its own.
+	base   *Style
+	dyn    *Style // the StyleFunc's, kept once and updated in place
+	style  *Style // base and dyn merged, with the states' styles
+	props  *driver.ViewProps
+	h      *handlers
+	ink    *textColorBinding
+	cls    *nodeClasses // its Tailwind classes
+	passed *textFields  // interned text fields it passed its children last
+	lstyle *layout.Style
+	text   *textNode
+	ref    *Ref
+	*nodeExtra
+
 	// synced is the count of its children's roundings syncFrames last
 	// took their frames after (layout.State.Rounds).
 	synced uint64
-	// lstate is what layout keeps for the node; lstyle its style mapped for
-	// layout, while lstyleOK.
-	lstate   layout.State
-	lstyle   layout.Style
-	lstyleOK bool
-	transit  bool        // in Tree.transits
-	restyled bool        // in Tree.ending
-	endStop  func() bool // stops the OnTransitionEnd waiting for its transition
-	queued   bool        // a boundary waiting in Tree.boundaries
-	rtl      bool        // laid out right to left
-	isRoot   bool        // a layout root: the root view, an overlay or a modal
-	fill     *Size       // the size a root fills, if it fills one
+	sent   sent
+	lstate layout.State
+	frame  Bounds
 
-	created       bool
-	deleted       bool
-	pace          uint8 // paceWaiting or paceNow, until its view is made
-	childrenDirty bool
-	flat          []*node // native children, through regions
-	sent          sent
+	id    NodeID // 0 for regions
+	color Color  // text color the node has, for CurrentColor
 
-	// A commit visits only what changed (mark, markResolve): dirty views
-	// compare their parts with what was sent, and dirtyKids leads the walk
-	// to views inside one through the views they are emitted in; resolve
-	// and resolveKids do the same for resolving, through shadow parents.
-	dirty, dirtyKids        bool
-	unresolved, resolveKids bool
-	passed                  textFields // what it passed its children last
+	kind       driver.ViewKind // 0 for regions
+	states     uint8
+	ownPointer PointerEvents
+	pace       uint8 // paceWaiting or paceNow, until its view is made
+	flags      nodeFlags
+
+	showsExpanded              bool
+	pointerNone, pointerTarget bool
+	envBound                   bool
+	confines                   bool
+	transformed                bool
+	hidden                     bool
+	headerView                 bool
+	inputBar                   bool
+	panning                    bool // it follows pans: OnPan or PanValues
+	pinching                   bool // it follows pinches: OnPinch or PinchValue
+	rotating                   bool // it follows rotations: OnRotation or RotationValue
+	isStack                    bool
+	layoutDirty                bool
+	transit                    bool // in Tree.transits
+	restyled                   bool // in Tree.ending
+	queued                     bool // a boundary waiting in Tree.boundaries
+	rtl                        bool // laid out right to left
+	isRoot                     bool // a layout root: the root view, an overlay or a modal
+	created                    bool
+	deleted                    bool
+	childrenDirty              bool
+	dirty, dirtyKids           bool
+	unresolved, resolveKids    bool
+}
+
+func (n *node) ownExtra() *nodeExtra {
+	if n.nodeExtra == &zeroExtra {
+		n.nodeExtra = new(nodeExtra)
+	}
+	return n.nodeExtra
+}
+
+func (n *node) hasFlag(f nodeFlags) bool { return n.flags&f != 0 }
+
+func (n *node) setFlag(f nodeFlags, on bool) {
+	if on {
+		n.flags |= f
+	} else {
+		n.flags &^= f
+	}
+}
+
+func (n *node) setBase(t *Tree, s *Style) {
+	n.flags &^= flagBaseOwned
+	n.base = t.internStyle(s)
+}
+
+func (n *node) ownBase() *Style {
+	if n.flags&flagBaseOwned == 0 {
+		cp := *n.base
+		n.base = &cp
+		n.flags |= flagBaseOwned
+	}
+	return n.base
+}
+
+func (n *node) ownProps() *driver.ViewProps {
+	if n.flags&flagPropsOwned == 0 {
+		cp := *n.props
+		n.props = &cp
+		n.flags |= flagPropsOwned
+	}
+	return n.props
+}
+
+func (n *node) setProps(p driver.ViewProps) {
+	if p == zeroViewProps {
+		n.props = &zeroViewProps
+		n.flags &^= flagPropsOwned
+		return
+	}
+	if p == defaultTextProps {
+		n.props = &defaultTextProps
+		n.flags &^= flagPropsOwned
+		return
+	}
+	*n.ownProps() = p
+}
+
+func (n *node) ownHandlers() *handlers {
+	if n.h == &noHandlers {
+		n.h = new(handlers)
+	}
+	return n.h
+}
+
+func (n *node) setHandlers(h handlers) {
+	if h.empty() {
+		n.h = &noHandlers
+		return
+	}
+	if n.h == &noHandlers {
+		n.h = new(handlers)
+	}
+	*n.h = h
+}
+
+func (n *node) hasParentSpacing() bool {
+	p := n.nativeParent()
+	return p != nil && p.cls != nil && (p.cls.props.hasSpaceX || p.cls.props.hasSpaceY)
 }
 
 type handlers struct {
@@ -436,6 +513,28 @@ type handlers struct {
 	fileDrop                             func([]string)
 	action                               func(string)
 	transitionEnd                        func()
+}
+
+func (h *handlers) empty() bool {
+	return h.press == nil && h.longPress == nil && h.pressDown == nil && h.pressUp == nil &&
+		h.focusIn == nil && h.focusOut == nil &&
+		h.mouseEnter == nil && h.mouseLeave == nil && h.mouseMove == nil &&
+		h.mouseDown == nil && h.mouseUp == nil &&
+		h.pointerDelta == nil && h.pointerUnlock == nil &&
+		h.textSelection == nil &&
+		h.focus == nil && h.blur == nil &&
+		h.keyDown == nil && h.keyUp == nil &&
+		h.touch == nil && h.touchCapture == nil &&
+		h.contextMenu == nil &&
+		h.change == nil && h.submit == nil &&
+		h.scroll == nil && h.pressOutside == nil &&
+		h.layout == nil && h.cancel == nil &&
+		h.loadStart == nil && h.loadEnd == nil &&
+		h.progress == nil && h.load == nil && h.loadError == nil &&
+		h.pan == nil && h.pinch == nil && h.rotation == nil &&
+		h.wheel == nil &&
+		h.fileEnter == nil && h.fileLeave == nil && h.fileDrop == nil &&
+		h.action == nil && h.transitionEnd == nil
 }
 
 type textNode struct {
@@ -801,18 +900,16 @@ func (sc *scrollNode) along(d Points) Point {
 }
 
 type sent struct {
-	frame     Bounds
-	viewStyle driver.ViewStyle
-	props     driver.ViewProps
-	events    driver.EventMask
+	parent    *node
+	viewStyle *driver.ViewStyle // always non-nil (&defaultViewStyle, interned, or owned)
+	props     *driver.ViewProps // always non-nil (&zeroViewProps, &defaultTextProps, or immutable snapshot)
 	children  []*node
-	layout    Bounds
+	events    driver.EventMask
+	frame     Bounds
 	overflow  Bounds // the area ItemOverflow last gave
 	// transformed is the flag ItemOverflow last gave.
 	transformed bool
-	// parent is the view the view was last inserted into, nil once
-	// removed; removed is set from then until it is inserted again.
-	parent  *node
+	// removed is set from removal until the view is inserted again.
 	removed bool
 }
 
@@ -832,7 +929,8 @@ func newTree(root *Scope, text driver.TextEngine, id uint32) *Tree {
 		root.surf = t
 	}
 	t.view = t.newNode(driver.KindView, nil, root)
-	t.view.style = Style{Direction: Column}
+	t.view.base = t.internStyle(&Style{Direction: Column})
+	t.view.style = t.view.base
 	// The app-wide bindings (KeyOptions.AllSurfaces) come before what it shows binds.
 	for _, g := range root.rt.globalKeys {
 		g.bind(t, false)
@@ -1027,9 +1125,23 @@ func (t *Tree) Changed() bool { return t.changed }
 func (t *Tree) within(o *Scope, fn func()) { t.rt.run(o, fn) }
 
 func (t *Tree) newNode(kind driver.ViewKind, parent *node, owner *Scope) *node {
-	n := &node{kind: kind, parent: parent, owner: owner, layoutDirty: true, childrenDirty: true, rtl: t.rtl}
+	n := &node{
+		kind:          kind,
+		parent:        parent,
+		owner:         owner,
+		base:          &zeroStyle,
+		style:         &zeroStyle,
+		props:         &zeroViewProps,
+		h:             &noHandlers,
+		nodeExtra:     &zeroExtra,
+		sent:          sent{viewStyle: &defaultViewStyle, props: &zeroViewProps},
+		layoutDirty:   true,
+		childrenDirty: true,
+		rtl:           t.rtl,
+	}
+	n.lstate.SkipAnswers = kind != driver.KindText
 	if owner != nil && t.rt.workObserved {
-		n.lstate.BeginWork = owner.BeginWork
+		n.lstate.SetBeginWork(owner.BeginWork)
 	}
 	t.pointersMoved = t.pointerStyled
 	if kind != 0 {
@@ -1050,7 +1162,7 @@ func (t *Tree) newNode(kind driver.ViewKind, parent *node, owner *Scope) *node {
 	if kind != 0 && owner != nil && owner.rt.subtreeAppearance {
 		owner.renderEffect(func() {
 			if a := subtreeAppearance(owner); a != n.appearance {
-				n.appearance = a
+				n.ownExtra().appearance = a
 				t.mark(n)
 			}
 		})
@@ -1223,7 +1335,7 @@ func (t *Tree) discard(n *node) {
 		h := n.hoist.host
 		// Its host lets go of it, else the root view keeps the whole subtree. A new slice, as a loop over the host's may be what removes it.
 		if i := slices.Index(h.hosted, n); i >= 0 {
-			h.hosted = slices.Concat(h.hosted[:i:i], h.hosted[i+1:])
+			h.ownExtra().hosted = slices.Concat(h.hosted[:i:i], h.hosted[i+1:])
 		}
 		t.reorder(h)
 		t.markLayout(h)
@@ -1323,13 +1435,13 @@ type regionMounter interface {
 
 // bindStyle sets n's style, binding StyleFunc when there is one.
 func (t *Tree) bindStyle(cx *Scope, n *node, base Style, fn func() Style) {
-	n.base = base
+	n.setBase(t, &base)
 	t.restyle(n)
 	t.syncPosition(n)
 	if fn == nil {
-		if safe, keyboard := base.envUses(); safe || keyboard {
+		if safe, keyboard := n.base.envUses(); safe || keyboard {
 			cx.renderEffect(func() {
-				t.readEnv(cx, n, &n.base)
+				t.readEnv(cx, n, n.base)
 				if t.restyle(n) {
 					t.markLayout(n)
 				}
@@ -1342,7 +1454,7 @@ func (t *Tree) bindStyle(cx *Scope, n *node, base Style, fn func() Style) {
 			n.dyn = new(Style)
 		}
 		*n.dyn = fn()
-		t.readEnv(cx, n, &n.base, n.dyn)
+		t.readEnv(cx, n, n.base, n.dyn)
 		changed := t.restyle(n)
 		t.syncPosition(n)
 		if changed {
@@ -1361,6 +1473,22 @@ func (t *Tree) restyle(n *node) bool {
 		n.restyled = true
 		t.ending = append(t.ending, n)
 	}
+	// Fast path: static view sharing its interned base style directly.
+	if n.dyn == nil && n.cls == nil && !n.hasFlag(flagBaseOwned) &&
+		!n.base.hasStateStyles() && !n.base.hasZeroSentinel() &&
+		n.env == nil && (n.screen == nil || !n.screen.hidden) &&
+		len(t.suspended) == 0 && !n.hasParentSpacing() {
+		if f := n.nativeParent(); f != nil && f.showsExpanded {
+			p := n.labelProps()
+			t.showTrigger(n, &p)
+		}
+		z, sticky := n.stackRank()
+		was := n.style
+		lines, overflow, pointer, visibility, display := was.NumberOfLines, was.TextOverflow, was.PointerEvents, was.Visibility, was.Display
+		n.style = n.base
+		n.flags &^= flagStyleOwned
+		return t.finishRestyle(n, z, sticky, lines, overflow, pointer, visibility, display)
+	}
 	p := n.labelProps()
 	p.Checked = p.Checked || n.part.Checked
 	p.Indeterminate = p.Indeterminate || n.part.Indeterminate
@@ -1368,11 +1496,10 @@ func (t *Tree) restyle(n *node) bool {
 	p.Disabled = p.Disabled || n.part.Disabled
 	p.Invalid = p.Invalid || n.part.Invalid
 	t.showTrigger(n, &p)
-	var dyn Style
+	own := *n.base
 	if n.dyn != nil {
-		dyn = *n.dyn
+		own = own.Merge(*n.dyn)
 	}
-	own := n.base.Merge(dyn)
 	if p.Disabled {
 		// A disabled view's own state styles wait, but disabled's; its
 		// classes' variants, which merge next, still apply (NSH's
@@ -1388,20 +1515,50 @@ func (t *Tree) restyle(n *node) bool {
 		g = t.groupState(n, gs.Name)
 	}
 	z, sticky := n.stackRank()
-	was := &n.style
+	was := n.style
 	lines, overflow, pointer, visibility, display := was.NumberOfLines, was.TextOverflow, was.PointerEvents, was.Visibility, was.Display
-	n.style = merged.withStates(statesOf(t.shownInteraction(n), &p, n.part.Data), g)
-	if n.cls != nil && n.cls.related {
-		n.style = mergeStyles(n.style, n.cls.important)
+	t.sscratch = merged.withStates(statesOf(t.shownInteraction(n), &p, n.part.Data), g)
+	if n.cls != nil && n.cls.related && n.cls.important != &zeroStyle {
+		t.sscratch = mergeStyles(t.sscratch, *n.cls.important)
 	}
-	n.style = n.style.unzeroed()
+	if t.sscratch.hasZeroSentinel() {
+		t.sscratch = t.sscratch.unzeroed()
+	}
 	if p.Disabled {
 		// The platform still follows the states a disabled view's own
 		// styles wait for, which the event mask reads.
-		full := n.withClasses(n.base.Merge(dyn))
-		n.style.Hover, n.style.Focus, n.style.Active, n.style.FocusWithin = full.Hover, full.Focus, full.Active, full.FocusWithin
-		n.style.FocusVisible = full.FocusVisible
+		orig := *n.base
+		if n.dyn != nil {
+			orig = orig.Merge(*n.dyn)
+		}
+		full := n.withClasses(orig)
+		t.sscratch.Hover, t.sscratch.Focus, t.sscratch.Active, t.sscratch.FocusWithin = full.Hover, full.Focus, full.Active, full.FocusWithin
+		t.sscratch.FocusVisible = full.FocusVisible
 	}
+	n.applyEnvStyle(&t.sscratch)
+	if n.screen != nil && n.screen.hidden {
+		t.sscratch.Display = DisplayNone
+	}
+	if len(t.suspended) > 0 && t.suspendedIn(n) {
+		t.sscratch.Display = DisplayNone
+	}
+	switch {
+	case n.hasFlag(flagStyleOwned):
+		*n.style = t.sscratch
+	case !n.hasFlag(flagBaseOwned) && sameStyle(&t.sscratch, n.base):
+		n.style = n.base
+	case (n.dyn == nil || !n.created) && !n.hasFlag(flagBaseOwned):
+		n.style = t.internStyle(&t.sscratch)
+	default:
+		s := new(Style)
+		*s = t.sscratch
+		n.style = s
+		n.flags |= flagStyleOwned
+	}
+	return t.finishRestyle(n, z, sticky, lines, overflow, pointer, visibility, display)
+}
+
+func (t *Tree) finishRestyle(n *node, z int, sticky bool, lines int, overflow EllipsizeMode, pointer PointerEvents, visibility Visibility, display Display) bool {
 	if n.style.NumberOfLines != lines || n.style.TextOverflow != overflow {
 		if n.text != nil {
 			n.text.stale = true
@@ -1414,30 +1571,23 @@ func (t *Tree) restyle(n *node) bool {
 		// Hiding a view leaves its frame where it is, but not among the boxes the layout audit draws.
 		t.framesMoved = true
 	}
-	n.applyEnv()
 	if z2, sticky2 := n.stackRank(); z2 != z || sticky2 != sticky {
 		if parent := n.nativeParent(); parent != nil {
 			t.reorder(parent)
 		}
-	}
-	if n.screen != nil && n.screen.hidden {
-		n.style.Display = DisplayNone
-	}
-	if len(t.suspended) > 0 && t.suspendedIn(n) {
-		n.style.Display = DisplayNone
 	}
 	if n.style.Display != display && len(t.keys) > 0 {
 		// The bindings of what it hides leave the keymap, and come back as it shows (keyActive).
 		t.keysChanged = true
 	}
 	// Roots are placed by style the layout leaves out of theirs.
-	if n.lstyleOK && !n.isRoot && n.hoist == nil {
+	if n.lstyle != nil && !n.isRoot && n.hoist == nil {
 		t.lscratch = n.layoutStyle()
-		if t.lscratch.Equal(&n.lstyle) {
+		if t.lscratch.Equal(n.lstyle) {
 			return false
 		}
 	}
-	n.lstyleOK = false
+	n.lstyle = nil
 	// Its edges may change where its frame does not, as a padding does.
 	t.framesMoved = true
 	// A style transition moves the frame its own change gives n, as CSS
@@ -1495,7 +1645,8 @@ func (t *Tree) showTrigger(n *node, p *driver.ViewProps) {
 		return
 	}
 	if !n.props.Expandable || n.props.Expanded != f.props.Expanded {
-		n.props.Expandable, n.props.Expanded = true, f.props.Expanded
+		np := n.ownProps()
+		np.Expandable, np.Expanded = true, f.props.Expanded
 		t.touch(n)
 	}
 	p.Expandable, p.Expanded = true, f.props.Expanded
@@ -1663,7 +1814,13 @@ func (t *Tree) partStates(n *node, p PartStates) {
 	} else if !p.Focused && n.part.Focused {
 		t.forgetFocusPart(n)
 	}
-	n.part = p
+	if !p.Checked && !p.Indeterminate && !p.Selected && !p.Disabled && !p.Invalid && !p.Focused && len(p.Data) == 0 {
+		if n.nodeExtra != &zeroExtra {
+			n.nodeExtra.part = PartStates{}
+		}
+		return
+	}
+	n.ownExtra().part = p
 }
 
 // forgetFocusPart takes n out of the nodes whose part shows the focus,
@@ -1798,7 +1955,7 @@ func (t *Tree) updatePointerEvents() {
 			v = PointerEventsAuto
 		}
 		if n.props.PointerEvents != v {
-			n.props.PointerEvents = v
+			n.ownProps().PointerEvents = v
 			t.touch(n)
 		}
 		for _, k := range n.children {
@@ -1864,43 +2021,64 @@ func (t *Tree) mountView(cx *Scope, parent *node, v View) {
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, hintFunc: v.HintFunc, descriptionFunc: v.AccessibilityDescriptionFunc, value: v.AccessibilityValue, expanded: v.Expanded, expandable: v.Expandable,
 		hidden: v.AccessibilityElementsHidden, actions: v.AccessibilityActions, actionsFunc: v.AccessibilityActionsFunc, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
-	t.bindBool(cx, n, v.Disabled, &n.props.Disabled)
+	if v.Disabled != nil {
+		t.bindBool(cx, n, v.Disabled, &n.ownProps().Disabled)
+	}
 	if v.Follow != nil {
 		t.bindFollow(cx, n, v)
 	}
 	if focusable := v.Focusable; focusable != nil {
+		p := n.ownProps()
 		cx.renderEffect(func() {
-			n.props.Focusable = focusable()
-			n.props.NoFocus = !n.props.Focusable
+			p.Focusable = focusable()
+			p.NoFocus = !p.Focusable
 			t.restyle(n)
 		})
 	}
-	t.bindBool(cx, n, v.Selected, &n.props.Selected)
-	t.bindBool(cx, n, v.SelectionItem, &n.props.SelectionItem)
-	t.bindBool(cx, n, v.Checked, &n.props.Checked)
-	t.bindBool(cx, n, v.Indeterminate, &n.props.Indeterminate)
-	t.bindBool(cx, n, v.Pressed, &n.props.Pressed)
-	t.bindBool(cx, n, v.Busy, &n.props.Busy)
-	t.bindBool(cx, n, v.Invalid, &n.props.Invalid)
+	if v.Selected != nil {
+		t.bindBool(cx, n, v.Selected, &n.ownProps().Selected)
+	}
+	if v.SelectionItem != nil {
+		t.bindBool(cx, n, v.SelectionItem, &n.ownProps().SelectionItem)
+	}
+	if v.Checked != nil {
+		t.bindBool(cx, n, v.Checked, &n.ownProps().Checked)
+	}
+	if v.Indeterminate != nil {
+		t.bindBool(cx, n, v.Indeterminate, &n.ownProps().Indeterminate)
+	}
+	if v.Pressed != nil {
+		t.bindBool(cx, n, v.Pressed, &n.ownProps().Pressed)
+	}
+	if v.Busy != nil {
+		t.bindBool(cx, n, v.Busy, &n.ownProps().Busy)
+	}
+	if v.Invalid != nil {
+		t.bindBool(cx, n, v.Invalid, &n.ownProps().Invalid)
+	}
 	if v.HitSlopFunc != nil {
+		p := n.ownProps()
 		cx.renderEffect(func() {
-			if e := v.HitSlopFunc(); e != n.props.HitSlop {
-				n.props.HitSlop = e
+			if e := v.HitSlopFunc(); e != p.HitSlop {
+				p.HitSlop = e
 				t.touch(n)
 			}
 		})
 	}
 	if v.AccessibilityLevel != nil {
+		p := n.ownProps()
 		cx.renderEffect(func() {
-			if l := v.AccessibilityLevel(); l != n.props.Level {
-				n.props.Level = l
+			if l := v.AccessibilityLevel(); l != p.Level {
+				p.Level = l
 				t.touch(n)
 			}
 		})
 	}
-	n.props.Href = v.Web.href(n.owner)
+	if href := v.Web.href(n.owner); href != "" || n.props.Href != "" {
+		n.ownProps().Href = href
+	}
 	if v.Web.HrefFunc != nil {
-		t.bindAccessibilityText(cx, n, &n.props.Href, func() string { return v.Web.href(n.owner) })
+		t.bindAccessibilityText(cx, n, &n.ownProps().Href, func() string { return v.Web.href(n.owner) })
 	}
 	if v.PartStates != nil {
 		cx.renderEffect(func() {
@@ -1935,30 +2113,39 @@ func (t *Tree) setViewParts(n *node, v View) {
 	t.setLabels(n, v.LabelFor, v.LabelledBy)
 	n.ownPointer, n.showsExpanded = v.PointerEvents, v.ShowsExpanded
 	t.pointersMoved = t.pointerStyled
-	n.h = handlers{focusIn: v.OnFocusIn, focusOut: v.OnFocusOut, press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
+	n.setHandlers(handlers{focusIn: v.OnFocusIn, focusOut: v.OnFocusOut, press: v.OnPress, longPress: v.OnLongPress, pressDown: v.OnPressDown, pressUp: v.OnPressUp,
 		mouseEnter: v.OnMouseEnter, mouseLeave: v.OnMouseLeave, mouseMove: v.OnMouseMove, pointerDelta: v.OnPointerDelta, pointerUnlock: v.OnPointerUnlock,
 		mouseDown: v.OnMouseDown, mouseUp: v.OnMouseUp,
 		textSelection: v.OnTextSelection,
 		layout:        v.OnLayout, contextMenu: v.OnContextMenu, touch: v.OnTouch, touchCapture: v.OnTouchCapture,
 		pan: v.OnPan, pinch: v.OnPinch, rotation: v.OnRotation, wheel: v.OnWheel,
 		fileEnter: v.OnFileDragEnter, fileLeave: v.OnFileDragLeave, fileDrop: v.OnFileDrop,
-		focus: v.OnFocus, blur: v.OnBlur, keyDown: v.OnKeyDown, keyUp: v.OnKeyUp, transitionEnd: v.OnTransitionEnd}
-	n.h.action = v.OnAccessibilityAction
-	n.responder = v.Responder
-	n.match = v.MatchID
-	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, Description: v.AccessibilityDescription,
+		focus: v.OnFocus, blur: v.OnBlur, keyDown: v.OnKeyDown, keyUp: v.OnKeyUp, transitionEnd: v.OnTransitionEnd,
+		action: v.OnAccessibilityAction})
+	if v.Responder != nil || n.nodeExtra != &zeroExtra {
+		n.ownExtra().responder = v.Responder
+	}
+	if v.MatchID != "" || n.nodeExtra != &zeroExtra {
+		n.ownExtra().match = v.MatchID
+	}
+	n.setProps(driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, Description: v.AccessibilityDescription,
 		LiveRegion: liveRegion(v.Role, v.LiveRegion), TestID: v.TestID, MultiSelectable: v.MultiSelectable, WindowDrag: v.Desktop.WindowDrag, SelectionArea: v.Selectable, PointerEvents: v.PointerEvents, HitSlop: v.HitSlop,
-		DelayLongPress: v.DelayLongPress, NoFocus: v.NoFocus, Ripple: v.Android.Ripple}
-	n.material, n.elevation = v.IOS.BackdropMaterial, v.Android.Elevation
+		DelayLongPress: v.DelayLongPress, NoFocus: v.NoFocus, Ripple: v.Android.Ripple,
+		PanActivation: v.PanActivation, PanScrollHandoff: v.PanScrollHandoff})
+	if v.IOS.BackdropMaterial != 0 || v.Android.Elevation != 0 || n.nodeExtra != &zeroExtra {
+		ex := n.ownExtra()
+		ex.material, ex.elevation = v.IOS.BackdropMaterial, v.Android.Elevation
+	}
 	if v.EdgeBar.Scroll != nil {
 		bar := v.EdgeBar
-		n.edgeBar = &bar
+		n.ownExtra().edgeBar = &bar
 		t.edgeBars = append(t.edgeBars, n)
 	}
 	_, panClaim := v.Responder.panClaim()
 	n.panning = v.OnPan != nil || v.PanValues != (AnimatedXY{}) || panClaim
-	n.props.PanActivation, n.props.PanScrollHandoff = v.PanActivation, v.PanScrollHandoff
-	t.showTrigger(n, &n.props)
+	if f := n.nativeParent(); f != nil && f.showsExpanded {
+		t.showTrigger(n, n.ownProps())
+	}
 	n.pinching, n.rotating = v.OnPinch != nil || v.PinchValue != nil, v.OnRotation != nil || v.RotationValue != nil
 	setSelectionBlock(n, v.SelectionBlock, v.SelectionBlockFunc)
 	t.setRef(n, v.Ref)
@@ -1969,18 +2156,20 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 	t.setLabels(n, v.LabelFor, v.LabelledBy)
 	t.bindClasses(cx, n, v.Class, v.ClassFunc)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
-	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, layout: v.OnLayout}
-	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, Hint: v.Hint, LiveRegion: liveRegion(v.Role, v.LiveRegion), TestID: v.TestID,
-		Selectable: v.Selectable, PointerEvents: v.PointerEvents}
-	n.ownPointer = v.PointerEvents
-	if n.props.Role == RoleNone {
-		n.props.Role = RoleText
+	n.setHandlers(handlers{press: v.OnPress, longPress: v.OnLongPress, layout: v.OnLayout})
+	role := v.Role
+	if role == RoleNone {
+		role = RoleText
 	}
+	n.setProps(driver.ViewProps{Role: role, Label: v.Label, Hint: v.Hint, LiveRegion: liveRegion(v.Role, v.LiveRegion), TestID: v.TestID,
+		Selectable: v.Selectable, PointerEvents: v.PointerEvents})
+	n.ownPointer = v.PointerEvents
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, hintFunc: v.HintFunc})
 	if v.AccessibilityLevel != nil {
+		p := n.ownProps()
 		cx.renderEffect(func() {
-			if level := v.AccessibilityLevel(); level != n.props.Level {
-				n.props.Level = level
+			if level := v.AccessibilityLevel(); level != p.Level {
+				p.Level = level
 				t.touch(n)
 			}
 		})
@@ -1994,7 +2183,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 	for i, sp := range v.Spans {
 		if sp.Attachment != nil {
 			w := t.newNode(driver.KindView, n, cx)
-			w.attach = &attachNode{}
+			w.ownExtra().attach = &attachNode{}
 			outOfFlow(w)
 			t.setClasses(w, sp.Class)
 			t.bindStyle(cx, w, sp.Style, sp.StyleFunc)
@@ -2098,7 +2287,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 					s := &Scope{}
 					cx.adopt(s)
 					w := t.newNode(driver.KindView, n, s)
-					w.attach = &attachNode{}
+					w.ownExtra().attach = &attachNode{}
 					outOfFlow(w)
 					t.setClasses(w, sp.Class)
 					t.bindStyle(s, w, sp.Style, nil)
@@ -2202,11 +2391,12 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 	t.setLabels(n, nil, v.LabelledBy)
 	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
-	n.h = handlers{change: v.OnChange, submit: v.OnSubmit, layout: v.OnLayout}
-	n.h.focus, n.h.blur = t.inputSourced(v)
-	n.props = driver.ViewProps{Role: cmpOr(v.Role, RoleTextField), Label: v.Label, Description: v.AccessibilityDescription, TestID: v.TestID}
-	t.bindBool(cx, n, v.Invalid, &n.props.Invalid)
-	n.h.action = v.OnAccessibilityAction
+	focus, blur := t.inputSourced(v)
+	n.setHandlers(handlers{change: v.OnChange, submit: v.OnSubmit, layout: v.OnLayout, focus: focus, blur: blur, action: v.OnAccessibilityAction})
+	n.setProps(driver.ViewProps{Role: cmpOr(v.Role, RoleTextField), Label: v.Label, Description: v.AccessibilityDescription, TestID: v.TestID})
+	if v.Invalid != nil {
+		t.bindBool(cx, n, v.Invalid, &n.ownProps().Invalid)
+	}
 	t.bindAccessibility(cx, n, a11y{labelFunc: v.LabelFunc, descriptionFunc: v.AccessibilityDescriptionFunc, value: v.AccessibilityValue, actions: v.AccessibilityActions, actionsFunc: v.AccessibilityActionsFunc, expanded: v.Expanded})
 	t.setRef(n, v.Ref)
 	in := &inputNode{valueFn: v.Value, value: v.DefaultValue, autoFocus: v.AutoFocus, accessory: v.InputAccessoryViewID,
@@ -2219,7 +2409,7 @@ func (t *Tree) mountInput(cx *Scope, parent *node, v Input) {
 		AutoCapitalize: v.AutoCapitalize, NoAutoCorrect: v.NoAutoCorrect, AutoComplete: v.AutoComplete,
 		KeyboardAppearance: v.IOS.KeyboardAppearance, HideCaret: v.HideCaret, HideIndicator: v.Multiline && v.HideIndicator,
 		PasteBehavior: v.PasteBehavior}
-	n.input = in
+	n.ownExtra().input = in
 	in.suggest = v.Suggest
 	if in.suggest != nil {
 		in.suggest.bind(t, n)
@@ -2294,15 +2484,20 @@ func (t *Tree) mountScroll(cx *Scope, parent *node, v Scroll) {
 		defaults.FlexShrink = 0
 	}
 	t.bindStyle(cx, n, defaults.Merge(v.Style), v.StyleFunc)
-	n.h = handlers{layout: v.OnLayout}
+	h := handlers{layout: v.OnLayout}
 	if on := v.OnScroll; on != nil {
-		n.h.scroll = func(p Point) { on(n.scrollEvent(p)) }
+		h.scroll = func(p Point) { on(n.scrollEvent(p)) }
 	}
-	n.props = driver.ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID}
-	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
-	t.bindBool(cx, n, v.Busy, &n.props.Busy)
+	n.setHandlers(h)
+	n.setProps(driver.ViewProps{Role: v.Role, Label: v.Label, TestID: v.TestID})
+	if v.LabelFunc != nil {
+		t.bindAccessibilityText(cx, n, &n.ownProps().Label, v.LabelFunc)
+	}
+	if v.Busy != nil {
+		t.bindBool(cx, n, v.Busy, &n.ownProps().Busy)
+	}
 	t.setRef(n, v.Ref)
-	n.scroll = &scrollNode{config: driver.ScrollConfig{Horizontal: v.Horizontal, HideIndicator: v.HideIndicator}, effects: v.EdgeEffects,
+	n.ownExtra().scroll = &scrollNode{config: driver.ScrollConfig{Horizontal: v.Horizontal, HideIndicator: v.HideIndicator}, effects: v.EdgeEffects,
 		ownBar: v.Bar, hideIndicator: v.HideIndicator}
 	t.bindScrollSpec(cx, n, scrollSpec{behavior: v.Behavior, behaviorFunc: v.BehaviorFunc, offset: v.ContentOffset,
 		refreshing: v.Refreshing, onRefresh: v.OnRefresh, onScroll: v.OnScroll, throttle: v.ScrollEventThrottle,
@@ -2597,7 +2792,7 @@ func (t *Tree) Dispatch(ev driver.Event) {
 			return
 		}
 	}
-	h := &n.h
+	h := n.h
 	call := func(fn func()) {
 		if fn != nil {
 			t.within(n.owner, fn)
@@ -2925,10 +3120,10 @@ func (t *Tree) Dispatch(ev driver.Event) {
 // come with the offset of the span.
 func (t *Tree) listenForSpan(n *node, sp Span) {
 	if sp.OnPress != nil && n.h.press == nil {
-		n.h.press = func(PressEvent) {}
+		n.ownHandlers().press = func(PressEvent) {}
 	}
 	if sp.OnLongPress != nil && n.h.longPress == nil {
-		n.h.longPress = func(PressEvent) {}
+		n.ownHandlers().longPress = func(PressEvent) {}
 	}
 }
 
@@ -3019,7 +3214,7 @@ func hitWith(n *node, p Point, ok func(*node) bool) (NodeID, Point) {
 	if !mapped {
 		return 0, Point{}
 	}
-	self, inside := driver.ReachView(n.frame.Size, &n.props, n.sent.overflow, n.sent.transformed, local)
+	self, inside := driver.ReachView(n.frame.Size, n.props, n.sent.overflow, n.sent.transformed, local)
 	if n.style.Display == DisplayNone || n.style.Visibility == VisibilityHidden || n.hidden || !self && !inside ||
 		(n.attach != nil && n.attach.cut) {
 		return 0, Point{}
@@ -3070,7 +3265,7 @@ func appendNative(out []*node, children []*node) []*node {
 		switch {
 		case c.kind == 0:
 			out = appendNative(out, c.children)
-		case c.hoist == nil && c.attach == nil && c.accessory == nil && c.pip == nil && !c.headerView && !c.inputBar:
+		case (c.nodeExtra == &zeroExtra || (c.hoist == nil && c.attach == nil && c.accessory == nil && c.pip == nil)) && !c.headerView && !c.inputBar:
 			out = append(out, c)
 		}
 	}
@@ -3144,18 +3339,24 @@ func stacked(kids []*node) []*node {
 
 // takesPresses reports whether n's handlers hear presses.
 func (n *node) takesPresses() bool {
-	h := &n.h
+	h := n.h
 	return h.press != nil || h.longPress != nil || h.pressDown != nil || h.pressUp != nil || n.labelTarget() != nil
 }
 
 func (n *node) events() driver.EventMask {
+	h, s := n.h, n.style
+	if h == &noHandlers && n.cls == nil && n.nodeExtra == &zeroExtra &&
+		!n.panning && !n.pinching && !n.rotating && !n.props.Focusable &&
+		n.kind != driver.KindInput && n.kind != driver.KindWeb &&
+		s.Group == "" && s.Hover == nil && s.Focus == nil && s.FocusVisible == nil && s.Active == nil {
+		return 0
+	}
 	var m driver.EventMask
 	bit := func(k driver.EventKind, on bool) {
 		if on {
 			m |= 1 << k
 		}
 	}
-	h, s := &n.h, &n.style
 	// Groups, peers and relational selectors report the states other views follow. own is what n's classes read of n's states after matching; inherited is what selectors of views around n may read of it.
 	var own, inherited uint16
 	if c := n.cls; c != nil && c.related {

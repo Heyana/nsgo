@@ -34,7 +34,7 @@ func NewElement(cx *Scope, props Node) *Element {
 		n = t.newNode(driver.KindText, nil, owner)
 	case Scroll:
 		n = t.newNode(driver.KindScroll, nil, owner)
-		n.scroll = &scrollNode{}
+		n.ownExtra().scroll = &scrollNode{}
 	case Input:
 		n = t.newNode(driver.KindInput, nil, owner)
 	case Image:
@@ -43,7 +43,7 @@ func NewElement(cx *Scope, props Node) *Element {
 		panic(fmt.Sprintf("core: no element of %T", props))
 	}
 	e := &Element{t: t, n: n, owner: owner}
-	n.elem = e
+	n.ownExtra().elem = e
 	if props != nil {
 		e.Set(props)
 	}
@@ -169,7 +169,7 @@ func (t *Tree) setView(n *node, v View) {
 	if v.StyleFunc != nil {
 		base = base.Merge(v.StyleFunc())
 	}
-	n.base = base
+	n.setBase(t, &base)
 	t.setViewParts(n, v)
 	t.rebind(n, boundValues{pan: v.PanValues, pinch: v.PinchValue, rotation: v.RotationValue})
 	class := v.Class
@@ -179,7 +179,7 @@ func (t *Tree) setView(n *node, v View) {
 	t.setClasses(n, class)
 	t.bindAccessibility(nil, n, a11y{actions: v.AccessibilityActions, actionsFunc: v.AccessibilityActionsFunc, accessible: v.Accessible,
 		important: v.ImportantForAccessibility})
-	p := &n.props
+	p := *n.props
 	p.Href = v.Web.href(n.owner)
 	p.Label = readText(v.Label, v.LabelFunc)
 	p.Hint = readText(v.Hint, v.HintFunc)
@@ -208,6 +208,7 @@ func (t *Tree) setView(n *node, v View) {
 	if v.AccessibilityLevel != nil {
 		p.Level = v.AccessibilityLevel()
 	}
+	n.setProps(p)
 	var part PartStates
 	if v.PartStates != nil {
 		part = v.PartStates()
@@ -225,19 +226,20 @@ func (t *Tree) setText(cx *Scope, n *node, v Text) {
 	if v.StyleFunc != nil {
 		base = base.Merge(v.StyleFunc())
 	}
-	n.base = base
+	n.setBase(t, &base)
 	t.setClasses(n, v.Class)
-	n.h = handlers{press: v.OnPress, longPress: v.OnLongPress, layout: v.OnLayout}
-	n.props = driver.ViewProps{Role: v.Role, Label: readText(v.Label, v.LabelFunc), Hint: readText(v.Hint, v.HintFunc), LiveRegion: liveRegion(v.Role, v.LiveRegion), TestID: v.TestID,
+	n.setHandlers(handlers{press: v.OnPress, longPress: v.OnLongPress, layout: v.OnLayout})
+	p := driver.ViewProps{Role: v.Role, Label: readText(v.Label, v.LabelFunc), Hint: readText(v.Hint, v.HintFunc), LiveRegion: liveRegion(v.Role, v.LiveRegion), TestID: v.TestID,
 		Selectable: v.Selectable, PointerEvents: v.PointerEvents}
 	n.ownPointer = v.PointerEvents
 	t.pointersMoved = t.pointerStyled
 	if v.AccessibilityLevel != nil {
-		n.props.Level = v.AccessibilityLevel()
+		p.Level = v.AccessibilityLevel()
 	}
-	if n.props.Role == RoleNone {
-		n.props.Role = RoleText
+	if p.Role == RoleNone {
+		p.Role = RoleText
 	}
+	n.setProps(p)
 	setSelectionBlock(n, v.SelectionBlock, v.SelectionBlockFunc)
 	t.setRef(n, v.Ref)
 	tn := n.text
@@ -269,9 +271,9 @@ func (t *Tree) setText(cx *Scope, n *node, v Text) {
 		}
 		if sp.Attachment != nil {
 			w := t.newNode(driver.KindView, n, cx)
-			w.attach = &attachNode{}
+			w.ownExtra().attach = &attachNode{}
 			outOfFlow(w)
-			w.base = style
+			w.setBase(t, &style)
 			t.setClasses(w, sp.Class)
 			t.restyle(w)
 			t.mount(cx, w, sp.Attachment)
@@ -316,13 +318,14 @@ func (t *Tree) setScroll(n *node, v Scroll) {
 	if v.StyleFunc != nil {
 		base = base.Merge(v.StyleFunc())
 	}
-	n.base = base
+	n.setBase(t, &base)
 	t.setClasses(n, v.Class)
-	n.h = handlers{layout: v.OnLayout}
+	h := handlers{layout: v.OnLayout}
 	if on := v.OnScroll; on != nil {
-		n.h.scroll = func(p Point) { on(n.scrollEvent(p)) }
+		h.scroll = func(p Point) { on(n.scrollEvent(p)) }
 	}
-	n.props = driver.ViewProps{Role: v.Role, Label: readText(v.Label, v.LabelFunc), TestID: v.TestID}
+	n.setHandlers(h)
+	n.setProps(driver.ViewProps{Role: v.Role, Label: readText(v.Label, v.LabelFunc), TestID: v.TestID})
 	t.setRef(n, v.Ref)
 	t.rebind(n, boundValues{scroll: v.OffsetValues, pull: v.PullValue})
 	sc := n.scroll
@@ -364,14 +367,12 @@ func (t *Tree) setInput(n *node, v Input) {
 	if v.StyleFunc != nil {
 		base = base.Merge(v.StyleFunc())
 	}
-	n.base = base
+	n.setBase(t, &base)
 	t.setClasses(n, v.Class)
-	n.h = handlers{change: v.OnChange, submit: v.OnSubmit, layout: v.OnLayout, action: v.OnAccessibilityAction}
-	n.h.focus, n.h.blur = t.inputSourced(v)
-	n.props = driver.ViewProps{Role: cmpOr(v.Role, RoleTextField), Label: v.Label, Description: v.AccessibilityDescription,
+	focus, blur := t.inputSourced(v)
+	n.setHandlers(handlers{change: v.OnChange, submit: v.OnSubmit, layout: v.OnLayout, action: v.OnAccessibilityAction, focus: focus, blur: blur})
+	p := driver.ViewProps{Role: cmpOr(v.Role, RoleTextField), Label: v.Label, Description: v.AccessibilityDescription,
 		TestID: v.TestID, Invalid: read(v.Invalid)}
-	t.bindAccessibility(nil, n, a11y{actions: v.AccessibilityActions, actionsFunc: v.AccessibilityActionsFunc})
-	p := &n.props
 	if v.LabelFunc != nil {
 		p.Label = v.LabelFunc()
 	}
@@ -384,11 +385,13 @@ func (t *Tree) setInput(n *node, v Input) {
 	if v.Expanded != nil {
 		p.Expandable, p.Expanded = true, v.Expanded()
 	}
+	n.setProps(p)
+	t.bindAccessibility(nil, n, a11y{actions: v.AccessibilityActions, actionsFunc: v.AccessibilityActionsFunc})
 	t.setRef(n, v.Ref)
 	in := n.input
 	if in == nil {
 		in = &inputNode{}
-		n.input = in
+		n.ownExtra().input = in
 		t.bindInputTheme(n.owner, n)
 	}
 	if !n.created {
@@ -456,18 +459,18 @@ func (t *Tree) setImage(n *node, v Image) {
 	if v.StyleFunc != nil {
 		base = base.Merge(v.StyleFunc())
 	}
-	n.base = base
+	n.setBase(t, &base)
 	t.setClasses(n, v.Class)
 	t.setRef(n, v.Ref)
-	n.h = handlers{press: v.OnPress, layout: v.OnLayout, loadStart: v.OnLoadStart, loadEnd: v.OnLoadEnd,
-		progress: v.OnProgress, load: v.OnLoad, loadError: v.OnError}
-	n.props = driver.ViewProps{Role: RoleImage, Label: readText(v.Label, v.LabelFunc), TestID: v.TestID, ElementsHidden: v.ElementsHidden}
+	n.setHandlers(handlers{press: v.OnPress, layout: v.OnLayout, loadStart: v.OnLoadStart, loadEnd: v.OnLoadEnd,
+		progress: v.OnProgress, load: v.OnLoad, loadError: v.OnError})
+	n.setProps(driver.ViewProps{Role: RoleImage, Label: readText(v.Label, v.LabelFunc), TestID: v.TestID, ElementsHidden: v.ElementsHidden})
 	src := v.Source
 	if v.SourceFunc != nil {
 		src = v.SourceFunc()
 	}
 	if n.image == nil {
-		n.image = &imageNode{}
+		n.ownExtra().image = &imageNode{}
 	}
 	if naturalOf(src) != naturalOf(n.image.config.Source) {
 		t.markLayout(n)
@@ -494,18 +497,20 @@ func (t *Tree) restyled(n *node) {
 // owner reads them again as they change.
 func (t *Tree) followEnvTerms(n *node) {
 	if n.envBound {
-		t.readEnv(n.owner, n, &n.base)
+		t.readEnv(n.owner, n, n.base)
 		return
 	}
 	if sa, kb := n.base.envUses(); !sa && !kb {
-		n.env = nil
+		if n.nodeExtra != &zeroExtra {
+			n.nodeExtra.env = nil
+		}
 		return
 	}
 	n.envBound = true
 	first := true
 	t.within(n.owner, func() {
 		n.owner.renderEffect(func() {
-			t.readEnv(n.owner, n, &n.base)
+			t.readEnv(n.owner, n, n.base)
 			if first {
 				first = false
 				return

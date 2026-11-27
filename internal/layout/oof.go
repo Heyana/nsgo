@@ -306,17 +306,22 @@ func computeOofLayout(n Node, out *layoutOutput) {
 	// Always reset the hoisted list, even to empty, so that lists recorded
 	// by previous layouts do not persist, and clear it, so that the boxes
 	// they held past its new end are not kept.
-	clear(st.hoisted)
-	hoisted := st.hoisted[:0]
+	var hoisted []Node
+	if st.extra != nil {
+		clear(st.extra.hoisted)
+		hoisted = st.extra.hoisted[:0]
+	}
 	var unclaimed []oofCandidate
 	overflowRect := performOofLayout(n, candidates, out.oofArea.size, out.oofArea.offset, direction, claims,
 		style.Overflow, &hoisted, &unclaimed)
-	st.hoisted = hoisted
+	if len(hoisted) > 0 || st.extra != nil {
+		st.ensureExtra().hoisted = hoisted
+	}
 	out.oofCandidates = unclaimed
 	if cap(candidates) > 0 {
 		// Nothing holds them now: the next layout collects into them.
 		clear(candidates)
-		st.spare = candidates[:0]
+		st.ensureExtra().spare = candidates[:0]
 	}
 	out.scrollableOverflow = rectUnion(out.scrollableOverflow, overflowRect)
 }
@@ -352,7 +357,7 @@ func layoutOofBox(candidate oofCandidate, areaSize Size[float32], areaOffset Poi
 	// placement properties (which falls back to the passed area for auto
 	// placement).
 	if gridOwner != nil {
-		if info := gridOwner.LayoutState().grid; info != nil {
+		if info := gridOwner.LayoutState().gridInfo(); info != nil {
 			areaRect := Rect[float32]{
 				Left:   areaOffset.X,
 				Right:  areaOffset.X + areaSize.Width,

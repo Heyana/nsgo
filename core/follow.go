@@ -24,7 +24,7 @@ type following struct {
 
 // bindFollow makes n a follower of what v names.
 func (t *Tree) bindFollow(cx *Scope, n *node, v View) {
-	n.follow = &following{transition: v.FollowTransition}
+	n.ownExtra().follow = &following{transition: v.FollowTransition}
 	t.followers = append(t.followers, n)
 	cx.renderEffect(func() {
 		n.follow.target = v.Follow()

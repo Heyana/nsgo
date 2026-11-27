@@ -121,8 +121,8 @@ func (t *Tree) mountGPU(cx *Scope, parent *node, v GPUView) {
 		t.mount(cx, n, c)
 	}
 	t.setRef(n, v.Ref)
-	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
+	n.setHandlers(handlers{press: v.OnPress, layout: v.OnLayout})
+	n.setProps(driver.ViewProps{Label: v.Label, TestID: v.TestID})
 	t.bindIllustrationLabel(cx, n, v.LabelFunc)
 
 	samples := v.SampleCount
@@ -142,7 +142,7 @@ func (t *Tree) mountGPU(cx *Scope, parent *node, v GPUView) {
 		surf:    surf,
 		onEvent: v.OnEvent,
 	}
-	n.gpu = gn
+	n.ownExtra().gpu = gn
 	cx.Cleanup(func() {
 		surf.disposed = true
 		gn.onEvent = nil

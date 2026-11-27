@@ -43,10 +43,10 @@ func (p PictureInPicture) mountIn(t *Tree, cx *Scope, parent *node) {
 		size.Height = 180
 	}
 	n := t.newNode(driver.KindView, parent, cx)
-	n.pip = &pictureInPictureNode{config: driver.PictureInPictureConfig{Size: size, Paused: p.Paused,
+	n.ownExtra().pip = &pictureInPictureNode{config: driver.PictureInPictureConfig{Size: size, Paused: p.Paused,
 		Position: max(p.Position, 0), Duration: max(p.Duration, 0), Automatically: p.Automatically}, state: p.OnState,
 		restore: p.OnRestore, play: p.OnPlay, pause: p.OnPause, skip: p.OnSkip}
-	n.props = driver.ViewProps{TestID: p.TestID}
+	n.setProps(driver.ViewProps{TestID: p.TestID})
 	t.setRef(n, p.Ref)
 	t.pips = append(t.pips, n)
 	if n.parent != nil {

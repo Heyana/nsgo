@@ -14,14 +14,14 @@ import (
 type nodeClasses struct {
 	list              *classList
 	env               classEnv // what they were resolved for
-	normal, important Style
+	normal, important *Style   // always non-nil (shared/interned, &zeroStyle when empty)
 	props             classProps
+	watch             uint16
 	// position is the node's place among its parent's native children, from the parent's last child walk (classKids). Only positional classes keep it current.
 	position uint8
 	// bound is set once the node follows the environment.
 	bound   bool
 	related bool
-	watch   uint16
 }
 
 // setClasses gives n the classes in class, resolved now.
@@ -47,7 +47,7 @@ func (t *Tree) setClasses(n *node, class string) {
 		return
 	}
 	t.rt.reportUnknown(l)
-	c := &nodeClasses{list: l, env: env}
+	c := &nodeClasses{list: l, env: env, normal: &zeroStyle, important: &zeroStyle}
 	old := n.cls
 	if old != nil {
 		c.bound = old.bound
@@ -114,7 +114,7 @@ func (t *Tree) followSpanClasses(n *node) {
 	if n.cls == nil {
 		var env classEnv
 		Untracked(n.owner, func() bool { env = t.classEnv(n); return true })
-		n.cls = &nodeClasses{list: t.rt.parseClasses(&env, " "), env: env}
+		n.cls = &nodeClasses{list: t.rt.parseClasses(&env, " "), env: env, normal: &zeroStyle, important: &zeroStyle}
 	}
 	if !n.cls.bound {
 		n.cls.bound = true
@@ -191,15 +191,18 @@ func (t *Tree) resolveClassesAt(n *node, position uint8) {
 		env.has = func(s *classSelector) bool { return s.has(t, n) }
 	}
 	env.position = position
-	c.normal, c.important, c.props = c.list.resolve(&env)
+	normal, important, props := c.list.resolve(&env)
 	if g := c.list.groups; len(g) > 0 {
 		// An unnamed group takes a name, as only named groups are groups
 		// to Style; GroupStyle's empty Name follows any.
-		c.normal.Group = g[len(g)-1]
-		if c.normal.Group == "" {
-			c.normal.Group = "group"
+		normal.Group = g[len(g)-1]
+		if normal.Group == "" {
+			normal.Group = "group"
 		}
 	}
+	c.normal = t.internStyle(&normal)
+	c.important = t.internStyle(&important)
+	c.props = props
 }
 
 // position returns n's place among the native children of its parent, searched now. Relational selectors read it of the views they match; a node's own positional classes take theirs from its parent's child walk instead.
@@ -279,7 +282,16 @@ func (t *Tree) classKids(p *node, spacing bool) {
 // and the spacing its parent gives it over.
 func (n *node) withClasses(style Style) Style {
 	if c := n.cls; c != nil {
-		style = mergeStyles(mergeStyles(c.normal, style), c.important)
+		if c.normal != &zeroStyle {
+			if isZeroStyle(&style) {
+				style = *c.normal
+			} else {
+				style = mergeStyles(*c.normal, style)
+			}
+		}
+		if c.important != &zeroStyle {
+			style = mergeStyles(style, *c.important)
+		}
 	}
 	if p := n.nativeParent(); p != nil && p.cls != nil && (p.cls.props.hasSpaceX || p.cls.props.hasSpaceY) {
 		sp := p.cls.props

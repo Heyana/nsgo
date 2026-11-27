@@ -208,7 +208,7 @@ func (n *node) clips() (x, y bool) {
 	if n.scroll != nil {
 		return true, true
 	}
-	s := &n.style
+	s := n.style
 	clipping := func(o Overflow) bool { return o == Hidden || o == OverflowScroll }
 	return clipping(cmpOr(s.OverflowX, s.Overflow)), clipping(cmpOr(s.OverflowY, s.Overflow))
 }

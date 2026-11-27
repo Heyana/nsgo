@@ -482,7 +482,7 @@ func (s *devSurface) element(n *node, walk func(*node) []devtools.Node, geometry
 	b, box := t.devBox(n, geometry)
 	e := devtools.Node{ID: uint32(n.id), Kind: kindNames[n.kind], TestID: n.props.TestID, Role: driver.RoleName(n.props.Role),
 		Label: n.props.Label, Bounds: [4]float32{float32(b.Origin.X), float32(b.Origin.Y), float32(b.Size.Width), float32(b.Size.Height)},
-		Hidden: n.hidden || n.style.Display == DisplayNone, Style: styleProps(n.style), Selector: selectorFor(n), Box: box}
+		Hidden: n.hidden || n.style.Display == DisplayNone, Style: styleProps(*n.style), Selector: selectorFor(n), Box: box}
 	if e.Kind == "" {
 		e.Kind = "View"
 	}

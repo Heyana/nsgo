@@ -21,12 +21,12 @@ func (t *Tree) mountTooltip(cx *Scope, n *node, tip Node) {
 	anchor := n.ref
 	// The synthetic root separates the trigger's text and accessibility from its tooltip, including elements a renderer moves into it.
 	content := t.newNode(0, n, cx)
-	content.tooltipOwner = n
-	content.props.ElementsHidden = true
+	content.ownExtra().tooltipOwner = n
+	content.ownProps().ElementsHidden = true
 	t.tooltips = append(t.tooltips, n)
 	if h, ok := tip.(HintTooltip); ok {
 		hint, change := h.Hint(cx, anchor)
-		n.tip = &tooltipHooks{content: content, show: func() { change(HintHover) }, hide: func() { change(HintLeave) },
+		n.ownExtra().tip = &tooltipHooks{content: content, show: func() { change(HintHover) }, hide: func() { change(HintLeave) },
 			focus: func(on bool) {
 				if on {
 					change(HintFocus)
@@ -46,7 +46,7 @@ func (t *Tree) mountTooltip(cx *Scope, n *node, tip Node) {
 		}
 		hovered.Set(false)
 	}
-	n.tip = &tooltipHooks{content: content, show: func() {
+	n.ownExtra().tip = &tooltipHooks{content: content, show: func() {
 		if cx.Env().Desktop() && stop == nil {
 			stop = cx.AfterFunc(tooltipDelay, func() { stop = nil; hovered.Set(true) })
 		}
@@ -176,7 +176,7 @@ func (t *Tree) updateTooltipDescriptions() {
 	t.tooltips = live
 	for _, n := range t.described {
 		if !n.deleted && next[n] == "" && n.tooltipDescription != "" {
-			n.tooltipDescription = ""
+			n.nodeExtra.tooltipDescription = ""
 			t.touch(n)
 		}
 	}
@@ -184,7 +184,7 @@ func (t *Tree) updateTooltipDescriptions() {
 	t.described = t.described[:0]
 	for n, text := range next {
 		if text != n.tooltipDescription {
-			n.tooltipDescription = text
+			n.ownExtra().tooltipDescription = text
 			t.touch(n)
 		}
 		// The tooltip can stay unchanged while the trigger's visible name changes to or from the same words.

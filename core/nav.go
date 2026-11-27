@@ -56,7 +56,7 @@ type screenNode struct {
 func (t *Tree) mountStack(cx *Scope, parent *node, s Stack) {
 	n := t.newNode(driver.KindView, parent, cx)
 	t.bindStyle(cx, n, Style{Overflow: Hidden}.Merge(s.Style), nil)
-	n.props = driver.ViewProps{TestID: s.TestID}
+	n.setProps(driver.ViewProps{TestID: s.TestID})
 	n.isStack = true
 	t.stacks = append(t.stacks, n)
 	for _, c := range s.Children {
@@ -83,14 +83,14 @@ func (t *Tree) mountScreen(cx *Scope, parent *node, s Screen) {
 			break
 		}
 	}
-	n.screen = sn
+	n.ownExtra().screen = sn
 	t.setClasses(n, s.Class)
 	t.bindStyle(cx, n, fill.Merge(s.Style), s.StyleFunc)
-	n.props = driver.ViewProps{Label: s.Title, TestID: s.TestID}
+	n.setProps(driver.ViewProps{Label: s.Title, TestID: s.TestID})
 	if s.TitleFunc != nil {
 		cx.renderEffect(func() {
 			sn.title = s.TitleFunc()
-			n.props.Label = sn.title
+			n.ownProps().Label = sn.title
 			t.touch(n)
 		})
 	}
@@ -212,13 +212,13 @@ func (t *Tree) layoutHeaderViews() {
 			room := t.titleRoom(n.parent, fills)
 			if fills != sn.titleFills {
 				sn.titleFills = fills
-				n.lstyleOK = false
+				n.lstyle = nil
 				t.markLayout(n)
 				t.mark(n.parent)
 			}
 			if room != sn.titleLaidWidth {
 				sn.titleLaidWidth = room
-				n.lstyleOK = false
+				n.lstyle = nil
 				t.markLayout(n)
 			}
 			if room > 0 {
@@ -276,7 +276,7 @@ func headerTitleFills(root *node) bool {
 }
 
 func nodeFillsWidth(n *node) bool {
-	s := &n.style
+	s := n.style
 	if s.Display == DisplayNone || s.Position == Absolute || s.Position == Fixed {
 		return false
 	}
@@ -389,7 +389,7 @@ func (t *Tree) sizeHeaders() bool {
 			sn.header = header
 			if pad != sn.pad {
 				sn.pad = pad
-				n.lstyleOK = false
+				n.lstyle = nil
 				t.markLayout(n)
 				changed = true
 			}

@@ -20,20 +20,11 @@ type Node interface {
 	LayoutState() *State
 }
 
-// State is what layout keeps for a node: its results, its cache and the
-// out-of-flow boxes it positions. The zero State is ready to use.
-type State struct {
-	// BeginWork optionally attributes this node's recursive layout work.
-	// Its returned function restores the caller's attribution.
-	BeginWork func() func()
-
-	// Unrounded is the layout Compute last stored.
-	Unrounded Layout
-	// Rounded is Unrounded snapped to whole pixels by Round.
-	Rounded Layout
-
-	cache   cache
-	hoisted []Node
+// stateExtra holds layout state needed only by nodes with out-of-flow
+// children, grids, leaf measurement tracking, or work attribution.
+type stateExtra struct {
+	beginWork func() func()
+	hoisted   []Node
 	// spare is the buffer of the out-of-flow candidates its last layout
 	// collected, which the next one collects into: a table's absolutely
 	// placed cells allocated a list per row each layout.
@@ -41,19 +32,27 @@ type State struct {
 	// grid is the detailed grid information of a grid container, which
 	// positions its out-of-flow children against grid areas.
 	grid *gridInfo
-
-	// lastIn and lastOut are what the parent's last full layout gave the
-	// node and what it gave back, while hasLast: what Relayout lays it out
-	// with again and compares.
-	lastIn  layoutInput
-	lastOut layoutOutput
-	hasLast bool
 	// asked are a leaf's answers to the inputs layout asked it since its
 	// cache was last cleared, each once: what every layout above it was
-	// computed from (MeasuresAsBefore). askedOver is set once there were
-	// more than maxAsked.
-	asked     []answer
-	askedOver bool
+	// computed from (MeasuresAsBefore).
+	asked []answer
+}
+
+// State is what layout keeps for a node: its results, its cache and the
+// out-of-flow boxes it positions. The zero State is ready to use.
+type State struct {
+	// Unrounded is the layout Compute last stored.
+	Unrounded Layout
+	// Rounded is Unrounded snapped to whole pixels by Round.
+	Rounded Layout
+
+	cache cache
+
+	// lastIn is what the parent's last full layout gave the node while
+	// hasLast is set; the corresponding output lives in cache.final.
+	lastIn layoutInput
+
+	extra *stateExtra
 
 	// performed is the pass (passes) that last laid the node's children
 	// out, writing their Unrounded layouts. Round snaps the children again
@@ -63,11 +62,50 @@ type State struct {
 	// out from its caches but for one path rounds that path.
 	performed     uint64
 	kidsPerformed uint64
-	kidsOrigin    Point[float32]
-	kidsRatio     float64
-	kidsRounded   bool
 	// rounds counts the times Round snapped the children.
-	rounds uint64
+	rounds     uint64
+	kidsOrigin Point[float32]
+	kidsRatio  float32
+
+	// SkipAnswers disables recording leaf answers for MeasuresAsBefore on
+	// nodes whose content never changes its intrinsic measurement.
+	SkipAnswers bool
+	hasLast     bool
+	askedOver   bool
+	kidsRounded bool
+}
+
+func (s *State) ensureExtra() *stateExtra {
+	if s.extra == nil {
+		s.extra = &stateExtra{}
+	}
+	return s.extra
+}
+
+// SetBeginWork optionally attributes this node's recursive layout work.
+// Its returned function restores the caller's attribution.
+func (s *State) SetBeginWork(fn func() func()) {
+	if fn == nil {
+		if s.extra != nil {
+			s.extra.beginWork = nil
+		}
+		return
+	}
+	s.ensureExtra().beginWork = fn
+}
+
+func (s *State) beginWork() func() func() {
+	if s.extra == nil {
+		return nil
+	}
+	return s.extra.beginWork
+}
+
+func (s *State) gridInfo() *gridInfo {
+	if s.extra == nil {
+		return nil
+	}
+	return s.extra.grid
 }
 
 // Rounds is how many times Round has snapped the children: what walks
@@ -91,31 +129,41 @@ const maxAsked = 8
 // It reports whether there was anything to drop, so that a caller walking up
 // the tree may stop at an ancestor already invalidated.
 func (s *State) Invalidate() bool {
-	s.asked, s.askedOver = s.asked[:0], false
+	if s.extra != nil {
+		s.extra.asked = s.extra.asked[:0]
+	}
+	s.askedOver = false
 	return s.cache.clear()
 }
 
 // ask records a leaf's answer to in.
 func (s *State) ask(in *layoutInput, out *layoutOutput) {
-	if s.askedOver {
+	if s.SkipAnswers || s.askedOver {
 		return
 	}
-	for i := range s.asked {
-		if s.asked[i].in == *in {
+	ex := s.ensureExtra()
+	for i := range ex.asked {
+		if ex.asked[i].in == *in {
 			return
 		}
 	}
-	if len(s.asked) == maxAsked {
-		s.asked, s.askedOver = s.asked[:0], true
+	if len(ex.asked) == maxAsked {
+		ex.asked = ex.asked[:0]
+		s.askedOver = true
 		return
 	}
-	s.asked = append(s.asked, answer{*in, *out})
+	ex.asked = append(ex.asked, answer{*in, *out})
 }
 
 // Hoisted returns the out-of-flow (absolutely or fixed positioned) boxes for
 // which the node was the containing block in the last layout. Their layouts
 // are relative to this node rather than to their parent.
-func (s *State) Hoisted() []Node { return s.hoisted }
+func (s *State) Hoisted() []Node {
+	if s.extra == nil {
+		return nil
+	}
+	return s.extra.hoisted
+}
 
 // Layout is a node's computed layout.
 type Layout struct {
@@ -198,17 +246,16 @@ func requestAxis(axis AbsoluteAxis) requestedAxis {
 
 // layoutInput is Taffy's LayoutInput: what a parent asks of a child.
 type layoutInput struct {
-	runMode    runMode
-	sizingMode sizingMode
-	axis       requestedAxis
-
-	knownDimensions            Size[Opt]
-	knownDimensionsAreDefinite Size[bool]
-	parentSize                 Size[Opt]
-	availableSpace             Size[AvailableSpace]
+	knownDimensions Size[Opt]
+	parentSize      Size[Opt]
+	availableSpace  Size[AvailableSpace]
 	// verticalMarginsAreCollapsible says whether the node's top and bottom
 	// margins may collapse with its children's (block layout).
 	verticalMarginsAreCollapsible Line[bool]
+	knownDimensionsAreDefinite    Size[bool]
+	runMode                       runMode
+	sizingMode                    sizingMode
+	axis                          requestedAxis
 }
 
 var hiddenInput = layoutInput{
@@ -256,20 +303,20 @@ type baselines struct {
 
 // layoutOutput is Taffy's LayoutOutput: what a child reports to its parent.
 type layoutOutput struct {
-	size                      Size[float32]
-	scrollableOverflow        Rect[float32]
-	baselines                 baselines
-	topMargin                 collapsibleMarginSet
-	bottomMargin              collapsibleMarginSet
-	marginsCanCollapseThrough bool
 	// oofCandidates are out-of-flow boxes in the subtree whose containing
 	// block is further up, in document order.
-	oofCandidates []oofCandidate
+	oofCandidates      []oofCandidate
+	scrollableOverflow Rect[float32]
+	baselines          baselines
+	topMargin          collapsibleMarginSet
+	bottomMargin       collapsibleMarginSet
 	// oofArea is set by container algorithms in performLayout runs, when
 	// hasOofArea is: the area against which the node positions the
 	// out-of-flow boxes it contains.
-	oofArea    oofPositioningArea
-	hasOofArea bool
+	oofArea                   oofPositioningArea
+	size                      Size[float32]
+	marginsCanCollapseThrough bool
+	hasOofArea                bool
 }
 
 func outputFromSizes(size Size[float32], overflow Rect[float32], b baselines) layoutOutput {

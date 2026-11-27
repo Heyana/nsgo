@@ -637,7 +637,7 @@ func (r *Ref) PointerLocked() bool {
 		return false
 	}
 	if r.n.pointerLocked == nil {
-		r.n.pointerLocked = NewSignal(r.n.owner, r.t.pointerLock != nil && r.t.pointerLock.node == r.n)
+		r.n.ownExtra().pointerLocked = NewSignal(r.n.owner, r.t.pointerLock != nil && r.t.pointerLock.node == r.n)
 	}
 	return r.n.pointerLocked.Get()
 }
@@ -683,7 +683,7 @@ func (r *Ref) ContentBox() (Bounds, bool) {
 	}
 	n := r.n
 	if n.contentBox == nil {
-		n.contentBox = NewSignal(n.owner, n.layoutContentBox())
+		n.ownExtra().contentBox = NewSignal(n.owner, n.layoutContentBox())
 	}
 	return n.contentBox.Get(), true
 }

@@ -67,7 +67,7 @@ func Relayout(n Node) bool {
 		return false
 	}
 	passes.Add(1)
-	before := st.lastOut
+	before := st.cache.final
 	after := computeNodeLayout(n, st.lastIn, nil)
 	if !sameForParent(&after, &before) && !(clipsOverflow(n.Style()) && sameClipped(&after, &before)) {
 		return false
@@ -89,9 +89,12 @@ func MeasuresAsBefore(n Node) bool {
 	if st.askedOver {
 		return false
 	}
+	if st.extra == nil || len(st.extra.asked) == 0 {
+		return true
+	}
 	style := n.Style()
-	for i := range st.asked {
-		a := &st.asked[i]
+	for i := range st.extra.asked {
+		a := &st.extra.asked[i]
 		if out := computeLeafLayout(a.in, style, n); !sameOutput(&out, &a.out) {
 			return false
 		}

@@ -23,7 +23,7 @@ func (t *Tree) setLabels(n *node, target *Ref, by []*Ref) {
 		if target == nil && len(by) == 0 {
 			return
 		}
-		n.labels = new(labelRelations)
+		n.ownExtra().labels = new(labelRelations)
 	}
 	l := n.labels
 	l.forRef, l.by = target, slices.Clone(by)
@@ -74,7 +74,7 @@ func (n *node) labelTarget() *node {
 
 // labelProps applies state projection without changing the element's props.
 func (n *node) labelProps() driver.ViewProps {
-	p := n.props
+	p := *n.props
 	if n.input != nil && n.input.config.Disabled {
 		p.Disabled = true
 	}
@@ -206,7 +206,7 @@ func (t *Tree) updateLabels() bool {
 	changed := false
 	for n := range involved {
 		if n.labels == nil {
-			n.labels = new(labelRelations)
+			n.ownExtra().labels = new(labelRelations)
 		}
 		l := n.labels
 		var ids []NodeID

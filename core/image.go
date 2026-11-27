@@ -51,11 +51,13 @@ func (t *Tree) mountImage(cx *Scope, parent *node, v Image) {
 	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setRef(n, v.Ref)
-	n.h = handlers{press: v.OnPress, layout: v.OnLayout, loadStart: v.OnLoadStart, loadEnd: v.OnLoadEnd,
-		progress: v.OnProgress, load: v.OnLoad, loadError: v.OnError}
-	n.props = driver.ViewProps{Role: RoleImage, Label: v.Label, TestID: v.TestID, ElementsHidden: v.ElementsHidden}
-	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
-	n.image = &imageNode{config: driver.ImageConfig{Source: v.Source, Placeholder: v.Placeholder,
+	n.setHandlers(handlers{press: v.OnPress, layout: v.OnLayout, loadStart: v.OnLoadStart, loadEnd: v.OnLoadEnd,
+		progress: v.OnProgress, load: v.OnLoad, loadError: v.OnError})
+	n.setProps(driver.ViewProps{Role: RoleImage, Label: v.Label, TestID: v.TestID, ElementsHidden: v.ElementsHidden})
+	if v.LabelFunc != nil {
+		t.bindAccessibilityText(cx, n, &n.ownProps().Label, v.LabelFunc)
+	}
+	n.ownExtra().image = &imageNode{config: driver.ImageConfig{Source: v.Source, Placeholder: v.Placeholder,
 		ResizeMode: v.ResizeMode, Sampling: v.Sampling, BlurRadius: v.BlurRadius, FadeDuration: v.FadeDuration, HitTestAlpha: alphaThreshold(v.HitTestAlpha)}}
 	if v.SourceFunc != nil {
 		cx.renderEffect(func() {

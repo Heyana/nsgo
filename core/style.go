@@ -3,7 +3,6 @@ package core
 import (
 	"encoding/binary"
 	"math"
-	"reflect"
 	"slices"
 	"strings"
 	"unicode"
@@ -681,7 +680,7 @@ func (s Style) unzeroed() Style {
 }
 
 // IsZero reports whether s sets nothing.
-func (s Style) IsZero() bool { return reflect.ValueOf(s).IsZero() }
+func (s Style) IsZero() bool { return isZeroStyle(&s) }
 
 // Merge returns s with every field o sets replacing s's.
 func (s Style) Merge(o Style) Style {

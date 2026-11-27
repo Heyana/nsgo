@@ -222,13 +222,13 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 	t.bindClasses(cx, n, c.Class, c.ClassFunc)
 	t.bindStyle(cx, n, c.Style, c.StyleFunc)
 	t.setRef(n, c.Ref)
-	n.h = handlers{press: c.OnPress, layout: c.OnLayout}
-	n.props = driver.ViewProps{Role: RoleImage, Label: c.Label, TestID: c.TestID}
+	n.setHandlers(handlers{press: c.OnPress, layout: c.OnLayout})
+	n.setProps(driver.ViewProps{Role: RoleImage, Label: c.Label, TestID: c.TestID})
 	t.bindAccessibility(cx, n, a11y{labelFunc: c.LabelFunc})
 	cn := &canvasNode{draw: c.Draw, size: NewSignal(cx, Size{}),
 		resolution: canvasResolution(c.ResolutionScale), sampling: c.Sampling,
 		copyItem: driver.CloneClipboardItem(c.CopyItem)}
-	n.canvas = cn
+	n.ownExtra().canvas = cn
 	if c.CopyItemFunc != nil {
 		cx.renderEffect(func() {
 			next := driver.CloneClipboardItem(c.CopyItemFunc())

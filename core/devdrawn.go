@@ -117,7 +117,7 @@ func (t *Tree) ensureDevDrawn() *devDrawn {
 			kind:   n.kind,
 			parent: parentID,
 			laid:   n.sent.frame,
-			style:  n.sent.viewStyle,
+			style:  *n.sent.viewStyle,
 			styled: true,
 		}
 		if n.sent.viewStyle.Animation.Keyframes != 0 {
@@ -627,7 +627,7 @@ func (t *Tree) drawnFrame(n *node) Bounds {
 // drawnStyle returns n's ViewStyle as currently drawn, incorporating active
 // style transitions and bound animated values.
 func (t *Tree) drawnStyle(n *node) driver.ViewStyle {
-	vs := n.sent.viewStyle
+	vs := *n.sent.viewStyle
 	d := t.devDrawn
 	if d == nil {
 		return vs
@@ -768,7 +768,7 @@ func (t *Tree) hitDrawnWith(n *node, p Point, ok func(*node) bool) (NodeID, Poin
 		return 0, Point{}
 	}
 	clipX, clipY := n.clips()
-	self, inside := driver.ReachView(frame.Size, &n.props, n.sent.overflow, true, local)
+	self, inside := driver.ReachView(frame.Size, n.props, n.sent.overflow, true, local)
 	if inside {
 		if clipX && (local.X < 0 || local.X >= frame.Size.Width) {
 			inside = false

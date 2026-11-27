@@ -265,7 +265,7 @@ func (t *Tree) hitDevWith(n *node, p Point, ok func(*node) bool) (NodeID, Point)
 			return 0, Point{}
 		}
 		size := frame.Sizes[n.id]
-		self, inside := driver.ReachView(size, &n.props, n.sent.overflow, true, local)
+		self, inside := driver.ReachView(size, n.props, n.sent.overflow, true, local)
 		x, y := n.clips()
 		if x && (local.X < 0 || local.X >= size.Width) || y && (local.Y < 0 || local.Y >= size.Height) {
 			inside = false

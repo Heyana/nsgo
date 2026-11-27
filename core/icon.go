@@ -100,12 +100,13 @@ func (t *Tree) mountIcon(cx *Scope, parent *node, v Icon) {
 	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setRef(n, v.Ref)
-	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
+	n.setHandlers(handlers{press: v.OnPress, layout: v.OnLayout})
+	n.setProps(driver.ViewProps{Label: v.Label, TestID: v.TestID})
 	t.bindIllustrationLabel(cx, n, v.LabelFunc)
 	in := &iconNode{svg: NewSignal(cx, v.SVG), color: NewSignal(cx, Color(0)), documentSize: v.documentSize}
 	cn := &canvasNode{size: NewSignal(cx, Size{})}
-	n.icon, n.canvas = in, cn
+	ex := n.ownExtra()
+	ex.icon, ex.canvas = in, cn
 	t.canvases = append(t.canvases, n)
 	if v.SVGFunc != nil {
 		cx.renderEffect(func() {

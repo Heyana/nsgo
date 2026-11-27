@@ -157,7 +157,7 @@ func (t *Tree) timeTransitionEnds() {
 		n.restyled = false
 		if n.endStop != nil {
 			n.endStop()
-			n.endStop = nil
+			n.nodeExtra.endStop = nil
 		}
 		if n.deleted {
 			continue
@@ -167,8 +167,8 @@ func (t *Tree) timeTransitionEnds() {
 			d = tr.Delay + tr.Duration
 		}
 		t.within(n.owner, func() {
-			n.endStop = n.owner.AfterFunc(d, func() {
-				n.endStop = nil
+			n.ownExtra().endStop = n.owner.AfterFunc(d, func() {
+				n.nodeExtra.endStop = nil
 				if !n.deleted {
 					n.h.transitionEnd()
 				}
@@ -211,7 +211,7 @@ func (t *Tree) checkCommit() {
 	}
 	for _, n := range t.nodes {
 		if n != nil && !n.deleted {
-			n.lstyleOK = false
+			n.lstyle = nil
 			t.markLayout(n)
 		}
 	}
@@ -405,8 +405,8 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 		if n.style.Color != 0 {
 			inherited.paletteColor = false
 		}
-		if self && inherited != n.passed {
-			n.passed = inherited
+		if self && (n.passed == nil || inherited != *n.passed) {
+			n.passed = t.rt.internTextFields(inherited)
 			kids = true
 		}
 	}
@@ -438,7 +438,7 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 			} else if n.env != nil {
 				t.restyle(n)
 			}
-			n.lstyleOK = false
+			n.lstyle = nil
 			t.markLayout(n)
 		}
 	}
@@ -466,16 +466,20 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 			}
 		}
 	case n.text != nil:
-		n.props.SelectionColor = inherited.SelectionColor
 		tn := n.text
-		n.props.Selectable = tn.selectable
-		if tn.selectable == SelectableAuto {
+		sel := tn.selectable
+		if sel == SelectableAuto {
 			switch inherited.UserSelect {
 			case UserSelectText:
-				n.props.Selectable = SelectableOn
+				sel = SelectableOn
 			case UserSelectNone:
-				n.props.Selectable = SelectableOff
+				sel = SelectableOff
 			}
+		}
+		if n.props.SelectionColor != inherited.SelectionColor || n.props.Selectable != sel {
+			p := n.ownProps()
+			p.SelectionColor = inherited.SelectionColor
+			p.Selectable = sel
 		}
 		if noWrap := inherited.WhiteSpace == WhiteSpaceNoWrap; noWrap != tn.noWrap {
 			tn.noWrap = noWrap
@@ -933,26 +937,47 @@ func (t *Tree) emitParts(n *node) bool {
 	// A new view starts in the default style with no props and no events
 	// on every backend, so they are sent only when they differ.
 	if first {
-		n.sent.viewStyle, n.sent.props, n.sent.events = driver.DefaultViewStyle, driver.ViewProps{}, 0
+		n.sent.viewStyle, n.sent.props, n.sent.events = &defaultViewStyle, &zeroViewProps, 0
+		n.flags &^= flagSentVSOwned
 	}
-	if vs := n.viewStyle(); vs != n.sent.viewStyle {
-		n.sent.viewStyle = vs
+	if vs := n.viewStyle(); vs != *n.sent.viewStyle {
+		switch {
+		case vs == defaultViewStyle:
+			n.sent.viewStyle = &defaultViewStyle
+			n.flags &^= flagSentVSOwned
+		case n.hasFlag(flagSentVSOwned):
+			*n.sent.viewStyle = vs
+		case n.dyn != nil && !first:
+			cp := vs
+			n.sent.viewStyle = &cp
+			n.flags |= flagSentVSOwned
+		default:
+			n.sent.viewStyle = t.rt.internViewStyle(vs)
+		}
 		sent := vs
 		add(driver.MountItem{Kind: driver.ItemViewStyle, ID: n.id, ViewStyle: &sent})
 		styled = true
 	}
-	if p := n.sentProps(); p != n.sent.props {
+	if p := n.sentProps(); p != *n.sent.props {
 		// A label changing alone goes alone: it is the one that follows
 		// app state (a count, a price).
 		rest := p
 		rest.Label = n.sent.props.Label
-		if !first && rest == n.sent.props {
+		if !first && rest == *n.sent.props {
 			add(driver.MountItem{Kind: driver.ItemAccessibilityLabel, ID: n.id, Value: p.Label})
 		} else {
 			sent := p
 			add(driver.MountItem{Kind: driver.ItemViewProps, ID: n.id, ViewProps: &sent})
 		}
-		n.sent.props = p
+		switch p {
+		case zeroViewProps:
+			n.sent.props = &zeroViewProps
+		case defaultTextProps:
+			n.sent.props = &defaultTextProps
+		default:
+			cp := p
+			n.sent.props = &cp
+		}
 	}
 	if n.style.Animated != nil || n.anim != nil {
 		t.bindAnimated(n)
@@ -1278,20 +1303,20 @@ func (n *node) viewStyle() driver.ViewStyle {
 	if vs.CursorImage != nil {
 		if vs.CursorImage.Image.Pixels != nil || vs.CursorImage.Image2x.Pixels != nil {
 			if n.cursorPixels == nil {
-				n.cursorPixels = new([2]pixelFrame)
+				n.ownExtra().cursorPixels = new([2]pixelFrame)
 			}
 			ci := *vs.CursorImage
 			ci.Image.Pixels = n.cursorPixels[0].of(ci.Image)
 			ci.Image2x.Pixels = n.cursorPixels[1].of(ci.Image2x)
 			vs.CursorImage = &ci
 		} else if n.cursorPixels != nil {
-			n.cursorPixels = nil
+			n.nodeExtra.cursorPixels = nil
 		}
 		if vs.CursorImage.Equal(n.sent.viewStyle.CursorImage) {
 			vs.CursorImage = n.sent.viewStyle.CursorImage
 		}
 	} else if n.cursorPixels != nil {
-		n.cursorPixels = nil
+		n.nodeExtra.cursorPixels = nil
 	}
 	return vs
 }

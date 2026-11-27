@@ -383,16 +383,16 @@ func (t *Tree) mountList(cx *Scope, parent *node, l List) {
 		t.bindStyle(cx, v, scrollDefaults.Merge(l.Style), l.StyleFunc)
 	}
 	ln.view = v
-	v.list = ln
-	v.h = handlers{layout: l.OnLayout}
-	v.props = driver.ViewProps{TestID: l.TestID}
+	v.ownExtra().list = ln
+	h := handlers{layout: l.OnLayout}
+	v.setProps(driver.ViewProps{TestID: l.TestID})
 	t.setRef(v, l.Ref)
 	if !st.parent {
-		v.h.scroll = func(Point) {}
+		h.scroll = func(Point) {}
 		if on := l.OnScroll; on != nil {
-			v.h.scroll = func(p Point) { on(v.scrollEvent(p)) }
+			h.scroll = func(p Point) { on(v.scrollEvent(p)) }
 		}
-		v.scroll = &scrollNode{config: driver.ScrollConfig{Horizontal: l.Horizontal, HideIndicator: l.HideIndicator},
+		v.ownExtra().scroll = &scrollNode{config: driver.ScrollConfig{Horizontal: l.Horizontal, HideIndicator: l.HideIndicator},
 			ownBar: l.Bar, hideIndicator: l.HideIndicator}
 		t.bindScrollSpec(cx, v, scrollSpec{behavior: l.Behavior, behaviorFunc: l.BehaviorFunc,
 			refreshing: l.Refreshing, onRefresh: l.OnRefresh, onScroll: l.OnScroll, throttle: l.ScrollEventThrottle,
@@ -401,6 +401,7 @@ func (t *Tree) mountList(cx *Scope, parent *node, l List) {
 		t.rebind(v, boundValues{scroll: l.OffsetValues, pull: l.PullValue})
 		t.refreshBar(v)
 	}
+	v.setHandlers(h)
 	if l.ContentOffset != (Point{}) {
 		ln.cmds = append(ln.cmds, listCommand{to: l.ContentOffset})
 	}
@@ -412,11 +413,11 @@ func (t *Tree) mountList(cx *Scope, parent *node, l List) {
 
 	ln.count = NewSignal(cx, 0)
 	ln.spacer = t.newNode(driver.KindView, v, cx)
-	ln.spacer.base = Style{FlexShrink: 0}
+	*ln.spacer.ownBase() = Style{FlexShrink: 0}
 	t.restyle(ln.spacer)
 	extra := func(kind int, content Node) {
 		c := t.newNode(driver.KindView, v, cx)
-		c.base = Style{Position: Absolute}
+		*c.ownBase() = Style{Position: Absolute}
 		t.restyle(c)
 		t.mount(cx, c, content)
 		ln.extras[kind] = c
@@ -803,7 +804,7 @@ func (t *Tree) updateList(v *node) bool {
 	// Spare cells hide until a row needs them.
 	for _, c := range ln.free {
 		if c.node.base.Display != DisplayNone {
-			c.node.base.Display = DisplayNone
+			c.node.ownBase().Display = DisplayNone
 			if t.restyle(c.node) {
 				t.markLayout(c.node)
 			}
@@ -914,7 +915,7 @@ func (t *Tree) heldRows(ln *listNode, count int) []int {
 // placeCell moves cell c to at along the list and x across it, w wide, and
 // shows it; it reports whether that changed its layout.
 func (t *Tree) placeCell(ln *listNode, c *node, at, x, w Points) bool {
-	s := &c.base
+	s := c.ownBase()
 	type placed struct {
 		display          Display
 		position         Position
@@ -1039,9 +1040,9 @@ func (ln *listNode) spacerLen() Points {
 func (t *Tree) setSpacer(ln *listNode, total Points) {
 	total = max(total, 0)
 	if ln.spec.Horizontal {
-		ln.spacer.base.Width = Pt(total)
+		ln.spacer.ownBase().Width = Pt(total)
 	} else {
-		ln.spacer.base.Height = Pt(total)
+		ln.spacer.ownBase().Height = Pt(total)
 	}
 	t.restyle(ln.spacer)
 }
@@ -1056,9 +1057,10 @@ func (t *Tree) newCell(ln *listNode, i int) *listCell {
 	c.pos = ListRow{index: NewSignal(c.scope, i), count: NewSignal(c.scope, ln.count.GetUntracked())}
 	t.within(c.scope, func() {
 		c.node = t.newNode(driver.KindView, ln.cells, c.scope)
-		c.node.base = Style{Position: Absolute}
+		b := c.node.ownBase()
+		*b = Style{Position: Absolute}
 		if ln.spec.Horizontal {
-			c.node.base.Direction = Row
+			b.Direction = Row
 		}
 		t.restyle(c.node)
 		row := ln.spec.Row(c.scope, c.pos)

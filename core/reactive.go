@@ -159,15 +159,19 @@ const maxRuns = 1_000_000
 type runtime struct {
 	graphOwner
 	causalState
-	workObserved bool
-	activeWork   *workObserver
-	automation   automationToolRegistry
-	aborted      bool // fault recovery must never schedule another computation
-	checkCommits bool
-	classCache   parseCache[classSource, *classList]
-	templates    parseCache[GridTracks, *gridTemplate]
-	reported     parseCache[string, bool]
-	tokenSets    uint64 // the host token sets given so far, which number them
+	workObserved   bool
+	activeWork     *workObserver
+	automation     automationToolRegistry
+	aborted        bool // fault recovery must never schedule another computation
+	checkCommits   bool
+	classCache     parseCache[classSource, *classList]
+	templates      parseCache[GridTracks, *gridTemplate]
+	reported       parseCache[string, bool]
+	styles         styleIntern
+	layoutStyles   layoutStyleIntern
+	viewStyles     parseCache[driver.ViewStyle, *driver.ViewStyle]
+	textFieldCache parseCache[textFields, *textFields]
+	tokenSets      uint64 // the host token sets given so far, which number them
 
 	owner    *Scope       // the owner of what running code creates
 	observer *computation // the computation reads subscribe

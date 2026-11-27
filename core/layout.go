@@ -50,11 +50,16 @@ func (n *node) Child(i int) layout.Node { return n.flatChildren()[i] }
 func (n *node) LayoutState() *layout.State { return &n.lstate }
 
 func (n *node) Style() *layout.Style {
-	if !n.lstyleOK {
-		n.lstyle = n.layoutStyle()
-		n.lstyleOK = true
+	if n.lstyle == nil {
+		ls := n.layoutStyle()
+		if n.owner != nil {
+			n.lstyle = n.owner.rt.internLayoutStyle(&ls)
+		} else {
+			cp := ls
+			n.lstyle = &cp
+		}
 	}
-	return &n.lstyle
+	return n.lstyle
 }
 
 // Measure measures a leaf's content: its text, a field's line, an image's declared size or an em canvas's measured box. Views have none.
@@ -171,12 +176,12 @@ func (t *Tree) markLayout(n *node) {
 // a view in its parent's flow whose size nothing inside can change. A
 // view whose style changed is none: its own size may have.
 func (t *Tree) boundary(n *node) bool {
-	if n.kind == 0 || n.isRoot || !n.lstyleOK || n.deleted || n.hoist != nil || n.attach != nil || n.accessory != nil || n.pip != nil ||
+	if n.kind == 0 || n.isRoot || n.lstyle == nil || n.deleted || n.hoist != nil || n.attach != nil || n.accessory != nil || n.pip != nil ||
 		n.headerView || n.inputBar {
 		return false
 	}
 	p := n.nativeParent()
-	return p != nil && p.lstyleOK && !p.deleted && layout.Boundary(n, &p.lstyle)
+	return p != nil && p.lstyle != nil && !p.deleted && layout.Boundary(n, p.lstyle)
 }
 
 // relayoutBoundaries lays out again the boundaries a change inside
@@ -246,7 +251,7 @@ func (t *Tree) layoutOrigin(n *node) (layout.Point[float32], bool) {
 // layoutStyle maps n's style onto a CSS style with React Native's
 // defaults, as NSH does.
 func (n *node) layoutStyle() layout.Style {
-	s := &n.style
+	s := n.style
 	var l layout.Style
 
 	switch s.Display {
@@ -607,8 +612,10 @@ func (t *Tree) layoutRoot(root *node, space Size, fill bool) {
 		want = &space
 	}
 	if (want == nil) != (root.fill == nil) || (want != nil && *want != *root.fill) {
-		root.fill = want
-		root.lstyleOK = false
+		if want != nil || root.nodeExtra != &zeroExtra {
+			root.ownExtra().fill = want
+		}
+		root.lstyle = nil
 		root.lstate.Invalidate()
 	}
 	layout.Compute(root, layout.Size[layout.AvailableSpace]{
@@ -755,7 +762,7 @@ func (t *Tree) setRTL(rtl bool) {
 func (t *Tree) relayoutAll() {
 	for _, n := range t.nodes {
 		if n != nil {
-			n.lstyleOK = false
+			n.lstyle = nil
 			n.lstate.Invalidate()
 		}
 	}

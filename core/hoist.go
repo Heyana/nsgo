@@ -52,7 +52,7 @@ func (t *Tree) hold(n *node, height Points, space Size) {
 		return
 	}
 	n.hoist.held = height
-	n.lstyleOK = false
+	n.lstyle = nil
 	n.lstate.Invalidate()
 	t.layoutRoot(n, space, false)
 }
@@ -277,7 +277,7 @@ func (t *Tree) placeFrames() {
 
 func (t *Tree) hoist(n *node, h *hoistNode) {
 	h.host = t.hostOf(n)
-	n.hoist = h
+	n.ownExtra().hoist = h
 	addHosted(h.host, n)
 	t.addFrame(h.host)
 	t.reorder(h.host)
@@ -296,7 +296,7 @@ func addHosted(host, n *node) {
 			i--
 		}
 	}
-	host.hosted = slices.Insert(host.hosted, i, n)
+	host.ownExtra().hosted = slices.Insert(host.hosted, i, n)
 }
 
 // topmost reports whether h is a Topmost overlay's.
@@ -325,10 +325,12 @@ func (t *Tree) mountOverlay(cx *Scope, parent *node, o Overlay) {
 			t.changed = true
 		})
 	}
-	n.h = handlers{pressOutside: o.OnPressOutside, cancel: o.OnCancel, transitionEnd: o.OnTransitionEnd,
-		mouseEnter: o.OnMouseEnter, mouseLeave: o.OnMouseLeave}
-	n.props = driver.ViewProps{Role: o.Role, Label: o.Label, TestID: o.TestID, PointerEvents: o.PointerEvents}
-	t.bindAccessibilityText(cx, n, &n.props.Label, o.LabelFunc)
+	n.setHandlers(handlers{pressOutside: o.OnPressOutside, cancel: o.OnCancel, transitionEnd: o.OnTransitionEnd,
+		mouseEnter: o.OnMouseEnter, mouseLeave: o.OnMouseLeave})
+	n.setProps(driver.ViewProps{Role: o.Role, Label: o.Label, TestID: o.TestID, PointerEvents: o.PointerEvents})
+	if o.LabelFunc != nil {
+		t.bindAccessibilityText(cx, n, &n.ownProps().Label, o.LabelFunc)
+	}
 	n.ownPointer = o.PointerEvents
 	for _, c := range o.Children {
 		t.mount(cx, n, c)
@@ -351,10 +353,13 @@ func (t *Tree) mountModal(cx *Scope, parent *node, m Modal) {
 	t.keysChanged = true
 	t.setClasses(n, m.Class)
 	t.bindStyle(cx, n, m.Style, m.StyleFunc)
-	n.props = driver.ViewProps{Role: m.Role, Label: m.Label, TestID: m.TestID}
-	t.bindAccessibilityText(cx, n, &n.props.Label, m.LabelFunc)
-	if n.props.Role == RoleNone {
-		n.props.Role = RoleDialog
+	role := m.Role
+	if role == RoleNone {
+		role = RoleDialog
+	}
+	n.setProps(driver.ViewProps{Role: role, Label: m.Label, TestID: m.TestID})
+	if m.LabelFunc != nil {
+		t.bindAccessibilityText(cx, n, &n.ownProps().Label, m.LabelFunc)
 	}
 	t.bindStatusBar(cx, n, m.StatusBar, m.StatusBarFunc)
 	if ts := m.TransitionShader; ts != nil {
@@ -406,7 +411,7 @@ func (t *Tree) placeHoisted(host *node) {
 			t.layoutRoot(n, size, false)
 			l := &n.lstate.Rounded
 			box := Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}
-			t.setFrame(n, Bounds{Origin: t.onPixel(insetOrigin(&n.style, box, size, n.rtl)), Size: box})
+			t.setFrame(n, Bounds{Origin: t.onPixel(insetOrigin(n.style, box, size, n.rtl)), Size: box})
 		} else {
 			t.placeOverlay(n, host, size)
 		}
@@ -536,7 +541,7 @@ func (t *Tree) placeOverlay(n *node, host *node, hostSize Size) {
 	if !ok {
 		// Without an anchor, an overlay is placed as an absolute child of
 		// its host.
-		origin = t.onPixel(insetOrigin(&s, size, hostSize, n.rtl))
+		origin = t.onPixel(insetOrigin(s, size, hostSize, n.rtl))
 	} else {
 		safe := t.root.Env().safe.GetUntracked()
 		switch {
@@ -690,10 +695,12 @@ func (t *Tree) syncPosition(n *node) {
 		t.relayout(n)
 	case !fixed && n.hoist != nil && n.hoist.fixed:
 		host := n.hoist.host
-		host.hosted = slices.DeleteFunc(host.hosted, func(h *node) bool { return h == n })
+		host.ownExtra().hosted = slices.DeleteFunc(host.hosted, func(h *node) bool { return h == n })
 		t.reorder(host)
 		t.markLayout(host)
-		n.hoist, n.isRoot, n.fill, n.lstyleOK = nil, false, nil, false
+		ex := n.ownExtra()
+		ex.hoist, ex.fill = nil, nil
+		n.isRoot, n.lstyle = false, nil
 		n.lstate.Invalidate()
 		t.childrenChanged(n.parent)
 	}

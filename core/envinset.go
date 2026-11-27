@@ -67,11 +67,13 @@ func (t *Tree) readEnv(cx *Scope, n *node, styles ...*Style) {
 		}
 	}
 	if !safe && !keyboard {
-		n.env = nil
+		if n.nodeExtra != &zeroExtra {
+			n.nodeExtra.env = nil
+		}
 		return
 	}
 	if n.env == nil {
-		n.env = &envValues{keyboard: -1}
+		n.ownExtra().env = &envValues{keyboard: -1}
 	}
 	if safe {
 		n.env.insets = Insets(cx)
@@ -86,10 +88,9 @@ func (t *Tree) readEnv(cx *Scope, n *node, styles ...*Style) {
 	}
 }
 
-// applyEnv adds what n's terms come to to its padding and margin. A
+// applyEnvStyle adds what n's env() terms come to to s's padding and margin. A
 // padding with a term is not negative.
-func (n *node) applyEnv() {
-	s := &n.style
+func (n *node) applyEnvStyle(s *Style) {
 	if n.env == nil || s.PaddingEnv == (EnvEdges{}) && s.MarginEnv == (EnvEdges{}) {
 		return
 	}

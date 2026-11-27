@@ -202,7 +202,7 @@ func (n *node) overflowArea(kids []*node) (area Bounds, transformed bool) {
 
 // mayTransform reports whether what n was last sent can draw it away from its frame: a transform, keyframes or a bound transform.
 func (n *node) mayTransform() bool {
-	vs := &n.sent.viewStyle
+	vs := n.sent.viewStyle
 	if vs.Transform != (driver.Transform{}) || vs.Animation.Keyframes != 0 {
 		return true
 	}

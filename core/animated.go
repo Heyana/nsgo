@@ -497,7 +497,7 @@ func (t *Tree) bindAnimated(n *node) {
 		if want == ([driver.PropCount]uint32{}) {
 			return
 		}
-		n.anim = &viewAnimation{}
+		n.ownExtra().anim = &viewAnimation{}
 	}
 	for p, id := range want {
 		if id != n.anim.sent[p] {
@@ -543,9 +543,11 @@ func (t *Tree) rebind(n *node, b boundValues) {
 		t.anim.add(driver.AnimationOp{Kind: driver.AnimBindScroll, View: n.id, X: b.scroll.idX(), Y: b.scroll.idY()})
 	}
 	if b == (boundValues{}) {
-		n.bound = nil
+		if n.nodeExtra != &zeroExtra {
+			n.nodeExtra.bound = nil
+		}
 	} else {
-		n.bound = &b
+		n.ownExtra().bound = &b
 	}
 }
 

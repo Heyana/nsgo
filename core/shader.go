@@ -274,11 +274,11 @@ func (t *Tree) mountShader(cx *Scope, parent *node, s Shader) {
 		t.mount(cx, n, c)
 	}
 	t.setRef(n, s.Ref)
-	n.h = handlers{press: s.OnPress, layout: s.OnLayout}
-	n.props = driver.ViewProps{Label: s.Label, TestID: s.TestID}
+	n.setHandlers(handlers{press: s.OnPress, layout: s.OnLayout})
+	n.setProps(driver.ViewProps{Label: s.Label, TestID: s.TestID})
 	t.bindIllustrationLabel(cx, n, s.LabelFunc)
 	sn := &shaderNode{}
-	n.shader = sn
+	n.ownExtra().shader = sn
 	if s.Program == nil {
 		return
 	}

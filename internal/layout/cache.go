@@ -106,23 +106,49 @@ func cacheModeOf(in *layoutInput) uint8 {
 }
 
 type measureEntry struct {
-	key   cacheKey
-	size  Size[float32]
-	valid bool
+	kdAvailableSpace           uint64
+	parentSize                 uint64
+	size                       Size[float32]
+	knownDimensionsAreDefinite Size[bool]
+	valid                      bool
+}
+
+func (e *measureEntry) key() cacheKey {
+	return cacheKey{
+		kdAvailableSpace:           e.kdAvailableSpace,
+		parentSize:                 e.parentSize,
+		knownDimensionsAreDefinite: e.knownDimensionsAreDefinite,
+	}
 }
 
 // cache is Taffy's Cache: one final layout and a few size measurements, all
 // computed with one sizing mode and margin collapsibility. Measurements are
 // replaced in a second-chance clock order.
 type cache struct {
-	finalKey     cacheKey
-	final        layoutOutput
-	hasFinal     bool
-	measure      [cacheSize]measureEntry
-	recentlyUsed uint16
-	next         uint8
-	filled       bool
-	mode         uint8
+	final            layoutOutput
+	measure          []measureEntry
+	finalKdAvailable uint64
+	finalParentSize  uint64
+	finalDefinite    Size[bool]
+	recentlyUsed     uint16
+	hasFinal         bool
+	filled           bool
+	next             uint8
+	mode             uint8
+}
+
+func (c *cache) finalKey() cacheKey {
+	return cacheKey{
+		kdAvailableSpace:           c.finalKdAvailable,
+		parentSize:                 c.finalParentSize,
+		knownDimensionsAreDefinite: c.finalDefinite,
+	}
+}
+
+func (c *cache) setFinalKey(k cacheKey) {
+	c.finalKdAvailable = k.kdAvailableSpace
+	c.finalParentSize = k.parentSize
+	c.finalDefinite = k.knownDimensionsAreDefinite
 }
 
 func (c *cache) get(in *layoutInput) (layoutOutput, bool) {
@@ -132,7 +158,7 @@ func (c *cache) get(in *layoutInput) (layoutOutput, bool) {
 	key := newCacheKey(in)
 	switch in.runMode {
 	case performLayout:
-		if c.hasFinal && c.finalKey == key {
+		if c.hasFinal && c.finalKey() == key {
 			return c.final.clone(), true
 		}
 	case computeSize:
@@ -141,10 +167,11 @@ func (c *cache) get(in *layoutInput) (layoutOutput, bool) {
 			if !e.valid {
 				continue
 			}
-			if e.key.kdAvailableSpace == key.kdAvailableSpace &&
-				e.key.knownDimensionsAreDefinite == key.knownDimensionsAreDefinite &&
-				e.key.xAxisParentSize() == key.xAxisParentSize() &&
-				e.key.sizeIsValidFor(key) {
+			ek := e.key()
+			if ek.kdAvailableSpace == key.kdAvailableSpace &&
+				ek.knownDimensionsAreDefinite == key.knownDimensionsAreDefinite &&
+				ek.xAxisParentSize() == key.xAxisParentSize() &&
+				ek.sizeIsValidFor(key) {
 				c.recentlyUsed |= 1 << i
 				return outputFromOuterSize(e.size), true
 			}
@@ -165,7 +192,7 @@ func (c *cache) store(in *layoutInput, out *layoutOutput) {
 	switch in.runMode {
 	case performLayout:
 		c.filled = true
-		c.finalKey = key
+		c.setFinalKey(key)
 		c.final = out.clone()
 		c.hasFinal = true
 	case computeSize:
@@ -178,11 +205,24 @@ func (c *cache) store(in *layoutInput, out *layoutOutput) {
 		}
 		c.filled = true
 		for i := range c.measure {
-			if c.measure[i].valid && c.measure[i].key == key {
+			if c.measure[i].valid && c.measure[i].key() == key {
 				c.measure[i].size = out.size
 				c.recentlyUsed |= 1 << i
 				return
 			}
+		}
+		if len(c.measure) < cacheSize {
+			i := len(c.measure)
+			c.measure = append(c.measure, measureEntry{
+				kdAvailableSpace:           key.kdAvailableSpace,
+				parentSize:                 key.parentSize,
+				size:                       out.size,
+				knownDimensionsAreDefinite: key.knownDimensionsAreDefinite,
+				valid:                      true,
+			})
+			c.recentlyUsed |= 1 << i
+			c.next = uint8((i + 1) % cacheSize)
+			return
 		}
 		for c.recentlyUsed&(1<<c.next) != 0 {
 			c.recentlyUsed &^= 1 << c.next
@@ -192,7 +232,13 @@ func (c *cache) store(in *layoutInput, out *layoutOutput) {
 			}
 		}
 		i := c.next
-		c.measure[i] = measureEntry{key: key, size: out.size, valid: true}
+		c.measure[i] = measureEntry{
+			kdAvailableSpace:           key.kdAvailableSpace,
+			parentSize:                 key.parentSize,
+			size:                       out.size,
+			knownDimensionsAreDefinite: key.knownDimensionsAreDefinite,
+			valid:                      true,
+		}
 		c.recentlyUsed |= 1 << i
 		c.next++
 		if c.next == cacheSize {
@@ -202,12 +248,16 @@ func (c *cache) store(in *layoutInput, out *layoutOutput) {
 }
 
 // clear empties the cache and reports whether it held anything.
+// It leaves c.final intact so State can reuse it as Relayout's last output.
 func (c *cache) clear() bool {
 	if !c.filled {
 		return false
 	}
-	mode := c.mode
-	*c = cache{mode: mode}
+	c.hasFinal = false
+	c.measure = c.measure[:0]
+	c.recentlyUsed = 0
+	c.next = 0
+	c.filled = false
 	return true
 }
 

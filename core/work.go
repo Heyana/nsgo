@@ -71,7 +71,7 @@ func (rt *runtime) setWork(next *workObserver) {
 func (t *Tree) observeLayoutWork() {
 	for _, n := range t.nodes {
 		if n != nil && n.owner != nil {
-			n.lstate.BeginWork = n.owner.BeginWork
+			n.lstate.SetBeginWork(n.owner.BeginWork)
 		}
 	}
 }

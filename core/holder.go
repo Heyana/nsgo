@@ -48,7 +48,7 @@ func (p holderPlace) mount(t *Tree, region *node, _ *Scope) {
 	if h.scope.disposed || h.t != t {
 		return
 	}
-	region.place = h
+	region.ownExtra().place = h
 	h.places = append(h.places, region)
 	h.show()
 }
@@ -73,7 +73,7 @@ func (h *Holder) show() {
 			return
 		}
 		h.root = t.newRegion(at, h.scope)
-		h.root.held = h
+		h.root.ownExtra().held = h
 		t.within(h.scope, func() { t.mount(h.scope, h.root, h.content(h.scope)) })
 		return
 	}
@@ -130,7 +130,7 @@ func (t *Tree) rehost(n *node) {
 		if hn := c.hoist; hn != nil && hn.host != nil && c.parent != nil {
 			if host := t.hostOf(c); host != hn.host && !t.detached(c) {
 				old := hn.host
-				old.hosted = slices.DeleteFunc(old.hosted, func(x *node) bool { return x == c })
+				old.ownExtra().hosted = slices.DeleteFunc(old.hosted, func(x *node) bool { return x == c })
 				t.reorder(old)
 				t.markLayout(old)
 				hn.host = host

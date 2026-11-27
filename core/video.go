@@ -150,9 +150,11 @@ func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
 	t.setClasses(n, v.Class)
 	t.bindStyle(cx, n, v.Style, v.StyleFunc)
 	t.setRef(n, v.Ref)
-	n.h = handlers{press: v.OnPress, layout: v.OnLayout}
-	n.props = driver.ViewProps{Label: v.Label, TestID: v.TestID}
-	t.bindAccessibilityText(cx, n, &n.props.Label, v.LabelFunc)
+	n.setHandlers(handlers{press: v.OnPress, layout: v.OnLayout})
+	n.setProps(driver.ViewProps{Label: v.Label, TestID: v.TestID})
+	if v.LabelFunc != nil {
+		t.bindAccessibilityText(cx, n, &n.ownProps().Label, v.LabelFunc)
+	}
 	vn := &videoNode{
 		config: driver.VideoConfig{Source: v.Source, Headers: driver.NewVideoHeaders(v.Headers), Paused: v.Paused, Muted: v.Muted, Volume: videoVolume(v.Volume),
 			Rate: videoRate(v.Rate), Repeat: v.Repeat, ResizeMode: v.ResizeMode, Controls: v.Controls, HitTestAlpha: alphaThreshold(v.HitTestAlpha),
@@ -164,7 +166,7 @@ func (t *Tree) mountVideo(cx *Scope, parent *node, v Video) {
 	if v.PictureInPicture {
 		vn.pip = &pictureInPictureNode{state: v.OnPictureInPicture, restore: v.OnPictureInPictureRestore}
 	}
-	n.video = vn
+	n.ownExtra().video = vn
 	if v.PictureInPicture && !videoPictureInPicturePlatform(cx) {
 		t.reports = append(t.reports, report{owner: n, fn: func() {
 			if !videoPictureInPicturePlatform(cx) && v.OnPictureInPicture != nil {

@@ -384,11 +384,14 @@ func (t *Tree) resolveRelationClasses(n *node) {
 		list.rules[i] = r.rule
 	}
 	env := c.env
-	c.normal, c.important, c.props = list.resolve(&env)
+	normal, important, props := list.resolve(&env)
 	if groups := c.list.groups; len(groups) > 0 {
-		c.normal.Group = groups[len(groups)-1]
-		if c.normal.Group == "" {
-			c.normal.Group = "group"
+		normal.Group = groups[len(groups)-1]
+		if normal.Group == "" {
+			normal.Group = "group"
 		}
 	}
+	c.normal = t.internStyle(&normal)
+	c.important = t.internStyle(&important)
+	c.props = props
 }
