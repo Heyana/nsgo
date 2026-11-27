@@ -431,7 +431,17 @@ The Info.plist of each iOS, tvOS and watchOS bundle `build` writes for devices, 
 
 ### Publish to Google Play
 
-Enable the Google Play Developer API and give a service account permission to release the app to the chosen track. Set `NSGO_PLAY_SERVICE_ACCOUNT` to the account's JSON key or to the path of its key file. [Google Play API setup](https://developers.google.com/android-publisher/getting_started)
+Enable the Google Play Developer API and grant a service account (or user account) permission to release the app in Play Console › Users and permissions. [Google Play API setup](https://developers.google.com/android-publisher/getting_started)
+
+`nsgo publish` authenticates to Google Play using:
+
+1. **`NSGO_PLAY_SERVICE_ACCOUNT`** (takes precedence when set): the service account's JSON key text or the path to its key file.
+2. **Application Default Credentials (ADC)** (used when `NSGO_PLAY_SERVICE_ACCOUNT` is unset, requesting the `https://www.googleapis.com/auth/androidpublisher` scope):
+   - **Local development (keyless)**: impersonate the publishing service account with `gcloud auth application-default login --impersonate-service-account=<service-account>` (grant your user `roles/iam.serviceAccountTokenCreator` on that service account; gcloud's default OAuth client does not grant the `androidpublisher` scope directly, so impersonation is the recommended keyless path).
+   - **GitHub Actions and CI (keyless)**: configure Workload Identity Federation with `google-github-actions/auth`, which writes an `external_account` file and sets `GOOGLE_APPLICATION_CREDENTIALS`.
+   - **Other Google Cloud environments**: `GOOGLE_APPLICATION_CREDENTIALS`, the gcloud ADC file, or the GCE/Cloud Run metadata server.
+
+The command prints the credential type and account email it used (never any secret) and, on an HTTP 401 or 403 from Google Play, reports which identity was refused so you can grant it access in Play Console › Users and permissions.
 
 ```sh
 nsgo build -target android -channel store
@@ -470,7 +480,7 @@ nsgo publish -store play -track production        # also update release notes on
 
 Validation runs before reading credentials or making any HTTP request, checking required fields, locale codes, URL schemes, media files and counts (up to 10 screenshots and 3 previews per App Store display type; up to 8 screenshots per Google Play image type), and character limits (App Store: title 30, subtitle 30, keywords 100, promotional text 170, description 4000, release notes 4000; Google Play: title 30, short description 80, description 4000, release notes 500).
 
-Upload credentials come from the environment alone: `NSGO_APP_STORE_KEY`, `NSGO_APP_STORE_KEY_ID` and `NSGO_APP_STORE_ISSUER` (falling back to the notarization key `NSGO_NOTARY_KEY`, `NSGO_NOTARY_KEY_ID` and `NSGO_NOTARY_ISSUER`) for App Store Connect, and `NSGO_PLAY_SERVICE_ACCOUNT` (service-account JSON file path or JSON text) for Google Play.
+Upload credentials come from the environment or Google Application Default Credentials: `NSGO_APP_STORE_KEY`, `NSGO_APP_STORE_KEY_ID` and `NSGO_APP_STORE_ISSUER` (falling back to the notarization key `NSGO_NOTARY_KEY`, `NSGO_NOTARY_KEY_ID` and `NSGO_NOTARY_ISSUER`) for App Store Connect, and `NSGO_PLAY_SERVICE_ACCOUNT` (service-account JSON file path or JSON text, taking precedence) or Application Default Credentials (`gcloud auth application-default login --impersonate-service-account=…`, `GOOGLE_APPLICATION_CREDENTIALS`, Workload Identity Federation, or GCE metadata) for Google Play.
 
 ### Store compliance
 

@@ -45,7 +45,7 @@ func publishPlay(ctx context.Context, track, path string) error {
 		return fmt.Errorf("App Bundle package %q differs from the project's ID %q", identity.Package, projectID)
 	}
 	// An App Bundle can take minutes to upload, longer than store listings' 60-second requests.
-	client, err := googlePlayClientFromEnv(&http.Client{
+	client, err := googlePlayClientFromEnv(ctx, &http.Client{
 		Timeout: 5 * time.Minute,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -53,6 +53,9 @@ func publishPlay(ctx context.Context, track, path string) error {
 	})
 	if err != nil {
 		return err
+	}
+	if cred := client.credentialSummary(); cred != "" {
+		note("Google Play auth: %s", cred)
 	}
 	if err := uploadGooglePlayBundle(ctx, client, track, identity, bundle, info.Size()); err != nil {
 		return err

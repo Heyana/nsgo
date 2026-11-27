@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -26,6 +27,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/oauth2/google"
 )
 
 func writeValidTwoLanguageListings(t *testing.T, root string) string {
@@ -983,9 +986,17 @@ func TestStoreListingsCredentialsAndAPIErrors(t *testing.T) {
 
 	t.Run("missing Google Play credentials", func(t *testing.T) {
 		t.Setenv("NSGO_PLAY_SERVICE_ACCOUNT", "")
+		t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("APPDATA", t.TempDir())
+		origFind := findGoogleDefaultCredentials
+		findGoogleDefaultCredentials = func(context.Context, ...string) (*google.Credentials, error) {
+			return nil, errors.New("google: could not find default credentials")
+		}
+		t.Cleanup(func() { findGoogleDefaultCredentials = origFind })
 		err := publishWithContext(t.Context(), publishOptions{store: "play"}, appDir)
-		if err == nil || !strings.Contains(err.Error(), "NSGO_PLAY_SERVICE_ACCOUNT") {
-			t.Fatalf("got %v, want missing Play credentials error", err)
+		if err == nil || !strings.Contains(err.Error(), "NSGO_PLAY_SERVICE_ACCOUNT") || !strings.Contains(err.Error(), "Application Default Credentials") {
+			t.Fatalf("got %v, want missing Play credentials error naming both options", err)
 		}
 	})
 

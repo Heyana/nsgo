@@ -372,7 +372,17 @@ iOS、tvOS 和 watchOS 的设备构建会在应用及其扩展中写入 App Stor
 
 ### 发布到 Google Play
 
-启用 Google Play Developer API，并授予服务账号向目标轨道发布此应用的权限。将 `NSGO_PLAY_SERVICE_ACCOUNT` 设为服务账号的 JSON 密钥内容或密钥文件路径。[Google Play API 设置](https://developers.google.com/android-publisher/getting_started)
+启用 Google Play Developer API，并在 Play Console › 用户和权限 中授予服务账号（或用户账号）发布此应用的权限。[Google Play API 设置](https://developers.google.com/android-publisher/getting_started)
+
+`nsgo publish` 按以下顺序向 Google Play 进行身份验证：
+
+1. **`NSGO_PLAY_SERVICE_ACCOUNT`**（设置时优先）：服务账号的 JSON 密钥内容或密钥文件路径。
+2. **Application Default Credentials (ADC)**（未设置 `NSGO_PLAY_SERVICE_ACCOUNT` 时自动回退，使用 `https://www.googleapis.com/auth/androidpublisher` 作用域）：
+   - **本地开发（无需密钥文件）**：运行 `gcloud auth application-default login --impersonate-service-account=<服务账号>` 模拟发布服务账号（需在 Google Cloud 中向你的账号授予该服务账号的 `roles/iam.serviceAccountTokenCreator` 角色；gcloud 默认 OAuth 客户端不能直接请求 `androidpublisher` 作用域，因此推荐使用服务账号模拟）。
+   - **GitHub Actions 与 CI（无需密钥文件）**：通过 `google-github-actions/auth` 配置工作负载身份联合（Workload Identity Federation），它会自动生成 `external_account` 配置并设置 `GOOGLE_APPLICATION_CREDENTIALS`。
+   - **其他 Google Cloud 环境**：`GOOGLE_APPLICATION_CREDENTIALS`、gcloud ADC 文件，或 GCE/Cloud Run 元数据服务器。
+
+命令会输出所用凭据的类型和账号邮箱（绝不包含任何密钥）；当 Google Play 返回 HTTP 401 或 403 时，错误信息会指明被拒绝的身份，并提示在 Play Console › 用户和权限 中为其授予应用权限。
 
 ```sh
 nsgo build -target android -channel store
@@ -411,7 +421,7 @@ nsgo publish -store play -track production        # 同时更新指定 Google Pl
 
 校验会在读取凭据或发起任何 HTTP 请求之前完成，检查必填项、语言代码、URL 协议、媒体文件及数量（App Store 每种显示类型最多 10 张截图、3 段预览；Google Play 每种图片类型最多 8 张截图）以及字符上限（App Store：标题 30、副标题 30、关键词 100、宣传文本 170、描述 4000、更新说明 4000；Google Play：标题 30、简短描述 80、完整描述 4000、更新说明 500）。
 
-上传凭据仅从环境变量读取：App Store Connect 读取 `NSGO_APP_STORE_KEY`、`NSGO_APP_STORE_KEY_ID` 和 `NSGO_APP_STORE_ISSUER`（未设置时回退到公证密钥 `NSGO_NOTARY_KEY`、`NSGO_NOTARY_KEY_ID` 和 `NSGO_NOTARY_ISSUER`）；Google Play 读取 `NSGO_PLAY_SERVICE_ACCOUNT`（服务账号 JSON 文件路径或 JSON 文本）。
+上传凭据来自环境变量或 Google Application Default Credentials：App Store Connect 读取 `NSGO_APP_STORE_KEY`、`NSGO_APP_STORE_KEY_ID` 和 `NSGO_APP_STORE_ISSUER`（未设置时回退到公证密钥 `NSGO_NOTARY_KEY`、`NSGO_NOTARY_KEY_ID` 和 `NSGO_NOTARY_ISSUER`）；Google Play 优先读取 `NSGO_PLAY_SERVICE_ACCOUNT`（服务账号 JSON 文件路径或 JSON 文本），未设置时回退到 Application Default Credentials（`gcloud auth application-default login --impersonate-service-account=…`、`GOOGLE_APPLICATION_CREDENTIALS`、工作负载身份联合或 GCE 元数据）。
 
 ### 商店合规
 
