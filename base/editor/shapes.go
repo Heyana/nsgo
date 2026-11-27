@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"slices"
 	"sort"
 	"unicode/utf8"
 
@@ -16,22 +17,26 @@ import (
 type shape struct {
 	from, to int
 	hidden   bool
-	node     core.Node
+	deco     *Decoration
 }
 
 // byteSpan is a range of bytes in a line.
 type byteSpan struct{ a, b int }
 
-// replSpan is a replaced range of a line and the view drawn in it.
+// replSpan is a replaced range of a line and the decoration whose view draws
+// in it (nil when the decoration spans lines and shows no view).
 type replSpan struct {
 	a, b int
-	node core.Node
+	deco *Decoration
 }
 
 // shapesIn is line's shapes, clipped to its text, merged and ordered. A
 // column a Replace covers stays a column even when a Hidden range covers
 // it too.
 func (e *ed) shapesIn(line int) []shape {
+	if !e.hasShapes {
+		return nil
+	}
 	r := e.st.r()
 	if line < 0 || line >= r.lines() {
 		return nil
@@ -41,11 +46,14 @@ func (e *ed) shapesIn(line int) []shape {
 	var replaced []replSpan
 	for i := range e.marks {
 		m := &e.marks[i]
+		if m.from.line > line {
+			break
+		}
 		d := m.deco
 		if d == nil || !d.Hidden && d.Replace == nil {
 			continue
 		}
-		if m.to.line < line || m.from.line > line {
+		if m.to.line < line {
 			continue
 		}
 		from, to := 0, len(l)
@@ -58,15 +66,22 @@ func (e *ed) shapesIn(line int) []shape {
 		if from >= to {
 			continue
 		}
-		// A range across lines keeps its columns and hides its text, as
-		// one line's box holds the view.
-		if d.Replace != nil && m.from.line == m.to.line {
-			replaced = append(replaced, replSpan{from, to, d.Replace})
+		// A range across lines keeps its columns and hides its text without
+		// a view, as one line's box holds the view.
+		if d.Replace != nil {
+			var deco *Decoration
+			if m.from.line == m.to.line {
+				deco = d
+			}
+			replaced = append(replaced, replSpan{from, to, deco})
 			continue
 		}
 		if d.Hidden {
 			hidden = append(hidden, byteSpan{from, to})
 		}
+	}
+	if len(replaced) == 0 && len(hidden) == 0 {
+		return nil
 	}
 	replaced = mergeReplSpans(replaced)
 	cover := make([]byteSpan, len(replaced))
@@ -76,10 +91,10 @@ func (e *ed) shapesIn(line int) []shape {
 	hidden = cutByteSpans(mergeByteSpans(hidden), cover)
 	out := make([]shape, 0, len(replaced)+len(hidden))
 	for _, s := range replaced {
-		out = append(out, shape{s.a, s.b, false, s.node})
+		out = append(out, shape{from: s.a, to: s.b, deco: s.deco})
 	}
 	for _, s := range hidden {
-		out = append(out, shape{s.a, s.b, true, nil})
+		out = append(out, shape{from: s.a, to: s.b, hidden: true})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].from < out[j].from })
 	return out
@@ -163,35 +178,45 @@ func (e *ed) shownCols(line, from, to int) int {
 	if line < 0 || line >= r.lines() {
 		return 0
 	}
-	l := r.line(line)
+	return shownColsIn(r.line(line), e.shapesIn(line), e.st.tab, from, to)
+}
+
+func shownColsIn(l string, shapes []shape, tab, from, to int) int {
 	from = min(max(from, 0), len(l))
 	to = min(max(to, 0), len(l))
 	if from > to {
 		from, to = to, from
 	}
-	shapes := e.shapesIn(line)
-	shown := func(limit int) int {
-		col, i, si := 0, 0, 0
-		for i < limit {
-			for si < len(shapes) && shapes[si].to <= i {
-				si++
-			}
-			if si < len(shapes) && shapes[si].from <= i && shapes[si].hidden {
-				i = min(shapes[si].to, limit)
-				continue
-			}
-			c, n := utf8.DecodeRuneInString(l[i:limit])
-			col += runeCols(c, col, e.st.tab)
-			i += n
-		}
-		return col
+	if from == to {
+		return 0
 	}
-	return shown(to) - shown(from)
+	col, fromCol, haveFrom := 0, 0, false
+	i, si := 0, 0
+	for i < to {
+		for si < len(shapes) && shapes[si].to <= i {
+			si++
+		}
+		if si < len(shapes) && shapes[si].from <= i && shapes[si].hidden {
+			i = min(shapes[si].to, to)
+			continue
+		}
+		if !haveFrom && i >= from {
+			fromCol = col
+			haveFrom = true
+		}
+		c, n := utf8.DecodeRuneInString(l[i:to])
+		col += runeCols(c, col, tab)
+		i += n
+	}
+	if !haveFrom {
+		return 0
+	}
+	return col - fromCol
 }
 
 // byteAtShownCol is the byte of line from to to nearest shown column
-// target: a hidden range has no column of its own, so a target inside it
-// lands after it.
+// target: a hidden range has no column of its own, so a target at or inside
+// it lands after it.
 func (e *ed) byteAtShownCol(line, from, to, target int) int {
 	r := e.st.r()
 	if line < 0 || line >= r.lines() {
@@ -200,11 +225,8 @@ func (e *ed) byteAtShownCol(line, from, to, target int) int {
 	l := r.line(line)
 	from = min(max(from, 0), len(l))
 	to = min(max(to, from), len(l))
-	col := e.shownCols(line, 0, from)
-	if target <= col {
-		return from
-	}
 	shapes := e.shapesIn(line)
+	col := shownColsIn(l, shapes, e.st.tab, 0, from)
 	i, si := from, 0
 	for si < len(shapes) && shapes[si].to <= i {
 		si++
@@ -233,92 +255,76 @@ func (e *ed) byteAtShownCol(line, from, to, target int) int {
 
 // replacement is a Decoration.Replace drawn in its range's columns on a row.
 type replacement struct {
-	line, from, to, row int
-	cols                float32
-	node                core.Node
+	deco          *Decoration
+	row           int
+	leftCol, cols int
 }
 
 // replacementList is the replacements of the rows made, in order. A range
-// split by soft wrap draws on the row its start is in, as one line's box
-// holds one view.
+// across lines, or split by soft wrap, hides its text and shows no view.
 func (e *ed) replacementList() []replacement {
 	e.textRev.Get()
 	e.marksRev.Get()
+	if !e.hasShapes {
+		return nil
+	}
 	s, end := e.windowRows()
 	r := e.st.r()
 	var out []replacement
-	for i := range e.marks {
-		m := &e.marks[i]
-		d := m.deco
-		if d == nil || d.Replace == nil || m.from.line != m.to.line || m.from.line >= r.lines() {
-			continue
-		}
-		row := e.st.disp.rowOf(m.from)
-		if row < s || row >= end {
-			continue
-		}
+	line := -1
+	var l string
+	var shapes []shape
+	for row := s; row < end; row++ {
 		dr := e.st.disp.row(row, r)
-		if dr.line != m.from.line || dr.start > m.from.col || dr.end < m.to.col {
+		if dr.line != line {
+			line = dr.line
+			l = r.line(line)
+			shapes = e.shapesIn(line)
+		}
+		if len(shapes) == 0 {
 			continue
 		}
-		cols := e.shownCols(m.from.line, m.from.col, m.to.col)
-		if cols <= 0 {
-			continue
+		base := -1
+		for _, sh := range shapes {
+			if sh.hidden || sh.deco == nil {
+				continue
+			}
+			// A range split by soft wrap hides its text and shows no view.
+			if sh.from < dr.start || sh.to > dr.end {
+				continue
+			}
+			cols := shownColsIn(l, shapes, e.st.tab, sh.from, sh.to)
+			if cols <= 0 {
+				continue
+			}
+			if base < 0 {
+				base = shownColsIn(l, shapes, e.st.tab, 0, dr.start)
+			}
+			leftCol := shownColsIn(l, shapes, e.st.tab, 0, sh.from) - base
+			out = append(out, replacement{
+				deco:    sh.deco,
+				row:     row,
+				leftCol: leftCol,
+				cols:    cols,
+			})
 		}
-		out = append(out, replacement{line: m.from.line, from: m.from.col, to: m.to.col, row: row,
-			cols: float32(cols), node: d.Replace})
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].row != out[j].row {
-			return out[i].row < out[j].row
-		}
-		return out[i].from < out[j].from
-	})
 	return out
-}
-
-// sameReplacements compares replacements by where they go, not by the views
-// they hold, which need not compare.
-func sameReplacements(a, b []replacement) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].line != b[i].line || a[i].from != b[i].from || a[i].to != b[i].to ||
-			a[i].row != b[i].row || a[i].cols != b[i].cols {
-			return false
-		}
-	}
-	return true
 }
 
 // replacementLayer draws the rows' replacements over their text, each in a
 // box as wide as the columns it took and as tall as the line.
 func (e *ed) replacementLayer() core.Node {
-	list := core.NewMemoFunc(e.cx, e.replacementList, sameReplacements)
-	return core.Each(func() []int {
-		out := make([]int, len(list.Get()))
-		for i := range out {
-			out[i] = i
-		}
-		return out
-	}, func(i int) int { return i }, func(cx *core.Scope, i func() int, _ func() int) core.Node {
+	list := core.NewMemoFunc(e.cx, e.replacementList, slices.Equal[[]replacement])
+	return core.Each(list.Get, func(r replacement) *Decoration { return r.deco }, func(cx *core.Scope, rep func() replacement, _ func() int) core.Node {
+		deco := rep().deco
 		return core.View{
 			StyleFunc: func() core.Style {
-				all := list.Get()
-				if i() >= len(all) {
-					return core.Style{Display: core.DisplayNone}
-				}
-				r := all[i()]
-				return merge(at(pad+float32(e.shownCols(r.line, 0, r.from))*e.charW, float32(r.row)*e.lh, r.cols*e.charW, e.lh),
-					core.Style{Overflow: core.Hidden})
+				r := rep()
+				return merge(at(pad+float32(r.leftCol)*e.charW, float32(r.row)*e.lh, float32(r.cols)*e.charW, e.lh),
+					core.Style{Overflow: core.Hidden, Cursor: core.CursorDefault})
 			},
-			Children: []core.Node{core.Dynamic(func(*core.Scope) core.Node {
-				if all := list.Get(); i() < len(all) {
-					return all[i()].node
-				}
-				return core.Group{}
-			})},
+			Children: []core.Node{deco.Replace},
 		}
 	})
 }

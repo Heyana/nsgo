@@ -92,6 +92,7 @@ func (e *ed) glyphs() core.Node {
 	}
 	list := core.NewMemoFunc(e.cx, func() []glyph {
 		e.textRev.Get()
+		e.marksRev.Get()
 		s, end := e.windowRows()
 		r := e.st.r()
 		var out []glyph
@@ -110,7 +111,12 @@ func (e *ed) glyphs() core.Node {
 				}
 			}
 			for i, c := range l[d.start:min(d.end, len(l))] {
-				if sh, ok := shapeAt(shapes, d.start+i); ok && sh.hidden {
+				if sh, ok := shapeAt(shapes, d.start+i); ok {
+					if sh.hidden {
+						continue
+					}
+					flush()
+					col += runeCols(c, col, e.st.tab)
 					continue
 				}
 				switch c {
@@ -167,6 +173,7 @@ func (e *ed) inlineView() core.Node {
 			text := e.inline.Get()
 			e.selRev.Get()
 			e.textRev.Get()
+			e.marksRev.Get()
 			h := e.st.primary().head
 			row := e.st.disp.rowOf(h)
 			var lines []core.Node

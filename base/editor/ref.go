@@ -280,13 +280,26 @@ func (e *ed) charAt(pt core.Point) (pos, bool) {
 	}
 	near := e.posAt(pt)
 	d := e.st.disp.row(int(float32(pt.Y)/e.lh), e.st.r())
+	shapes := e.shapesIn(d.line)
 	if e.xOf(near) > float32(pt.X) {
-		if near.col > d.start {
-			return e.st.prevChar(near), true
+		p := near
+		for p.col > d.start {
+			p = e.st.prevChar(p)
+			if sh, ok := shapeAt(shapes, p.col); ok && sh.hidden {
+				p.col = sh.from
+				continue
+			}
+			return p, true
 		}
 		return near, false
 	}
-	return near, near.col < d.end
+	if near.col >= d.end {
+		return near, false
+	}
+	if sh, ok := shapeAt(shapes, near.col); ok && sh.hidden {
+		return near, false
+	}
+	return near, true
 }
 
 // textPress reports a press at pt of the rows' box, page in the root

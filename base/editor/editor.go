@@ -93,11 +93,13 @@ type ed struct {
 	matches   []span
 	scope     []span
 	marks     []mark
-	// strip says the gutter holds its strip of marks.
-	strip   bool
-	comp    completion
-	compSel int
-	nextID  int
+	// strip says the gutter holds its strip of marks, hasShapes that a
+	// decoration hides or replaces its range.
+	strip     bool
+	hasShapes bool
+	comp      completion
+	compSel   int
+	nextID    int
 	// nextInline numbers the inline completion requests apart.
 	nextInline int
 	// The pending definition request and the hover.
@@ -1129,10 +1131,15 @@ func (e *ed) setMarks(diags []Diagnostic, decos []Decoration) {
 		}
 		e.marks = append(e.marks, mark{from: from, to: to, diag: &d})
 	}
+	hasShapes := false
 	for i := range decos {
 		d := decos[i]
+		if d.Hidden || d.Replace != nil {
+			hasShapes = true
+		}
 		e.marks = append(e.marks, mark{from: e.pos(d.Range.Start), to: e.pos(d.Range.End), deco: &d})
 	}
+	e.hasShapes = hasShapes
 	sort.SliceStable(e.marks, func(i, j int) bool { return e.marks[i].from.less(e.marks[j].from) })
 	strip := e.hasGutterMarks()
 	e.cx.Batch(func() {

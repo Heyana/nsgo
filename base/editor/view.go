@@ -489,6 +489,7 @@ func (e *ed) linkRects() []rect {
 	if !e.hasLink.Get() {
 		return nil
 	}
+	e.marksRev.Get()
 	l := e.link.Get()
 	var out []rect
 	for _, r := range e.spanRects(l.from, l.to, &e.styles().DefinitionLink, e.p.Classes.DefinitionLink, nil) {
@@ -583,8 +584,14 @@ func (e *ed) rowSpans(row int) []core.Span {
 				continue
 			}
 			// A replaced range keeps its columns for its view.
+			w := 0
 			for _, c := range l[a:b] {
-				col += runeCols(c, col, e.st.tab)
+				n := runeCols(c, col, e.st.tab)
+				col += n
+				w += n
+			}
+			if w > 0 {
+				out = append(out, core.Span{Content: strings.Repeat(" ", w)})
 			}
 			continue
 		}
@@ -742,6 +749,7 @@ func (e *ed) sinkView() core.Node {
 		StyleFunc: func() core.Style {
 			e.selRev.Get()
 			e.textRev.Get()
+			e.marksRev.Get()
 			h := e.st.primary().head
 			vp := e.viewport.Get()
 			x := e.gutterWidth() + e.xOf(h) - float32(e.scrollX.Get())
@@ -859,6 +867,7 @@ func (e *ed) completionList() core.Node {
 		return core.Overlay{
 			AnchorBounds: func() core.Bounds {
 				e.selRev.Get()
+				e.marksRev.Get()
 				b := e.caretPage()
 				q := len(e.query())
 				b.Origin.X -= core.Points(float32(q) * e.charW)
@@ -991,6 +1000,7 @@ func (e *ed) handles() core.Node {
 				TestID: map[bool]string{true: "selection-handle-start", false: "selection-handle-end"}[start],
 				StyleFunc: func() core.Style {
 					e.selRev.Get()
+					e.marksRev.Get()
 					p := end()
 					y := float32(e.st.disp.rowOf(p)) * e.lh
 					if start {
