@@ -110,6 +110,42 @@ func resolveDevicePress(chain []deviceHitNode, hold bool, mods driver.Modifiers)
 	return devicePressTarget{kind: devicePressNone, index: -1}
 }
 
+// devicePinchKind names how a pinch at a point on a physical iPhone or iPad is
+// delivered once hit testing resolves the superview chain.
+type devicePinchKind uint8
+
+const (
+	devicePinchNone devicePinchKind = iota
+	devicePinchView
+	devicePinchScroll
+)
+
+// devicePinchNode describes one NSGo view along the hit-test superview chain.
+type devicePinchNode struct {
+	hasPinch bool
+	canZoom  bool
+}
+
+// devicePinchTarget is the resolved pinch handler and index into the chain.
+type devicePinchTarget struct {
+	kind  devicePinchKind
+	index int
+}
+
+// resolveDevicePinch picks the innermost view along the hit-test chain that
+// listens for EventPinch or zooms as a pinch-zoomable UIScrollView.
+func resolveDevicePinch(chain []devicePinchNode) devicePinchTarget {
+	for i, n := range chain {
+		if n.hasPinch {
+			return devicePinchTarget{kind: devicePinchView, index: i}
+		}
+		if n.canZoom {
+			return devicePinchTarget{kind: devicePinchScroll, index: i}
+		}
+	}
+	return devicePinchTarget{kind: devicePinchNone, index: -1}
+}
+
 // clampScrollOffset clamps cur + delta to a UIScrollView's valid contentOffset
 // range and reports whether the scroll view can move from cur toward delta.
 func clampScrollOffset(cur, delta driver.Point, contentSize, boundsSize driver.Size, insetTop, insetLeft, insetBottom, insetRight driver.Points) (to driver.Point, canMove bool) {

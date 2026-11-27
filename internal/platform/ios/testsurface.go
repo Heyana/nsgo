@@ -66,11 +66,14 @@ func scriptedTestInputAllowed(window, event objc.ID) bool {
 type testSurface struct {
 	s       *surface
 	test    *testOpen
-	pressID int // last simulator HID press release marker, main thread only
+	pressID int             // last simulator HID press release marker, main thread only
+	clicks  testhost.Clicks // consecutive press count for physical device presses, main thread only
 }
 
-// touchTestSurface adds multi-touch input on iPhone and iPad simulators, whose IOHID digitizer events carry several fingers; a physical device has no such path, so a pinch there skips as on other targets without one.
+// touchTestSurface adds multi-touch pinch input on iPhone and iPad hosts: simulators send two-finger IOHID digitizer events, while physical devices use UIKit hit testing and NSGo's pinch/scroll zoom paths. Apple TV has no pinch recognizer, so tvOS returns *testSurface without PinchSurface.
 type touchTestSurface struct{ *testSurface }
+
+var _ testhost.PinchSurface = (*touchTestSurface)(nil)
 
 var (
 	// deviceKeys holds synthetic KeyDown/KeyUp state per surface on physical devices,
@@ -479,6 +482,9 @@ func (t *testSurface) pressDevice(w objc.ID, at driver.Point, hold time.Duration
 			ids = append(ids, n)
 		}
 		target := resolveDevicePress(chain, hold > 0, mods)
+		if target.kind != devicePressView {
+			t.clicks = testhost.Clicks{}
+		}
 		switch target.kind {
 		case devicePressFocusText:
 			ed := ids[target.index]
@@ -538,13 +544,14 @@ func (t *testSurface) pressDevice(w objc.ID, at driver.Point, hold time.Duration
 				t.s.focusView(v)
 			}
 			local, page := t.viewPointAndPage(w, v, at)
+			count := t.clicks.Press(at, v, time.Now(), 500*time.Millisecond)
 			v.pressing.Store(true)
 			v.longFired.Store(false)
 			v.pressAt = driver.Event{
 				Point:     driver.Point{X: driver.Points(local.X), Y: driver.Points(local.Y)},
 				Page:      driver.Point{X: driver.Points(page.X), Y: driver.Points(page.Y)},
 				Modifiers: mods,
-				Count:     1,
+				Count:     uint32(count),
 				Index:     v.indexAt(local),
 			}
 			v.beginPress()
@@ -625,6 +632,13 @@ func (t *touchTestSurface) Pinch(at driver.Point, scales []float32) error {
 	if err != nil {
 		return err
 	}
+	if t.useSimulatorHID() {
+		return t.pinchSimulatorHID(w, at, scales)
+	}
+	return t.pinchDevice(w, at, scales)
+}
+
+func (t *touchTestSurface) pinchSimulatorHID(w objc.ID, at driver.Point, scales []float32) error {
 	const radius = 16
 	send := func(ph phase, scale float32) {
 		d := radius * driver.Points(scale)
@@ -638,6 +652,83 @@ func (t *touchTestSurface) Pinch(at driver.Point, scales []float32) error {
 	time.Sleep(32 * time.Millisecond)
 	send(up, scales[len(scales)-1])
 	return nil
+}
+
+// pinchDevice delivers a pinch on a physical iPhone or iPad through UIKit hit
+// testing and either the view's EventPinch reporting path or a zooming
+// UIScrollView's public zoomToRect:animated: API.
+func (t *testSurface) pinchDevice(w objc.ID, at driver.Point, scales []float32) error {
+	var err error
+	scriptedMainSync(func() {
+		if w == 0 || t.s == nil || t.s.engine == nil {
+			err = errors.New("the scene has no window")
+			return
+		}
+		wp := apple.CGPoint{X: float64(at.X), Y: float64(at.Y)}
+		hit := w.Send(sel("hitTest:withEvent:"), wp, objc.ID(0))
+		var chain []devicePinchNode
+		var ids []*view
+		for n := hit; n != 0; n = n.Send(selSuperview) {
+			v := views[n]
+			if v == nil || v.surface != t.s || v.id == 0 {
+				continue
+			}
+			node := devicePinchNode{
+				hasPinch: v.events.Has(driver.EventPinch),
+				canZoom:  v.sc != nil && v.sc.zoom != 0 && v.sc.config.Zooms() && !v.sc.config.NoPinchZoom,
+			}
+			chain = append(chain, node)
+			ids = append(ids, v)
+		}
+		target := resolveDevicePinch(chain)
+		switch target.kind {
+		case devicePinchView:
+			v := ids[target.index]
+			local, _ := t.viewPointAndPage(w, v, at)
+			pt := driver.Point{X: driver.Points(local.X), Y: driver.Points(local.Y)}
+			v.pinchAt = pt
+			v.report(driver.Event{Kind: driver.EventPinch, Phase: driver.GestureBegan, Value: scales[0], Point: pt})
+			prev := scales[0]
+			dt := driver.FrameInterval.Seconds()
+			var vel float32
+			for _, scale := range scales[1:] {
+				if int(v.id) >= len(t.s.views) || t.s.views[v.id] != v {
+					return
+				}
+				if dt > 0 {
+					vel = float32(float64(scale-prev) / dt)
+				}
+				prev = scale
+				v.report(driver.Event{
+					Kind:     driver.EventPinch,
+					Phase:    driver.GestureChanged,
+					Value:    scale,
+					Velocity: driver.Point{X: driver.Points(vel)},
+					Point:    pt,
+				})
+			}
+			if int(v.id) < len(t.s.views) && t.s.views[v.id] == v {
+				v.report(driver.Event{
+					Kind:     driver.EventPinch,
+					Phase:    driver.GestureEnded,
+					Value:    scales[len(scales)-1],
+					Velocity: driver.Point{X: driver.Points(vel)},
+					Point:    pt,
+				})
+			}
+		case devicePinchScroll:
+			v := ids[target.index]
+			base := objc.Send[float64](v.native, selZoomScale)
+			content := objc.Send[apple.CGPoint](v.sc.zoom, sel("convertPoint:fromView:"), wp, w)
+			center := driver.Point{X: driver.Points(content.X), Y: driver.Points(content.Y)}
+			for _, scale := range scales {
+				v.zoomTo(&driver.ZoomRequest{Scale: float32(base * float64(scale)), Center: &center}, false)
+			}
+		default:
+			err = fmt.Errorf("no native pinch view at %v", at)
+		}
+	})
+	return err
 }
 
 // dragDevice delivers a drag on a physical iPhone or Apple TV through EventTouch,

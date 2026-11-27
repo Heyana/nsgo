@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
@@ -72,6 +73,7 @@ func (t *testSurface) setHeld(state *[256]byte, vk uintptr) {
 var (
 	_ testhost.Surface        = (*testSurface)(nil)
 	_ testhost.KeyHoldSurface = (*testSurface)(nil)
+	_ testhost.PinchSurface   = (*testSurface)(nil)
 	_ testhost.WindowSurfaces = (*testSurface)(nil)
 	_ testhost.CloseWindow    = (*testSurface)(nil)
 )
@@ -306,6 +308,79 @@ func (t *testSurface) Drag(path []driver.Point) error {
 	}
 	t.send(hostLButtonUp, 0, at)
 	return nil
+}
+
+// Pinch drives the window's pinch gesture or zooming scroll view under at through scales.
+func (t *testSurface) Pinch(at driver.Point, scales []float32) error {
+	if len(scales) == 0 {
+		return nil
+	}
+	var err error
+	t.scripted(func() {
+		w := t.w
+		root := w.view(w.root)
+		if root == nil {
+			err = fmt.Errorf("no native pinch view at %v", at)
+			return
+		}
+		pinchView := w.gestureView(at, driver.EventPinch)
+		var scrollView *view
+		under := scrollsAt(root, at, nil)
+		for i := len(under) - 1; i >= 0; i-- {
+			if under[i].scroll.Zooms() && !under[i].scroll.NoPinchZoom {
+				scrollView = under[i]
+				break
+			}
+		}
+		if scrollView != nil && (pinchView == nil || viewContains(pinchView, scrollView)) {
+			w.interruptScroll(scrollView)
+			focus := scrollView.surfacePoint(at)
+			base := scrollView.zoomScale()
+			for _, scale := range scales {
+				z := scrollView.zoomScale()
+				center := scrollbar.ContentAt(scrollView.offset, focus, z)
+				next := scrollbar.LimitZoom(&scrollView.scroll, base*float64(scale), false)
+				to := scrollbar.ClampZoomOffset(&scrollView.scroll, scrollView.frame.Size, scrollView.size, scrollbar.OffsetFor(center, focus, next), next)
+				if next != z || to != scrollView.offset {
+					scrollView.zoom = next
+					w.moveOffset(scrollView, to)
+				}
+			}
+			return
+		}
+		if pinchView == nil {
+			err = fmt.Errorf("no native pinch view at %v", at)
+			return
+		}
+		if w.wheelPinching != nil {
+			killTimer.Call(w.hwnd, pinchTimer)
+			w.wheelPinching = nil
+		}
+		g := &twoFinger{v: pinchView, kind: driver.EventPinch, at: at}
+		w.pinch = g
+		w.reportGesture(g, driver.GestureBegan, scales[0])
+		for _, scale := range scales[1:] {
+			if g.v.deleted {
+				break
+			}
+			g.lastTime = g.lastTime.Add(-driver.FrameInterval)
+			w.reportGesture(g, driver.GestureChanged, scale)
+		}
+		if !g.v.deleted {
+			w.reportGesture(g, driver.GestureEnded, scales[len(scales)-1])
+		}
+		w.pinch = nil
+	})
+	return err
+}
+
+func viewContains(ancestor, v *view) bool {
+	for cur := v; cur != nil; cur = cur.parent {
+		if cur == ancestor {
+			return true
+		}
+	}
+	return false
 }
 
 // Scroll delivers a precise touchpad-style scroll gesture at at by delta (the scroll-offset change in points, opposite to content movement): it begins, moves at most 20 points every 16 ms, and ends without momentum, carrying exact point distances to both native scroll views and OnWheel.

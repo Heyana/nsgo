@@ -84,7 +84,7 @@ func TestMain(m *testing.M) {
 
 在 Linux 和 Android 的无头测试中，可以用 `app.Installs` 检查交给安装器的软件包路径。设置 `app.InstallPackage` 可让模拟安装器返回错误。
 
-`app.DoublePress(selector)` 在一个步骤内连续按压两次，让平台识别双击或双触。`app.Pan` 使用目标的拖动输入，每个偏移量都相对于起点。`app.Pinch` 支持无头模式，也可在 macOS、iOS 模拟器、Android 和 Web 上驱动平台的手势处理。iOS 模拟器上的每个缩放值决定两根手指的间距，UIKit 在移动超过识别阈值后才开始报告手势。Android 上的两根手指会先张开至原生识别阈值，再依次应用指定的缩放值。如果当前目标不支持捏合输入，`Pinch` 会跳过测试的剩余步骤，并报告不支持的目标。
+`app.DoublePress(selector)`（以及 `Surface.DoublePress`）在一个步骤内连续按压两次，让平台在无头和目标平台上都能识别双击或双触（`PressEvent.Clicks == 2`）。`app.Pan` 支持无头模式，并在 macOS、Windows、Linux、iOS、iOS 模拟器、Android 和 Web 上使用目标的拖动输入，每个偏移量都相对于起点。`app.Pinch` 支持无头模式，并在 macOS、Windows、Linux、iOS、iOS 模拟器、Android 和 Web 上驱动平台的手势处理。iOS 模拟器上的每个缩放值决定两根手指的间距，UIKit 在移动超过识别阈值后才开始报告手势；iOS 真机则通过原生命中测试驱动视图的捏合或滚动缩放路径。Android 上的两根手指会先张开至原生识别阈值，再依次应用指定的缩放值。如果当前目标不支持捏合输入（例如 tvOS、watchOS 或 HarmonyOS），执行到 `Pinch` 时会跳过测试的剩余步骤，并报告不支持的目标。
 
 `app.Orientation` 保存当前生效的 `Scope.RequestOrientation` 方向集合。使用应用原有的方向策略时，该值为零。
 

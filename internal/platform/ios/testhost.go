@@ -66,7 +66,7 @@ func (host) Open(root func(cx *core.Scope) core.Node, o testhost.Options) (testh
 		return nil, err
 	}
 	surface := &testSurface{s: runner, test: test}
-	if onTV() || !surface.useSimulatorHID() {
+	if onTV() {
 		return surface, nil
 	}
 	return &touchTestSurface{surface}, nil

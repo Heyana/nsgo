@@ -16,6 +16,7 @@ import (
 	"github.com/ebitengine/purego"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/scrollbar"
 	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
@@ -198,6 +199,76 @@ func (t *testSurface) Drag(path []driver.Point) error {
 		dragEndCallback(0, float64(at.X-path[0].X), float64(at.Y-path[0].Y), t.w.handle)
 	})
 	return nil
+}
+
+var _ testhost.PinchSurface = (*testSurface)(nil)
+
+// Pinch drives the window's pinch gesture or zooming scroll view under at through scales.
+func (t *testSurface) Pinch(at driver.Point, scales []float32) error {
+	if len(scales) == 0 {
+		return nil
+	}
+	var err error
+	t.scripted(func() {
+		w := t.w
+		root := w.view(w.root)
+		if root == nil {
+			err = fmt.Errorf("no native pinch view at %v", at)
+			return
+		}
+		pinchView := w.hitEvent(at, driver.EventPinch)
+		var scrollView *view
+		under := scrollsAt(root, at, nil)
+		for i := len(under) - 1; i >= 0; i-- {
+			if under[i].scroll.Zooms() && !under[i].scroll.NoPinchZoom {
+				scrollView = under[i]
+				break
+			}
+		}
+		if scrollView != nil && (pinchView == nil || descendant(scrollView, pinchView)) {
+			w.stopWheelGlide()
+			w.interruptScroll(scrollView)
+			focus := scrollView.surfacePoint(at)
+			base := scrollView.zoomScale()
+			for _, scale := range scales {
+				z := scrollView.zoomScale()
+				center := scrollbar.ContentAt(scrollView.offset, focus, z)
+				next := scrollbar.LimitZoom(&scrollView.scroll, base*float64(scale), false)
+				to := scrollbar.ClampZoomOffset(&scrollView.scroll, scrollView.frame.Size, scrollView.size, scrollbar.OffsetFor(center, focus, next), next)
+				if next != z || to != scrollView.offset {
+					scrollView.zoom = next
+					w.moveOffset(scrollView, to)
+				}
+			}
+			return
+		}
+		if pinchView == nil {
+			err = fmt.Errorf("no native pinch view at %v", at)
+			return
+		}
+		if w.pinchTimeout != 0 {
+			gSourceRemove(w.pinchTimeout)
+			w.pinchTimeout = 0
+		}
+		g := &twoFinger{v: pinchView, kind: driver.EventPinch, value: scales[0], lastTime: time.Now(), at: at}
+		w.pinching = g
+		w.reportGesture(driver.Event{
+			Kind:  driver.EventPinch,
+			ID:    pinchView.id,
+			Phase: driver.GestureBegan,
+			Value: scales[0],
+			Point: w.pinchPoint(pinchView, driver.EventPinch, at),
+		})
+		for _, scale := range scales[1:] {
+			if w.pinching == nil || w.pinching.v.deleted {
+				break
+			}
+			w.pinching.lastTime = w.pinching.lastTime.Add(-driver.FrameInterval)
+			w.reportTwoFinger(driver.EventPinch, scale, at)
+		}
+		gestureEndCallback(0, 0, w.handle)
+	})
+	return err
 }
 
 func absPoints(v driver.Points) driver.Points {

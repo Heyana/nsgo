@@ -29,7 +29,7 @@ func TestPanEndsAtTheLastOffset(t *testing.T) {
 }
 
 func TestPinchReportsScaleAndPhase(t *testing.T) {
-	if target := nsgotest.Target(); target != "" && target != "macos" && target != "web" && target != "ios_simulator" && target != "ios" && target != "android" {
+	if target := nsgotest.Target(); target != "" && target != "macos" && target != "windows" && target != "linux" && target != "web" && target != "ios_simulator" && target != "ios" && target != "android" {
 		t.Skipf("native pinch input is unavailable on %s", target)
 	}
 	type sample struct {
@@ -76,5 +76,40 @@ func TestPinchReportsScaleAndPhase(t *testing.T) {
 		if !slices.Equal(samples, want) {
 			t.Fatalf("one-sample pinch = %v, want %v", samples, want)
 		}
+	}
+}
+
+func TestDoublePressPinchAndPanTogether(t *testing.T) {
+	if target := nsgotest.Target(); target != "" && target != "macos" && target != "windows" && target != "linux" && target != "web" && target != "ios_simulator" && target != "ios" && target != "android" {
+		t.Skipf("native pinch input is unavailable on %s", target)
+	}
+	var clicks []int
+	var pinchEnd core.GestureEvent
+	var panEnd core.PanEvent
+	app := nsgotest.Start(t, func(*core.Scope) core.Node {
+		return core.View{Style: core.Style{Padding: core.All(80)}, Children: []core.Node{
+			core.View{
+				TestID:  "stage",
+				Style:   core.Style{Width: core.Pt(100), Height: core.Pt(80)},
+				OnPress: func(e core.PressEvent) { clicks = append(clicks, e.Clicks) },
+				OnPinch: func(e core.GestureEvent) { pinchEnd = e },
+				OnPan:   func(e core.PanEvent) { panEnd = e },
+			},
+		}}
+	}, nsgotest.Size(400, 400))
+
+	app.DoublePress("id:stage")
+	if !slices.Equal(clicks, []int{1, 2}) {
+		t.Fatalf("double press clicks = %v, want [1 2]", clicks)
+	}
+	app.Pinch("id:stage", 1, 1.5, 2)
+	if pinchEnd.Phase != core.GestureEnded || pinchEnd.Value <= 1 {
+		t.Fatalf("pinch end = %+v, want ended with scale > 1", pinchEnd)
+	}
+	last := core.Point{X: 30, Y: 20}
+	app.Pan("id:stage", core.Point{X: 15, Y: 10}, last)
+	dx, dy := panEnd.Translation.X-last.X, panEnd.Translation.Y-last.Y
+	if panEnd.Phase != core.GestureEnded || math.Hypot(float64(dx), float64(dy)) > 1 {
+		t.Fatalf("pan end = %+v, want ended at %v", panEnd, last)
 	}
 }

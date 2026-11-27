@@ -1,7 +1,9 @@
 package nsgotest
 
 import (
+	"fmt"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -308,4 +310,114 @@ func currentGoroutineForTest() uint64 {
 	fields := strings.Fields(string(buf[:runtime.Stack(buf[:], false)]))
 	id, _ := strconv.ParseUint(fields[1], 10, 64)
 	return id
+}
+
+type recordingSurface struct {
+	noSurface
+	presses []driver.Point
+	drags   [][]driver.Point
+}
+
+func (s *recordingSurface) Press(at driver.Point, _ time.Duration, _ driver.Modifiers) error {
+	s.presses = append(s.presses, at)
+	return nil
+}
+
+func (s *recordingSurface) Drag(path []driver.Point) error {
+	s.drags = append(s.drags, slices.Clone(path))
+	return nil
+}
+
+func (s *recordingSurface) Sync() {}
+
+type pinchRecordingSurface struct {
+	recordingSurface
+	pinchAt     driver.Point
+	pinchScales []float32
+}
+
+func (s *pinchRecordingSurface) Pinch(at driver.Point, scales []float32) error {
+	s.pinchAt = at
+	s.pinchScales = slices.Clone(scales)
+	return nil
+}
+
+type skipCaptureTB struct {
+	testing.TB
+	skipped string
+}
+
+func (s *skipCaptureTB) Helper() {}
+func (s *skipCaptureTB) Skipf(format string, args ...any) {
+	s.skipped = fmt.Sprintf(format, args...)
+	runtime.Goexit()
+}
+
+func TestTargetDoublePressPanAndPinch(t *testing.T) {
+	stage := func(*core.Scope) core.Node {
+		return core.View{Style: core.Style{Padding: core.All(40)}, Children: []core.Node{
+			core.View{
+				TestID:  "stage",
+				Style:   core.Style{Width: core.Pt(80), Height: core.Pt(60)},
+				OnPress: func(core.PressEvent) {},
+				OnPan:   func(core.PanEvent) {},
+				OnPinch: func(core.GestureEvent) {},
+			},
+		}}
+	}
+
+	t.Run("supported pinch host", func(t *testing.T) {
+		a := Start(t, stage, Size(240, 200))
+		surf := &pinchRecordingSurface{}
+		a.target = &target{a: a, surface: surf}
+		defer func() { a.target = nil }()
+
+		a.DoublePress("id:stage")
+		wantCenter := driver.Point{X: 80, Y: 70}
+		if len(surf.presses) != 2 || surf.presses[0] != wantCenter || surf.presses[1] != wantCenter {
+			t.Fatalf("DoublePress presses = %v, want two presses at %v", surf.presses, wantCenter)
+		}
+
+		a.Pan("id:stage", core.Point{X: 15, Y: 10}, core.Point{X: 30, Y: 20})
+		wantDrag := []driver.Point{wantCenter, {X: 95, Y: 80}, {X: 110, Y: 90}}
+		if len(surf.drags) != 1 || !slices.Equal(surf.drags[0], wantDrag) {
+			t.Fatalf("Pan drags = %v, want [%v]", surf.drags, wantDrag)
+		}
+
+		a.Pinch("id:stage", 1, 1.5, 2)
+		if surf.pinchAt != wantCenter || !slices.Equal(surf.pinchScales, []float32{1, 1.5, 2}) {
+			t.Fatalf("Pinch at=%v scales=%v, want at=%v scales=[1 1.5 2]", surf.pinchAt, surf.pinchScales, wantCenter)
+		}
+	})
+
+	t.Run("unsupported pinch host runs prior steps then skips at pinch", func(t *testing.T) {
+		a := Start(t, stage, Size(240, 200))
+		t.Setenv("NSGO_TEST_TARGET", "watchos_simulator")
+		surf := &recordingSurface{}
+		capTB := &skipCaptureTB{TB: t}
+		a.t = capTB
+		a.target = &target{a: a, surface: surf}
+		defer func() { a.target = nil; a.t = t }()
+
+		reachedAfterPinch := false
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			a.DoublePress("id:stage")
+			a.Pan("id:stage", core.Point{X: 20, Y: 0})
+			a.Pinch("id:stage", 1.5, 2)
+			reachedAfterPinch = true
+		}()
+		<-done
+
+		if len(surf.presses) != 2 || len(surf.drags) != 1 {
+			t.Fatalf("prior steps did not run before pinch skip: presses=%d drags=%d", len(surf.presses), len(surf.drags))
+		}
+		if reachedAfterPinch {
+			t.Fatal("execution continued past unsupported Pinch step")
+		}
+		if !strings.Contains(capTB.skipped, "pinch(id:stage, [1.5 2])") || !strings.Contains(capTB.skipped, "watchos_simulator") {
+			t.Fatalf("skip reason = %q, want step name and target", capTB.skipped)
+		}
+	})
 }

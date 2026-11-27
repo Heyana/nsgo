@@ -150,6 +150,42 @@ func TestResolveDevicePress(t *testing.T) {
 	}
 }
 
+func TestResolveDevicePinch(t *testing.T) {
+	tests := []struct {
+		name  string
+		chain []devicePinchNode
+		want  devicePinchTarget
+	}{
+		{
+			name:  "empty chain",
+			chain: nil,
+			want:  devicePinchTarget{kind: devicePinchNone, index: -1},
+		},
+		{
+			name:  "innermost pinch listener wins over enclosing scroll zoom",
+			chain: []devicePinchNode{{}, {hasPinch: true}, {canZoom: true}},
+			want:  devicePinchTarget{kind: devicePinchView, index: 1},
+		},
+		{
+			name:  "innermost zooming scroll view wins over outer pinch listener",
+			chain: []devicePinchNode{{}, {canZoom: true}, {hasPinch: true}},
+			want:  devicePinchTarget{kind: devicePinchScroll, index: 1},
+		},
+		{
+			name:  "view with both pinch listener and scroll zoom uses pinch listener",
+			chain: []devicePinchNode{{hasPinch: true, canZoom: true}},
+			want:  devicePinchTarget{kind: devicePinchView, index: 0},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveDevicePinch(tc.chain); got != tc.want {
+				t.Fatalf("resolveDevicePinch = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestClampScrollOffset(t *testing.T) {
 	// Vertical scroll view with top inset 20, content 500pt tall in a 200pt viewport:
 	// valid Y range is [-20, 300].

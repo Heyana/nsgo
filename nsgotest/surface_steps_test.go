@@ -182,6 +182,46 @@ func TestSurfaceClosedQueriesAndPostsNameTheirWindow(t *testing.T) {
 	}
 }
 
+func TestSurfaceDoublePressPanAndPinch(t *testing.T) {
+	if target := Target(); target != "" && target != "macos" && target != "windows" && target != "linux" {
+		t.Skip("requires native app windows")
+	}
+	var mainClicks, inspectorClicks []int
+	var mainPan, inspectorPan core.PanEvent
+	var mainPinch, inspectorPinch []core.GestureEvent
+	stage := func(clicks *[]int, pan *core.PanEvent, pinch *[]core.GestureEvent) func(*core.Scope) core.Node {
+		return func(*core.Scope) core.Node {
+			return core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(40)}, Children: []core.Node{
+				core.View{
+					TestID:  "stage",
+					Style:   core.Style{Width: core.Pt(120), Height: core.Pt(100)},
+					OnPress: func(e core.PressEvent) { *clicks = append(*clicks, e.Clicks) },
+					OnPan:   func(e core.PanEvent) { *pan = e },
+					OnPinch: func(e core.GestureEvent) { *pinch = append(*pinch, e) },
+				},
+			}}
+		}
+	}
+	app := StartApp(t, func(cx *core.Scope) {
+		cx.SetMainView(stage(&mainClicks, &mainPan, &mainPinch))
+		desktop.OpenWindow(cx, desktop.WindowOptions{Title: "Viewer", Width: 240, Height: 200}, stage(&inspectorClicks, &inspectorPan, &inspectorPinch))
+	}, Environment(core.Environment{OS: core.OSMacOS, Idiom: core.IdiomDesktop}), Size(240, 200))
+
+	viewer := app.Surface("title:Viewer")
+	viewer.DoublePress("id:stage")
+	if !slices.Equal(inspectorClicks, []int{1, 2}) || len(mainClicks) != 0 {
+		t.Fatalf("double press clicks: viewer=%v main=%v", inspectorClicks, mainClicks)
+	}
+	viewer.Pan("id:stage", core.Point{X: 20, Y: 10}, core.Point{X: 36, Y: 24})
+	if inspectorPan.Phase != core.GestureEnded || mainPan.Phase != 0 {
+		t.Fatalf("pan phases: viewer=%+v main=%+v", inspectorPan, mainPan)
+	}
+	viewer.Pinch("id:stage", 1, 1.5, 2)
+	if len(inspectorPinch) < 3 || inspectorPinch[0].Phase != core.GestureBegan || inspectorPinch[len(inspectorPinch)-1].Phase != core.GestureEnded || len(mainPinch) != 0 {
+		t.Fatalf("pinch events: viewer=%+v main=%+v", inspectorPinch, mainPinch)
+	}
+}
+
 func TestSurfacePostsObserveEarlierNativeClosures(t *testing.T) {
 	for _, staleBarrier := range []bool{false, true} {
 		t.Run(map[bool]string{false: "fresh barrier", true: "earlier barrier"}[staleBarrier], func(t *testing.T) {

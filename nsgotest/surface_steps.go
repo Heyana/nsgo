@@ -15,6 +15,12 @@ func (s *Surface) Press(selector string) {
 	s.open().Press(selector)
 }
 
+// DoublePress delegates to App.DoublePress in this surface.
+func (s *Surface) DoublePress(selector string) {
+	s.app.t.Helper()
+	s.open().DoublePress(selector)
+}
+
 // PressWith delegates to App.PressWith in this surface.
 func (s *Surface) PressWith(selector string, mods core.Modifiers) {
 	s.app.t.Helper()
