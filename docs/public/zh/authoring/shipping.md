@@ -77,3 +77,26 @@ func init() {
 ```
 
 之后 `import { Toggle } from "example.com/chips"` 即可把字段作为 props 使用（[TSX 应用](../tsx.md#在-tsx-中使用-go)）。
+
+### 模块清单
+
+组件库可以在模块根目录的 `go.mod` 旁放一个可选的 `nsgo-module.yaml`，向 `nsgo add` 和 `nsgo check` 说明应用需要知道的信息：
+
+```yaml
+version: 1
+import: [player]
+targets: [macos, windows_x64, linux_x64, ios, ios_simulator]
+notes: |
+  FFmpeg's libraries are LGPL 2.1: offer their source beside your downloads,
+  credit FFmpeg and allow replacing them.
+components:
+  chat: ui/chat
+  file-picker: ui/filepicker
+```
+
+- 该文件严格校验：单个 YAML 文档，最大 1 MiB，拒绝未知字段、锚点、别名和合并键。`nsgo build` 从不读取它。
+- `import`：相对于模块根目录的包目录（根目录用 `.`）。每一项都必须是本模块的非 `main` 包，不能属于嵌套模块。`nsgo add` 会为每一项打印 import 行；没有该文件（或省略 `import`）时打印根包的 import 行。
+- `targets`：`targets.Expand` 接受的目标名和目标组（如 `macos`、`windows_x64`、`all`、`miniprogram`、`tui`）。`nsgo add` 的计划会列出应用 `build.targets` 中该列表缺少的目标；`nsgo check` 在检查每个目标时，会对任何被链接且 `targets` 缺少该目标的模块发出警告。
+- `notes`：最多 4 KiB 的纯文本，除换行外不能包含控制字符或 Unicode 格式字符。`nsgo add` 会把它打印在计划最后，标题为 `From <module>, the author's notes:`，并标记每一行。
+- `components`：从组件名（1 到 64 个 `[a-z0-9-]` 字符，不以 `-` 开头或结尾）到模块根目录之下相对包目录的映射。每个目录都必须是本模块的非 `main` 包，且目录路径的最后一段必须与 Go 包名一致。`nsgo add` 的计划会连同 `nsgo add <module>#<name>` 命令一并列出。
+- 新字段在 `version: 1` 内演进。当模块的 `go.mod` 要求比当前工具更新的 NSGo 且使用了当前工具不认识的字段时，`nsgo` 会报错并给出 `go get github.com/nsgo-dev/nsgo@<version>`。

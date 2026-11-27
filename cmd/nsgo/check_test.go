@@ -443,3 +443,75 @@ func TestCheckLockOutlivesItsHolder(t *testing.T) {
 	}
 	unlock()
 }
+
+// nsgo check -target android_arm64 warns about a linked module whose nsgo-module.yaml targets lacks that target, and says nothing about a module without the file or when the target is listed (#2462).
+func TestCheckTargetWarnsOnUnsupportedLinkedModule(t *testing.T) {
+	if testing.Short() {
+		t.Skip("cross-vets a real package")
+	}
+	root := t.TempDir()
+	mediaDir := filepath.Join(root, "media")
+	plainDir := filepath.Join(root, "plain")
+	appDir := filepath.Join(root, "app")
+	writeFiles(t, mediaDir, map[string]string{
+		"go.mod":           "module example.com/media\n\ngo 1.26\n",
+		"nsgo-module.yaml": "version: 1\ntargets: [macos, windows_x64, ios]\n",
+		"player/player.go": "package player\n\nfunc Play() {}\n",
+	})
+	writeFiles(t, plainDir, map[string]string{
+		"go.mod":   "module example.com/plain\n\ngo 1.26\n",
+		"plain.go": "package plain\n\nfunc Hello() {}\n",
+	})
+	writeFiles(t, appDir, map[string]string{
+		"go.mod": `module example.com/app
+
+go 1.26
+
+require (
+	example.com/media v0.0.0
+	example.com/plain v0.0.0
+)
+
+replace (
+	example.com/media => ` + filepath.ToSlash(mediaDir) + `
+	example.com/plain => ` + filepath.ToSlash(plainDir) + `
+)
+`,
+		"main.go": `package app
+
+import (
+	"example.com/media/player"
+	"example.com/plain"
+)
+
+func Run() {
+	player.Play()
+	plain.Hello()
+}
+`,
+	})
+	p, err := loadOrDir(appDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStderr(t, func() { err = check(t.Context(), p, "android_arm64", 0) })
+	if err != nil {
+		t.Fatalf("check -target android_arm64: %v\n%s", err, out)
+	}
+	want := "example.com/media does not list android_arm64 in nsgo-module.yaml targets"
+	if !strings.Contains(out, want) {
+		t.Errorf("check -target android_arm64 output lacks %q:\n%s", want, out)
+	}
+	if strings.Contains(out, "example.com/plain") {
+		t.Errorf("check -target android_arm64 warned about a module without nsgo-module.yaml:\n%s", out)
+	}
+
+	out = captureStderr(t, func() { err = check(t.Context(), p, "macos_arm64", 0) })
+	if err != nil {
+		t.Fatalf("check -target macos_arm64: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "warn") {
+		t.Errorf("check -target macos_arm64 emitted an unexpected warning:\n%s", out)
+	}
+}

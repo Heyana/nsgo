@@ -77,3 +77,26 @@ func init() {
 ```
 
 `import { Toggle } from "example.com/chips"` then takes the fields as props ([TSX apps](../tsx.md#go-from-tsx)).
+
+### Module manifest
+
+An optional `nsgo-module.yaml` beside `go.mod` at the module root tells `nsgo add` and `nsgo check` what apps should know about the library:
+
+```yaml
+version: 1
+import: [player]
+targets: [macos, windows_x64, linux_x64, ios, ios_simulator]
+notes: |
+  FFmpeg's libraries are LGPL 2.1: offer their source beside your downloads,
+  credit FFmpeg and allow replacing them.
+components:
+  chat: ui/chat
+  file-picker: ui/filepicker
+```
+
+- The file is strict: one YAML document of at most 1 MiB, with unknown fields, anchors, aliases and merge keys refused. `nsgo build` never reads it.
+- `import`: package directories relative to the module root (`.` for the root). Each must be a non-`main` package of this module, never of a nested module. `nsgo add` prints an import line for each; without the file (or when `import` is omitted), it prints the root package's.
+- `targets`: target names and groups as `targets.Expand` takes them (`macos`, `windows_x64`, `all`, `miniprogram`, `tui`). `nsgo add`'s plan names any of the app's `build.targets` the list lacks, and `nsgo check` warns for each target it checks about any linked module whose list lacks that target.
+- `notes`: plain text of at most 4 KiB, with no control or Unicode format characters other than line breaks. `nsgo add` prints it last, under `From <module>, the author's notes:`, with each line marked.
+- `components`: a map from component names (`1` to `64` characters of `[a-z0-9-]`, not starting or ending with `-`) to package directories below the module root. Each directory must be a non-`main` package of this module whose last path element equals its Go package name. `nsgo add`'s plan lists each with `nsgo add <module>#<name>`.
+- New fields are added within `version: 1`. When a module's `go.mod` requires a newer NSGo than the running tool and uses a field the tool does not know, `nsgo` fails naming the `go get github.com/nsgo-dev/nsgo@<version>` command that brings it.

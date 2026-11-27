@@ -844,3 +844,217 @@ func TestAddNamesGoModVendorNext(t *testing.T) {
 		t.Errorf("applied: %v\n%s", err, stderr)
 	}
 }
+
+// nsgo-module.yaml drives the plan's import lines, the app targets the module lacks, the module's components with their copy commands, and the author's notes printed last and marked (#2462).
+func TestAddPlanWithModuleManifest(t *testing.T) {
+	proxy := libraryProxy(t)
+	addProxyModule(t, proxy, "github.com/acme/av", "v1.0.0",
+		"module github.com/acme/av\n\ngo 1.26\n\nrequire github.com/nsgo-dev/nsgo v0.4.0\n",
+		map[string]string{
+			"nsgo-module.yaml": `version: 1
+import: [player, player/ui]
+targets: [macos, windows_x64, linux_x64, ios, ios_simulator]
+notes: |
+  FFmpeg's libraries are LGPL 2.1: offer their source beside your downloads.
+  Background playback on iOS needs apple.info.UIBackgroundModes: [audio].
+components:
+  controls: ui/controls
+  player-bar: ui/playerbar
+`,
+			"player/player.go":         "package player\n",
+			"player/ui/ui.go":          "package ui\n",
+			"ui/controls/controls.go":  "package controls\n",
+			"ui/playerbar/bar.go":      "package playerbar\n",
+		})
+	offlineAdd(t, proxy)
+	dir := nsgoApp(t)
+	writeFiles(t, dir, map[string]string{
+		"nsgo.yaml": "name: Hello\nbuild:\n  targets: [macos_arm64, ios, android_arm64, web]\n",
+	})
+
+	plan, err := planAdd(t, dir, "github.com/acme/av")
+	if err != nil {
+		t.Fatalf("plan: %v\n%s", err, plan)
+	}
+	const want = `github.com/acme/av
+  module     github.com/acme/av v1.0.0, published 2026-01-01
+  owner      github.com/acme, the first module from it in go.mod
+  targets    lacks android_arm64, web
+  components controls: nsgo add github.com/acme/av#controls
+             player-bar: nsgo add github.com/acme/av#player-bar
+  next       import "github.com/acme/av/player"
+             import "github.com/acme/av/player/ui"
+
+example.com/app
+  go.mod     + require github.com/acme/av v1.0.0 // indirect
+             ~ require github.com/nsgo-dev/nsgo v0.3.4 => v0.4.0, a release
+  go.sum     + 4 lines
+  tools      go tool nsgo then runs v0.4.0, and so does an installed nsgo here
+  checksums  GOSUMDB=off: go.sum takes the new hashes unchecked by the checksum database
+
+From github.com/acme/av, the author's notes:
+  | FFmpeg's libraries are LGPL 2.1: offer their source beside your downloads.
+  | Background playback on iOS needs apple.info.UIBackgroundModes: [audio].
+`
+	if plan != want {
+		t.Errorf("plan:\n%s\nwant:\n%s", plan, want)
+	}
+
+	t.Chdir(dir)
+	var out bytes.Buffer
+	stderr := captureStderr(t, func() {
+		err = addModules(t.Context(), addOptions{yes: true}, []string{"github.com/acme/av"}, &out, nil)
+	})
+	if err != nil {
+		t.Fatalf("apply: %v\n%s", err, stderr)
+	}
+	for _, wantLine := range []string{
+		`next: import "github.com/acme/av/player"`,
+		`next: import "github.com/acme/av/player/ui"`,
+	} {
+		if !strings.Contains(stderr, wantLine) {
+			t.Errorf("stderr lacks %q:\n%s", wantLine, stderr)
+		}
+	}
+}
+
+// import: [., catalog] prints both the root package and the subpackage, and build-constrained packages validate without failing on another host (#2462).
+func TestAddPlanWithModuleManifestDotAndBuildConstrained(t *testing.T) {
+	proxy := libraryProxy(t)
+	addProxyModule(t, proxy, "example.com/flags", "v1.0.0",
+		"module example.com/flags\n\ngo 1.26\n",
+		map[string]string{
+			"nsgo-module.yaml": "version: 1\nimport: [., catalog]\ncomponents:\n  picker: ui/picker\n",
+			"flags.go":         "package flags\n",
+			"catalog/cat.go":   "//go:build plan9\n\npackage catalog\n",
+			"ui/picker/p.go":   "//go:build plan9\n\npackage picker\n",
+		})
+	offlineAdd(t, proxy)
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{"go.mod": "module example.com/tool\n\ngo 1.26\n"})
+	plan, err := planAdd(t, dir, "example.com/flags")
+	if err != nil {
+		t.Fatalf("plan: %v\n%s", err, plan)
+	}
+	for _, want := range []string{
+		"  components picker: nsgo add example.com/flags#picker\n",
+		"  next       import \"example.com/flags\"\n",
+		"             import \"example.com/flags/catalog\"\n",
+	} {
+		if !strings.Contains(plan, want) {
+			t.Errorf("plan lacks %q:\n%s", want, plan)
+		}
+	}
+}
+
+// Invalid nsgo-module.yaml package references (nested modules, main packages, component package name mismatches) and unknown fields in modules requiring a newer NSGo are refused (#2462).
+func TestAddModuleManifestRefusals(t *testing.T) {
+	proxy := libraryProxy(t)
+	addNSGoVersion(t, proxy, "v0.5.0", stubNSGoMod, stubNSGo)
+	addProxyModule(t, proxy, "github.com/acme/maincomp", "v1.0.0",
+		"module github.com/acme/maincomp\n\ngo 1.26\n",
+		map[string]string{
+			"nsgo-module.yaml": "version: 1\ncomponents:\n  app: cmd/app\n",
+			"cmd/app/main.go":  "package main\n\nfunc main() {}\n",
+		})
+	addProxyModule(t, proxy, "github.com/acme/badname", "v1.0.0",
+		"module github.com/acme/badname\n\ngo 1.26\n",
+		map[string]string{
+			"nsgo-module.yaml": "version: 1\ncomponents:\n  chat: ui/chat\n",
+			"ui/chat/chat.go":  "package chatbox\n",
+		})
+	addProxyModule(t, proxy, "github.com/acme/mainimp", "v1.0.0",
+		"module github.com/acme/mainimp\n\ngo 1.26\n",
+		map[string]string{
+			"nsgo-module.yaml": "version: 1\nimport: [cmd/cli]\n",
+			"cmd/cli/main.go":  "package main\n\nfunc main() {}\n",
+		})
+	addProxyModule(t, proxy, "github.com/acme/future", "v1.0.0",
+		"module github.com/acme/future\n\ngo 1.26\n\nrequire github.com/nsgo-dev/nsgo v0.5.0\n",
+		map[string]string{
+			"nsgo-module.yaml": "version: 1\nskills: [acme]\n",
+			"future.go":        "package future\n",
+		})
+	addProxyModule(t, proxy, "github.com/acme/badfield", "v1.0.0",
+		"module github.com/acme/badfield\n\ngo 1.26\n\nrequire github.com/nsgo-dev/nsgo v0.4.0\n",
+		map[string]string{
+			"nsgo-module.yaml": "version: 1\ntypo: true\n",
+			"bad.go":           "package badfield\n",
+		})
+	offlineAdd(t, proxy)
+
+	t.Run("component main package refused", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFiles(t, dir, map[string]string{"go.mod": "module example.com/tool\n\ngo 1.26\n"})
+		_, err := planAdd(t, dir, "github.com/acme/maincomp")
+		if err == nil || !strings.Contains(err.Error(), "main package") {
+			t.Fatalf("got %v, want main package refusal", err)
+		}
+	})
+
+	t.Run("component directory not ending in package name refused", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFiles(t, dir, map[string]string{"go.mod": "module example.com/tool\n\ngo 1.26\n"})
+		_, err := planAdd(t, dir, "github.com/acme/badname")
+		if err == nil || !strings.Contains(err.Error(), `has package name "chatbox"`) {
+			t.Fatalf("got %v, want package name mismatch refusal", err)
+		}
+	})
+
+	t.Run("import main package refused", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFiles(t, dir, map[string]string{"go.mod": "module example.com/tool\n\ngo 1.26\n"})
+		_, err := planAdd(t, dir, "github.com/acme/mainimp")
+		if err == nil || !strings.Contains(err.Error(), "main package") {
+			t.Fatalf("got %v, want main package refusal", err)
+		}
+	})
+
+	t.Run("nested module import and component refused", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			manifest string
+		}{
+			{"import", "version: 1\nimport: [nested]\n"},
+			{"component", "version: 1\ncomponents:\n  nested: nested\n"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				local := filepath.Join(t.TempDir(), "outer")
+				writeFiles(t, local, map[string]string{
+					"go.mod":           "module example.com/outer\n\ngo 1.26\n",
+					"outer.go":         "package outer\n",
+					"nsgo-module.yaml": tc.manifest,
+					"nested/go.mod":    "module example.com/outer/nested\n\ngo 1.26\n",
+					"nested/nested.go": "package nested\n",
+				})
+				dir := t.TempDir()
+				writeFiles(t, dir, map[string]string{
+					"go.mod": "module example.com/tool\n\ngo 1.26\n\nreplace example.com/outer => " + filepath.ToSlash(local) + "\nreplace example.com/outer/nested => " + filepath.ToSlash(filepath.Join(local, "nested")) + "\n",
+				})
+				_, err := planAdd(t, dir, "example.com/outer@v1.0.0")
+				if err == nil || !strings.Contains(err.Error(), "nested module") {
+					t.Fatalf("got %v, want nested module refusal", err)
+				}
+			})
+		}
+	})
+
+	t.Run("unknown field in module requiring newer NSGo names that version", func(t *testing.T) {
+		prev := moduleManifestNSGoVersion
+		moduleManifestNSGoVersion = func() string { return "v0.4.0" }
+		t.Cleanup(func() { moduleManifestNSGoVersion = prev })
+
+		dir := nsgoApp(t)
+		_, err := planAdd(t, dir, "github.com/acme/future")
+		want := "github.com/acme/future needs NSGo v0.5.0: go get github.com/nsgo-dev/nsgo@v0.5.0"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("got %v, want %q", err, want)
+		}
+
+		// Same NSGo requirement gets the ordinary unknown-field error.
+		_, err = planAdd(t, dir, "github.com/acme/badfield")
+		if err == nil || !strings.Contains(err.Error(), `unknown field "typo"`) || strings.Contains(err.Error(), "needs NSGo") {
+			t.Fatalf("got %v, want ordinary unknown field error", err)
+		}
+	})
+}

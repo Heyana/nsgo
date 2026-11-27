@@ -175,8 +175,8 @@ func addModulesWithIndex(ctx context.Context, o addOptions, args []string, idx *
 		detail("next: go mod vendor")
 	}
 	for _, item := range p.items {
-		if item.importable() {
-			detail("next: import %q", item.path)
+		for _, imp := range item.importPaths() {
+			detail("next: import %q", imp)
 		}
 	}
 	return nil
@@ -212,6 +212,8 @@ type addModule struct {
 	workspace string
 	// sumDB, noSumDB and noProxy are GOSUMDB, GONOSUMDB and GONOPROXY, the last two GOPRIVATE when unset.
 	sumDB, noSumDB, noProxy string
+	// appTargets are the expanded build.targets of the app's nsgo.yaml, when one is present.
+	appTargets []string
 }
 
 // findAddModule finds the module holding the working directory, its toolchain's go command, and the settings planning keeps.
@@ -227,6 +229,17 @@ func findAddModule(ctx context.Context) (*addModule, error) {
 	m := &addModule{dir: filepath.Dir(found["GOMOD"])}
 	if w := found["GOWORK"]; w != "off" {
 		m.workspace = w
+	}
+	if proj, err := load("."); err == nil {
+		m.appTargets = proj.Build.Targets
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("add: %w", err)
+	} else if wd, wdErr := filepath.Abs("."); wdErr == nil && wd != m.dir {
+		if proj, err := load(m.dir); err == nil {
+			m.appTargets = proj.Build.Targets
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("add: %w", err)
+		}
 	}
 	alone := append(os.Environ(), "GOWORK=off")
 	// The go found on PATH reports the GOROOT of the toolchain the module selects, switching to it as any command in the module would.
@@ -309,6 +322,7 @@ func goMessages(stderr string) string {
 // goListModule is what go list -m -json prints of a module, as far as the plan reads it.
 type goListModule struct {
 	Path, Version string
+	Dir           string
 	Time          *time.Time
 	Update        *goListModule
 	Replace       *goListModule
@@ -362,17 +376,31 @@ type addPlan struct {
 	before, after                  *modfile.File
 }
 
-// addItem is a request as planned: the version it takes, the one the module had selected before, and what go list says of it.
+// addItem is a request as planned: the version it takes, the one the module had selected before, what go list says of it and its optional nsgo-module.yaml.
 type addItem struct {
 	addRequest
 	selected, initial string
 	listed            goListModule
 	packageName       string
+	manifest          *moduleManifest
 }
 
 // importable reports whether the item's module has a root package an app imports.
 func (item addItem) importable() bool {
 	return item.packageName != "" && item.packageName != "main"
+}
+
+// importPaths returns the Go package import paths the plan recommends: those
+// declared by nsgo-module.yaml's import key when present, else the root package
+// when it is importable.
+func (item addItem) importPaths() []string {
+	if item.manifest != nil && item.manifest.hasImport {
+		return item.manifest.importPaths(item.path)
+	}
+	if item.importable() {
+		return []string{item.path}
+	}
+	return nil
 }
 
 // tooNewGo finds what the go command's message says needs a newer Go, and the version it needs.
@@ -471,20 +499,52 @@ func (m *addModule) plan(ctx context.Context, reqs []addRequest) (*addPlan, erro
 	}
 
 	stage(ctx, "reading what go get chose")
-	listed, err := m.listModules(ctx, append(flags, "-u", "-retracted"), paths)
-	if err != nil {
-		return nil, fmt.Errorf("add: %w", err)
-	}
+	// List root packages first so the module cache holds each selected module's
+	// files before go list -m reports its Dir.
 	names, err := m.packageNames(ctx, flags, paths)
 	if err != nil {
 		return nil, fmt.Errorf("add: %w", err)
 	}
+	listed, err := m.listModules(ctx, append(flags, "-u", "-retracted"), paths)
+	if err != nil {
+		return nil, fmt.Errorf("add: %w", err)
+	}
+	currentNSGo := moduleManifestNSGoVersion()
 	for _, r := range get {
 		item := addItem{addRequest: r, listed: listed[r.path], packageName: names[r.path]}
 		item.selected = item.listed.Version
 		item.initial = requiredVersion(p.before, r.path)
 		if before, ok := initial[r.path]; ok && before.Error == nil {
 			item.initial = before.Version
+		}
+		if item.listed.Error == nil {
+			modDir := item.listed.Dir
+			if modDir == "" && item.listed.Replace != nil {
+				modDir = item.listed.Replace.Dir
+			}
+			if modDir == "" && item.selected != "" {
+				if out, err := m.goOutput(ctx, "mod", "download", "-json", item.path+"@"+item.selected); err == nil {
+					var dl struct{ Dir string }
+					if json.Unmarshal(out, &dl) == nil {
+						modDir = dl.Dir
+					}
+				}
+			}
+			if modDir != "" {
+				manifest, err := readModuleManifest(modDir, item.path, currentNSGo)
+				if err != nil {
+					if strings.HasPrefix(err.Error(), item.path+" ") {
+						return nil, fmt.Errorf("add: %w", err)
+					}
+					return nil, fmt.Errorf("add: %s: %w", item.path, err)
+				}
+				if manifest != nil {
+					if err := m.validateModuleManifestPackages(ctx, flags, item.path, modDir, manifest); err != nil {
+						return nil, fmt.Errorf("add: %s: %w", item.path, err)
+					}
+					item.manifest = manifest
+				}
+			}
 		}
 		p.items = append(p.items, item)
 	}
@@ -630,8 +690,23 @@ func (p *addPlan) write(w io.Writer) error {
 		if r := item.listed.Replace; r != nil {
 			row("replaced", "go.mod replaces it with "+strings.TrimSpace(r.Path+" "+r.Version)+", which builds use instead")
 		}
-		if item.importable() {
-			row("next", fmt.Sprintf("import %q", item.path))
+		if missing := item.manifest.missingTargets(p.m.appTargets); len(missing) > 0 {
+			row("targets", "lacks "+strings.Join(missing, ", "))
+		}
+		if comps := item.manifest.componentNames(); len(comps) > 0 {
+			lines := make([]string, len(comps))
+			cmd := nsgoCommand()
+			for i, name := range comps {
+				lines[i] = fmt.Sprintf("%s: %s add %s#%s", name, cmd, item.path, name)
+			}
+			rows("components", lines)
+		}
+		if imports := item.importPaths(); len(imports) > 0 {
+			lines := make([]string, len(imports))
+			for i, imp := range imports {
+				lines[i] = fmt.Sprintf("import %q", imp)
+			}
+			rows("next", lines)
 		}
 		b.WriteString("\n")
 	}
@@ -652,6 +727,18 @@ func (p *addPlan) write(w io.Writer) error {
 	}
 	if p.m.vendored() {
 		row("next", "go mod vendor")
+	}
+	for _, item := range p.items {
+		if lines := item.manifest.formattedNotes(); len(lines) > 0 {
+			fmt.Fprintf(&b, "\nFrom %s, the author's notes:\n", item.path)
+			for _, l := range lines {
+				if l == "" {
+					b.WriteString("  |\n")
+				} else {
+					fmt.Fprintf(&b, "  | %s\n", l)
+				}
+			}
+		}
 	}
 	_, err := w.Write(b.Bytes())
 	return err

@@ -64,6 +64,11 @@ func checkHost(ctx context.Context, p *project, jobs int) error {
 		return err
 	}
 	s.done("vetted", "")
+	if target := hostTargetName(); target != "" {
+		for _, w := range checkLinkedModuleTargets(ctx, p, target, nil, nil) {
+			warn("%s", w)
+		}
+	}
 	// The dev client builds only into nsgo dev's builds, which take the nsgodev tag, and the automation agent with nsgoautomation, so NSGo's own repository vets them as they build them.
 	if path, err := importPathOf(p.Dir); err == nil && path == nsgoModule {
 		s = begin("vetting the dev client")
@@ -135,11 +140,12 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 		path, err := importPathOf(p.Dir)
 		repository = err == nil && path == nsgoModule
 	}
-	// Each target's outcome stands at its index, so the skips and failures are reported in the targets' order whichever finishes first.
+	// Each target's outcome stands at its index, so the skips, warnings and failures are reported in the targets' order whichever finishes first.
 	type outcome struct {
 		err error
 		// why is set when the target was skipped.
-		why string
+		why      string
+		warnings []string
 	}
 	outcomes := make([]outcome, len(names))
 	slots := make(chan struct{}, max(1, min(jobs, len(names))))
@@ -208,6 +214,7 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 				outcomes[i].err = fmt.Errorf("%s: %w", name, err)
 				return
 			}
+			outcomes[i].warnings = checkLinkedModuleTargets(ctx, p, name, env, targetTags(name))
 			s.done("vetted for "+name, "")
 		})
 	}
@@ -233,6 +240,9 @@ func checkTargets(ctx context.Context, p *project, target string, jobs int) erro
 			failures = append(failures, o.err)
 		default:
 			vetted = true
+			for _, w := range o.warnings {
+				warn("%s", w)
+			}
 		}
 	}
 	if err := ctx.Err(); err != nil {
