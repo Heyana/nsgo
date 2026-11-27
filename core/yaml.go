@@ -668,7 +668,7 @@ func (p *yamlParser) parseHexRune(digits int) (rune, error) {
 		return 0, p.errorf("truncated hex escape")
 	}
 	v, err := strconv.ParseUint(p.src[p.pos:p.pos+digits], 16, 32)
-	if err != nil {
+	if err != nil || v > utf8.MaxRune {
 		return 0, p.errorf("invalid hex escape")
 	}
 	p.pos += digits
@@ -703,7 +703,7 @@ func parsePlainScalar(s string) any {
 	case "false", "False", "FALSE":
 		return false
 	}
-	if i, err := strconv.ParseInt(s, 0, 64); err == nil {
+	if i, err := strconv.ParseInt(s, 0, strconv.IntSize); err == nil && i >= math.MinInt && i <= math.MaxInt {
 		return int(i)
 	}
 	if f, err := strconv.ParseFloat(s, 64); err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) {
