@@ -379,13 +379,14 @@ func isMajorVersionSegment(seg string) bool {
 
 // registryChecker verifies every online policy requirement for a registry item.
 type registryChecker struct {
-	goCmd       string
-	env         []string
-	goVersion   string
-	nsgoVersion string
-	httpClient  *http.Client
-	repoURL     func(modPath string) (string, error)
-	runCheck    func(ctx context.Context, dir string, env []string) error
+	goCmd        string
+	env          []string
+	goVersion    string
+	nsgoVersion  string
+	nsgoLocalDir string
+	httpClient   *http.Client
+	repoURL      func(modPath string) (string, error)
+	runCheck     func(ctx context.Context, dir string, env []string) error
 }
 
 func newOnlineRegistryChecker(ctx context.Context) (*registryChecker, error) {
@@ -403,10 +404,17 @@ func newOnlineRegistryChecker(ctx context.Context) (*registryChecker, error) {
 		"GOTOOLCHAIN=local",
 		"GOPROXY="+initModuleProxy(vars["GOPROXY"]),
 	)
+	nsgoLocalDir := ""
+	if root, err := filepath.Abs(filepath.Join("..", "..")); err == nil {
+		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
+			nsgoLocalDir = root
+		}
+	}
 	return &registryChecker{
-		goCmd:     goCmd,
-		env:       env,
-		goVersion: repoGoVersion(),
+		goCmd:        goCmd,
+		env:          env,
+		goVersion:    repoGoVersion(),
+		nsgoLocalDir: nsgoLocalDir,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -836,6 +844,20 @@ func (c *registryChecker) checkLibrary(ctx context.Context, scratchDir string, e
 }
 
 func (c *registryChecker) checkComponent(ctx context.Context, nsgoVer string, entry registryCheckEntry, dl *downloadedRegistryModule, manifest *registryCheckManifest) error {
+	compDir := dl.Dir
+	if entry.Module == nsgoModule && c.nsgoLocalDir != "" && (manifest == nil || manifest.Components[entry.Component] == "") {
+		// Before the next NSGo release is tagged, components added to this
+		// repository's nsgo-module.yaml are not yet in the previous published
+		// release on proxy.golang.org; validate them against this checkout.
+		localManifest, err := readRegistryCheckModuleManifest(c.nsgoLocalDir)
+		if err != nil {
+			return fmt.Errorf("local %s: %w", registryCheckModuleManifest, err)
+		}
+		if localManifest != nil && localManifest.Components[entry.Component] != "" {
+			manifest = localManifest
+			compDir = c.nsgoLocalDir
+		}
+	}
 	if manifest == nil {
 		return fmt.Errorf("component %q is not declared: %s@%s has no %s", entry.Component, entry.Module, dl.Version, registryCheckModuleManifest)
 	}
@@ -844,7 +866,7 @@ func (c *registryChecker) checkComponent(ctx context.Context, nsgoVer string, en
 		return fmt.Errorf("component %q is not declared in %s@%s %s", entry.Component, entry.Module, dl.Version, registryCheckModuleManifest)
 	}
 
-	pkgName, err := validateComponentPackage(dl.Dir, compRel)
+	pkgName, err := validateComponentPackage(compDir, compRel)
 	if err != nil {
 		return fmt.Errorf("component %q (%s in %s@%s): %w", entry.Component, compRel, entry.Module, dl.Version, err)
 	}
