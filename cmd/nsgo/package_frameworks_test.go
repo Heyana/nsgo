@@ -479,12 +479,17 @@ func TestPackageFrameworksRefusedByEmbed(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "-embed cannot carry the ios frameworks that example.com/native declares") {
 		t.Fatalf("-embed with a package's frameworks: %v", err)
 	}
-	// A package whose frameworks are for tvOS only gives an iOS host nothing to carry.
-	p = frameworkFixture(t, "tvos", frameworkMachO(3, "17.0", "@rpath/Fixture.framework/Fixture"), "ios", "ios_simulator")
+	// A package whose frameworks are for tvOS only gives an iOS host nothing to carry,
+	// while a tvOS -embed refuses them.
+	p = frameworkFixture(t, "tvos", frameworkMachO(3, "17.0", "@rpath/Fixture.framework/Fixture"), "ios", "ios_simulator", "tvos_simulator")
 	p.Build.embed = true
 	p.packageLicenses = false
 	if _, err := p.buildOverlay(t.Context(), "ios", iosListEnv, nil, nil, nil); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := p.buildOverlay(t.Context(), "tvos", iosListEnv, nil, nil, nil); err == nil ||
+		!strings.Contains(err.Error(), "-embed cannot carry the tvos frameworks that example.com/native declares") {
+		t.Fatalf("tvos -embed with a package's frameworks: %v", err)
 	}
 }
 

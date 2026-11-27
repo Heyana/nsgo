@@ -353,7 +353,10 @@ func buildTarget(ctx context.Context, p *project, target, dir string) error {
 		switch target {
 		case "ios", "ios_simulator":
 			// One framework holds both.
-			return buildIOSFramework(ctx, p, dir)
+			return buildAppleFramework(ctx, p, iOS, dir)
+		case "tvos", "tvos_simulator":
+			// One framework holds both.
+			return buildAppleFramework(ctx, p, tvOS, dir)
 		case "android_arm64", "android_x64":
 			return buildAndroidAAR(ctx, p, dir, goArch(arch))
 		}

@@ -11,6 +11,7 @@ import (
 func TestFindInEmbeddedHostBundle(t *testing.T) {
 	for _, layout := range []struct{ name, executable, library string }{
 		{"ios", "Host.app/Host", "Host.app/Frameworks/GhosttyVT.framework/GhosttyVT"},
+		{"tvos", "TVHost.app/TVHost", "TVHost.app/Frameworks/GhosttyVT.framework/GhosttyVT"},
 		{"catalyst", "Host.app/Contents/MacOS/Host", "Host.app/Contents/Frameworks/GhosttyVT.framework/GhosttyVT"},
 	} {
 		t.Run(layout.name, func(t *testing.T) {

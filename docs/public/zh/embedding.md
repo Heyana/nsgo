@@ -1,6 +1,6 @@
 ---
 title: 嵌入
-description: 把 NSGo 应用放进你自己的 iOS、Android、桌面或网页应用。
+description: 把 NSGo 应用放进你自己的 iOS、tvOS、Android、桌面或网页应用。
 group: 工具链
 order: 23
 ---
@@ -11,15 +11,16 @@ order: 23
 
 ```sh
 nsgo build -embed -target ios examples/embedded
+nsgo build -embed -target tvos examples/embedded
 nsgo build -embed -target android_arm64 examples/embedded
 nsgo build -target web examples/embedded
 ```
 
-iOS 构建写出 `<Name>.xcframework` 和 `<Name>Resources`；Android 构建写出 `<Name>.aar`；Web 构建写出包含 `nsgo.json` 和加载器的目录。
+iOS 和 tvOS 构建写出 `<Name>.xcframework` 和 `<Name>Resources`；Android 构建写出 `<Name>.aar`；Web 构建写出包含 `nsgo.json` 和加载器的目录。
 
-## iOS
+## iOS 与 tvOS
 
-应用导入 `base/terminal` 时，构建还会在应用框架旁生成 `GhosttyVT.xcframework`。无论应用框架是静态还是 `-dynamic` 动态形式，都要将此配套框架加入宿主目标并选择 **Embed & Sign**。它包含真机、Intel 和 Apple 芯片模拟器及 Mac Catalyst 的库；保留 `GhosttyVT.framework` 名称。
+应用导入 `base/terminal` 时，构建还会在应用框架旁生成 `GhosttyVT.xcframework`。无论应用框架是静态还是 `-dynamic` 动态形式，都要将此配套框架加入宿主目标并选择 **Embed & Sign**。iOS 配套框架包含真机、Intel 和 Apple 芯片模拟器及 Mac Catalyst 的库，tvOS 配套框架包含 Apple TV 真机及 Intel 和 Apple 芯片模拟器的库；保留 `GhosttyVT.framework` 名称。
 
 把框架作为静态库加入应用目标（不要嵌入），把资源目录作为文件夹引用加入，然后 `import <Name>`。在应用启动时、第一个视图之前调用一次 `NSGoStart()`。静态库的代码属于宿主应用，因此由宿主应用的隐私清单声明 NSGo 用到的需要理由的 API：用户默认设置（`CA92.1`）、文件时间戳（`C617.1`）和系统启动时间（`35F9.1`）；`-dynamic` 框架则在自己的 `PrivacyInfo.xcprivacy` 中声明它们。
 

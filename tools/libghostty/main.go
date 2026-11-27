@@ -1,4 +1,4 @@
-// Command libghostty builds libghostty-vt, Ghostty's terminal emulator as a library, for every target base/terminal runs on, desktops, iOS and the browser, from Ghostty's sources at the commit it binds, and writes the themes that Ghostty ships. Run it on a Mac with Xcode, from the repository's root:
+// Command libghostty builds libghostty-vt, Ghostty's terminal emulator as a library, for every target base/terminal runs on, desktops, iOS, tvOS and the browser, from Ghostty's sources at the commit it binds, and writes the themes that Ghostty ships. Run it on a Mac with Xcode, from the repository's root:
 //
 //	go run ./tools/libghostty
 //
@@ -57,13 +57,16 @@ var targets = []libraryTarget{
 	{"android", "arm64", "aarch64-linux-android", "libghostty-vt.so", "lib/libghostty-vt.so"},
 	{"windows", "amd64", "x86_64-windows-gnu", "ghostty-vt.dll", "bin/ghostty-vt.dll"},
 	{"windows", "arm64", "aarch64-windows-gnu", "ghostty-vt.dll", "bin/ghostty-vt.dll"},
-	// iOS's are not embedded: the nsgo tool signs them into apps as a
-	// framework.
+	// iOS and tvOS builds are not embedded: the nsgo tool signs them into
+	// apps as a framework and packages them into companion XCFrameworks.
 	{"ios", "arm64", "aarch64-ios", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 	{"iossimulator", "arm64", "aarch64-ios-simulator", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 	{"iossimulator", "amd64", "x86_64-ios-simulator", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 	{"ioscatalyst", "arm64", "aarch64-maccatalyst", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 	{"ioscatalyst", "amd64", "x86_64-maccatalyst", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
+	{"tvos", "arm64", "aarch64-tvos", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
+	{"tvossimulator", "arm64", "aarch64-tvos-simulator", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
+	{"tvossimulator", "amd64", "x86_64-tvos-simulator", "libghostty-vt.dylib", "lib/libghostty-vt.dylib"},
 }
 
 func main() {

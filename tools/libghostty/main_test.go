@@ -45,12 +45,27 @@ func TestAndroidNDKArchivePins(t *testing.T) {
 }
 
 func TestSelectLibraryTargets(t *testing.T) {
-	selected, err := selectTargets("js-wasm,iossimulator-amd64,ioscatalyst-arm64,js-wasm")
-	if err != nil || len(selected) != 3 {
+	selected, err := selectTargets("js-wasm,iossimulator-amd64,ioscatalyst-arm64,tvos-arm64,tvossimulator-arm64,tvossimulator-amd64,js-wasm")
+	if err != nil || len(selected) != 6 {
 		t.Fatalf("selected %v: %v", selected, err)
 	}
-	if selected[0].zig != "wasm32-freestanding" || selected[1].zig != "x86_64-ios-simulator" || selected[2].zig != "aarch64-maccatalyst" {
-		t.Fatalf("wrong browser/native targets: %+v", selected)
+	wantZig := []string{
+		"wasm32-freestanding",
+		"x86_64-ios-simulator",
+		"aarch64-maccatalyst",
+		"aarch64-tvos",
+		"aarch64-tvos-simulator",
+		"x86_64-tvos-simulator",
+	}
+	for i, want := range wantZig {
+		if selected[i].zig != want {
+			t.Fatalf("target %d zig = %q, want %q (%+v)", i, selected[i].zig, want, selected[i])
+		}
+	}
+	for _, target := range selected[3:] {
+		if target.name != "libghostty-vt.dylib" || target.built != "lib/libghostty-vt.dylib" {
+			t.Fatalf("tvOS target paths = %+v, want libghostty-vt.dylib", target)
+		}
 	}
 	if _, err := selectTargets("missing-arm64"); err == nil {
 		t.Error("unknown target accepted")

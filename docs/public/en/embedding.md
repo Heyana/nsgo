@@ -1,6 +1,6 @@
 ---
 title: Embedding
-description: Put an NSGo app inside an iOS, Android, desktop or web app of your own.
+description: Put an NSGo app inside an iOS, tvOS, Android, desktop or web app of your own.
 group: Toolchain
 order: 23
 ---
@@ -11,15 +11,16 @@ An embeddable app is a normal app package with a `Root` and a `main`, built with
 
 ```sh
 nsgo build -embed -target ios examples/embedded
+nsgo build -embed -target tvos examples/embedded
 nsgo build -embed -target android_arm64 examples/embedded
 nsgo build -target web examples/embedded
 ```
 
-The iOS build writes `<Name>.xcframework` and `<Name>Resources`; the Android build writes `<Name>.aar`; the web build writes a directory with `nsgo.json` and the loader.
+The iOS and tvOS builds write `<Name>.xcframework` and `<Name>Resources`; the Android build writes `<Name>.aar`; the web build writes a directory with `nsgo.json` and the loader.
 
-## iOS
+## iOS and tvOS
 
-When the app imports `base/terminal`, the build also writes `GhosttyVT.xcframework` beside the app framework. Add this companion to the host target with **Embed & Sign**, for both static and `-dynamic` app frameworks. It contains device, Intel and Apple silicon simulator, and Mac Catalyst libraries; keep its `GhosttyVT.framework` name.
+When the app imports `base/terminal`, the build also writes `GhosttyVT.xcframework` beside the app framework. Add this companion to the host target with **Embed & Sign**, for both static and `-dynamic` app frameworks. The iOS companion contains device, Intel and Apple silicon simulator, and Mac Catalyst libraries, and the tvOS companion contains Apple TV device and Intel and Apple silicon simulator libraries; keep its `GhosttyVT.framework` name.
 
 Add the framework to the app target as a static library (do not embed it) and the resources folder as a folder reference, then `import <Name>`. Call `NSGoStart()` once as the app launches, before the first view. The static library's code is the host app's, so the host's privacy manifest declares the required-reason APIs NSGo uses: user defaults (`CA92.1`), file timestamps (`C617.1`) and system boot time (`35F9.1`); a `-dynamic` framework carries them in its own `PrivacyInfo.xcprivacy`.
 

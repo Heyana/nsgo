@@ -15,12 +15,12 @@ import (
 )
 
 // nsgo build -embed packages the app for a host app of its own instead of
-// as an app: for iOS an XCFramework of a static library per slice with
+// as an app: for iOS and tvOS an XCFramework of a static library per slice with
 // NSGo.h, for Android a library (embedAAR). Desktop hosts are Go
 // programs, which embed apps with nsgo.NewView.
 
 // embedTargets are the targets -embed builds for.
-var embedTargets = []string{"ios", "ios_simulator", "android_arm64", "android_x64"}
+var embedTargets = []string{"ios", "ios_simulator", "tvos", "tvos_simulator", "android_arm64", "android_x64"}
 
 // embedExport is the file the tool adds to the app's main package for an
 // iOS framework: the one C function the host calls. It is cgo's because
@@ -40,7 +40,8 @@ func NSGoStart() { nsgoembed.StartEmbedded(main) }
 // embedHeader declares what Go registers with the Objective-C runtime:
 // objc_runtime_visible classes have no symbols to link, so the compiler
 // looks them up by name.
-const embedHeader = `// NSGo.h: the NSGo app {{name}} in an iOS app's own views, made by nsgo build -embed.
+const embedHeader = `// NSGo.h: the NSGo app {{name}} in {{platform}} app's own views, made by nsgo build -embed.
+#import <TargetConditionals.h>
 #import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -107,6 +108,7 @@ __attribute__((objc_runtime_visible))
 @property (nonatomic, copy, nullable) void (^onError)(NSString *message);
 /// Sees the URLs the app opens before the system: YES takes one.
 @property (nonatomic, copy, nullable) BOOL (^onOpenURL)(NSURL *url);
+#if !TARGET_OS_TV
 /// The status bar the app asks for, for the host's view controller to
 /// return from its own.
 @property (nonatomic, readonly) UIStatusBarStyle preferredStatusBarStyle;
@@ -116,6 +118,7 @@ __attribute__((objc_runtime_visible))
 @property (nonatomic, readonly) UIRectEdge preferredScreenEdgesDeferringSystemGestures;
 /// Whether the app lets UIKit hide the home indicator.
 @property (nonatomic, readonly) BOOL prefersHomeIndicatorAutoHidden;
+#endif
 
 /// Sends the app an event (core.Scope.OnHostEvent), kept until it has a
 /// listener.
@@ -138,12 +141,15 @@ __attribute__((objc_runtime_visible))
 NS_ASSUME_NONNULL_END
 `
 
-// embedOnly keeps the targets -embed builds for, the iOS framework once.
+// embedOnly keeps the targets -embed builds for, each Apple framework once.
 func embedOnly(targets []string) ([]string, error) {
 	var out []string
 	for _, t := range targets {
-		if t == "ios_simulator" {
+		switch t {
+		case "ios_simulator":
 			t = "ios"
+		case "tvos_simulator":
+			t = "tvos"
 		}
 		if slices.Contains(embedTargets, t) && !slices.Contains(out, t) {
 			out = append(out, t)
@@ -170,23 +176,41 @@ func embedModule(p *project) string {
 	return name
 }
 
-// iosSlice is one platform of the iOS framework: its SDK, GOOS, the
-// architectures it holds and their clang targets.
-type iosSlice struct {
-	sdk, goos string
-	archs     []string // Go's
-	target    string   // clang's, with %s for the architecture
-	catalyst  bool
+// appleEmbedSlice is one platform of an iOS or tvOS framework: its SDK,
+// GOOS, the architectures it holds, their clang targets and how its
+// packaging metadata maps to nsgo-natives.yaml and libghostty-vt.
+type appleEmbedSlice struct {
+	sdk, goos         string
+	archs             []string // Go's
+	target            string   // clang's, with %s for the architecture and %s for the minimum
+	catalyst          bool
+	nativeTarget      string // nsgo-natives.yaml target key, empty for Catalyst
+	ghosttyPlatform   string // base/terminal/internal/library/lib/<platform>-<arch>
+	supportedPlatform string // CFBundleSupportedPlatforms entry
 }
 
-// iosSlices are the framework's platforms: devices, the simulator on
+// iosSlices are the iOS framework's platforms: devices, the simulator on
 // Apple silicon and Intel Macs, and Mac Catalyst, which runs on macOS:
 // its Go code is GOOS=darwin built with the ios tag, so NSGo's iOS
 // backend serves it, as gomobile builds it.
-var iosSlices = []iosSlice{
-	{sdk: "iphoneos", goos: "ios", archs: []string{"arm64"}, target: "%s-apple-ios%s"},
-	{sdk: "iphonesimulator", goos: "ios", archs: []string{"arm64", "amd64"}, target: "%s-apple-ios%s-simulator"},
-	{sdk: "macosx", goos: "darwin", archs: []string{"arm64", "amd64"}, target: "%s-apple-ios%s-macabi", catalyst: true},
+var iosSlices = []appleEmbedSlice{
+	{sdk: "iphoneos", goos: "ios", archs: []string{"arm64"}, target: "%s-apple-ios%s", nativeTarget: "ios", ghosttyPlatform: "ios", supportedPlatform: "iPhoneOS"},
+	{sdk: "iphonesimulator", goos: "ios", archs: []string{"arm64", "amd64"}, target: "%s-apple-ios%s-simulator", nativeTarget: "ios_simulator", ghosttyPlatform: "iossimulator", supportedPlatform: "iPhoneSimulator"},
+	{sdk: "macosx", goos: "darwin", archs: []string{"arm64", "amd64"}, target: "%s-apple-ios%s-macabi", catalyst: true, ghosttyPlatform: "ioscatalyst", supportedPlatform: "MacOSX"},
+}
+
+// tvosSlices are the tvOS framework's platforms: Apple TV devices and
+// the tvOS simulator on Apple silicon and Intel Macs.
+var tvosSlices = []appleEmbedSlice{
+	{sdk: "appletvos", goos: "ios", archs: []string{"arm64"}, target: "%s-apple-tvos%s", nativeTarget: "tvos", ghosttyPlatform: "tvos", supportedPlatform: "AppleTVOS"},
+	{sdk: "appletvsimulator", goos: "ios", archs: []string{"arm64", "amd64"}, target: "%s-apple-tvos%s-simulator", nativeTarget: "tvos_simulator", ghosttyPlatform: "tvossimulator", supportedPlatform: "AppleTVSimulator"},
+}
+
+func appleEmbedSlices(sys *appleOS) []appleEmbedSlice {
+	if sys == tvOS {
+		return tvosSlices
+	}
+	return iosSlices
 }
 
 // clangArch is clang's name of Go's architecture.
@@ -200,15 +224,14 @@ func clangArch(goarch string) string {
 // iosLinked are what Go's runtime and net link.
 var iosLinked = []string{"UIKit", "Foundation", "CoreFoundation", "Security"}
 
-// buildIOSFramework writes <dir>/<module>.xcframework, the app for
-// devices, the simulator (arm64 and x86_64) and Mac Catalyst (arm64 and
-// x86_64) with NSGo.h, and <dir>/<name>Resources, the app's resources,
-// which the host adds to its bundle as a folder. Each platform is a
-// static library, or with -dynamic a dynamic framework the host embeds:
-// iOS forbids Go's c-shared, so the static library is linked into one,
-// which exports only NSGoStart.
-func buildIOSFramework(ctx context.Context, p *project, dir string) error {
-	minimum, err := p.appleMinimum(iOS)
+// buildAppleFramework writes <dir>/<module>.xcframework for sys (iOS: devices,
+// simulator and Mac Catalyst; tvOS: devices and simulator) with NSGo.h, and
+// <dir>/<name>Resources, the app's resources, which the host adds to its bundle
+// as a folder. Each platform is a static library, or with -dynamic a dynamic
+// framework the host embeds: Apple mobile platforms forbid Go's c-shared, so
+// the static library is linked into one, which exports only NSGoStart.
+func buildAppleFramework(ctx context.Context, p *project, sys *appleOS, dir string) error {
+	minimum, err := p.appleMinimum(sys)
 	if err != nil {
 		return err
 	}
@@ -222,13 +245,17 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 		return err
 	}
 	module := embedModule(p)
-	header := strings.ReplaceAll(embedHeader, "{{name}}", p.Name)
+	headerPlatform := "an iOS"
+	if sys == tvOS {
+		headerPlatform = "a tvOS"
+	}
+	header := strings.NewReplacer("{{name}}", p.Name, "{{platform}}", headerPlatform).Replace(embedHeader)
 	args := []string{"-create-xcframework"}
-	for _, sl := range iosSlices {
+	for _, sl := range appleEmbedSlices(sys) {
 		sliceMinimum := frameworkMinimum(minimum, sl.catalyst)
 		sdk, err := output(ctx, "xcrun", "--sdk", sl.sdk, "--show-sdk-path")
 		if err != nil {
-			return fmt.Errorf("the iOS SDK needs Xcode: %w", err)
+			return fmt.Errorf("the %s SDK needs Xcode: %w", sys.name, err)
 		}
 		clang, err := output(ctx, "xcrun", "--sdk", sl.sdk, "-f", "clang")
 		if err != nil {
@@ -255,14 +282,8 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 				tags, ldflags = []string{"ios", "nsgoembed"}, []string{"-X=runtime.godebugDefault=asyncpreemptoff=1"}
 			}
 			// The target refuses the frameworks its packages declare (addPackageNatives); Mac Catalyst is no target of nsgo-natives.yaml.
-			target := "ios"
-			if sl.catalyst {
-				target = ""
-			} else if sl.sdk == "iphonesimulator" {
-				target = "ios_simulator"
-			}
 			extra := buildExtra{flags: []string{"-buildmode=c-archive"}, tags: tags,
-				files: map[string]string{"nsgo_embed_export.go": export}, target: target}
+				files: map[string]string{"nsgo_embed_export.go": export}, target: sl.nativeTarget}
 			if err := goBuildWith(ctx, p, lib, env, extra, ldflags...); err != nil {
 				return err
 			}
@@ -301,7 +322,7 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 			args = append(args, "-library", lib, "-headers", headers)
 			continue
 		}
-		fw, err := writeIOSFramework(slice, module, p.ID, header, sliceMinimum, sl.catalyst)
+		fw, err := writeFrameworkBundle(slice, module, p.ID, header, sliceMinimum, sl.supportedPlatform, sl.catalyst)
 		if err != nil {
 			return err
 		}
@@ -335,7 +356,7 @@ func buildIOSFramework(ctx context.Context, p *project, dir string) error {
 	if err := copyResources(p, resources); err != nil {
 		return err
 	}
-	return addIOSEmbeddedLibraries(ctx, p, dir, tmp, minimum)
+	return addAppleEmbeddedLibraries(ctx, p, sys, dir, tmp, minimum)
 }
 
 // iosLinks are a static library's module map's link lines: what Go's
@@ -364,11 +385,15 @@ func writeIOSHeaders(dir, header, modulemap string) error {
 // its binary left to the caller: iOS's flat, Mac Catalyst's in macOS's
 // versioned layout. It returns the bundle's path.
 func writeIOSFramework(slice, module, id, header, minimum string, catalyst bool) (string, error) {
-	return writeFrameworkBundle(slice, module, id, header, minimum, catalyst)
+	platform := "iPhoneOS"
+	if catalyst {
+		platform = "MacOSX"
+	}
+	return writeFrameworkBundle(slice, module, id, header, minimum, platform, catalyst)
 }
 
 // writeFrameworkBundle writes a dynamic framework bundle; an empty header makes a runtime-only framework, loaded through purego.
-func writeFrameworkBundle(slice, module, id, header, minimum string, catalyst bool) (string, error) {
+func writeFrameworkBundle(slice, module, id, header, minimum, supportedPlatform string, catalyst bool) (string, error) {
 	fw := filepath.Join(slice, module+".framework")
 	root := fw
 	if catalyst {
@@ -384,6 +409,10 @@ func writeFrameworkBundle(slice, module, id, header, minimum string, catalyst bo
 	if err := os.MkdirAll(plistDir, 0o755); err != nil {
 		return "", err
 	}
+	platforms := ""
+	if supportedPlatform != "" {
+		platforms = fmt.Sprintf("\t<key>CFBundleSupportedPlatforms</key><array><string>%s</string></array>\n", supportedPlatform)
+	}
 	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -394,10 +423,10 @@ func writeFrameworkBundle(slice, module, id, header, minimum string, catalyst bo
 	<key>CFBundlePackageType</key><string>FMWK</string>
 	<key>CFBundleShortVersionString</key><string>1.0</string>
 	<key>CFBundleVersion</key><string>1</string>
-	<key>MinimumOSVersion</key><string>%[3]s</string>
+%[4]s	<key>MinimumOSVersion</key><string>%[3]s</string>
 </dict>
 </plist>
-`, module, id+".framework", minimum)
+`, module, id+".framework", minimum, platforms)
 	if err := os.WriteFile(filepath.Join(plistDir, "Info.plist"), []byte(plist), 0o644); err != nil {
 		return "", err
 	}

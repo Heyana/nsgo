@@ -94,9 +94,7 @@ func addIOSFrameworks(ctx context.Context, p *project, sys *appleOS, app string,
 		build = sys.target + "simulator-arm64"
 	}
 	lib := filepath.Join(dir, "lib", build, "libghostty-vt.dylib")
-	if _, err := os.Stat(lib); err != nil && sys != iOS {
-		// tools/libghostty builds no tvOS library yet; the terminal then
-		// reports it missing.
+	if _, err := os.Stat(lib); err != nil && sys != iOS && sys != tvOS {
 		detailIn(ctx, "no libghostty-vt for %s: the terminal will not start", sys.name)
 		return nil
 	}
@@ -235,10 +233,15 @@ func armSigned(path string) bool {
 	return arm
 }
 
-// addIOSEmbeddedLibraries supplies the host with a companion XCFramework whenever its app links the terminal, for static and dynamic embedding alike.
+// addIOSEmbeddedLibraries supplies an iOS host with a companion GhosttyVT.xcframework whenever its app links the terminal.
 func addIOSEmbeddedLibraries(ctx context.Context, p *project, dir, tmp, minimum string) error {
+	return addAppleEmbeddedLibraries(ctx, p, iOS, dir, tmp, minimum)
+}
+
+// addAppleEmbeddedLibraries supplies an iOS or tvOS host with a companion XCFramework whenever its app links the terminal, for static and dynamic embedding alike.
+func addAppleEmbeddedLibraries(ctx context.Context, p *project, sys *appleOS, dir, tmp, minimum string) error {
 	args := []string{"-create-xcframework"}
-	for _, sl := range iosSlices {
+	for _, sl := range appleEmbedSlices(sys) {
 		var libraries []string
 		for _, arch := range sl.archs {
 			env := []string{"GOOS=" + sl.goos, "GOARCH=" + arch, "CGO_ENABLED=1"}
@@ -253,18 +256,12 @@ func addIOSEmbeddedLibraries(ctx context.Context, p *project, dir, tmp, minimum 
 			if source == "" {
 				continue
 			}
-			platform := "ios"
-			if sl.catalyst {
-				platform = "ioscatalyst"
-			} else if sl.sdk == "iphonesimulator" {
-				platform = "iossimulator"
-			}
-			libraries = append(libraries, filepath.Join(source, "lib", platform+"-"+arch, "libghostty-vt.dylib"))
+			libraries = append(libraries, filepath.Join(source, "lib", sl.ghosttyPlatform+"-"+arch, "libghostty-vt.dylib"))
 		}
 		if len(libraries) == 0 {
 			continue
 		}
-		fw, err := writeFrameworkBundle(filepath.Join(tmp, "ghostty", sl.sdk), "GhosttyVT", p.ID+".ghosttyvt", "", frameworkMinimum(minimum, sl.catalyst), sl.catalyst)
+		fw, err := writeFrameworkBundle(filepath.Join(tmp, "ghostty", sl.sdk), "GhosttyVT", p.ID+".ghosttyvt", "", frameworkMinimum(minimum, sl.catalyst), sl.supportedPlatform, sl.catalyst)
 		if err != nil {
 			return err
 		}

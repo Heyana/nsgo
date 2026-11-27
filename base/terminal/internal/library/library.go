@@ -5,7 +5,7 @@
 // desktops the build for the platform the package embeds, written once
 // into the user's cache. Android's package places its build beside libnsgo.so.
 //
-// The builds in lib/ come from Ghostty's sources at the commit the terminal binds, built by `go run ./tools/libghostty`. The nsgo tool signs them into iOS apps as GhosttyVT.framework and into macOS apps' Frameworks, stages it beside Windows and Linux executables, and supplies an iOS host's companion GhosttyVT.xcframework.
+// The builds in lib/ come from Ghostty's sources at the commit the terminal binds, built by `go run ./tools/libghostty`. The nsgo tool signs them into iOS and tvOS apps as GhosttyVT.framework and into macOS apps' Frameworks, stages it beside Windows and Linux executables, and supplies an iOS or tvOS host's companion GhosttyVT.xcframework.
 package library
 
 import (

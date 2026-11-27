@@ -315,16 +315,19 @@ func (s *surface) updateModals() {
 // where nothing has it. The system moves none while the app is inactive,
 // as it is launching, and focuses the views itself as it becomes active.
 func (s *surface) refocus(moving bool) {
-	c := s.viewController()
-	if c == 0 {
+	env := s.viewController()
+	if s.embedded {
+		env = s.native
+	}
+	if env == 0 {
 		return
 	}
 	apple.OnMain(func() {
-		system := objc.ID(apple.Class("UIFocusSystem")).Send(sel("focusSystemForEnvironment:"), c)
+		system := objc.ID(apple.Class("UIFocusSystem")).Send(sel("focusSystemForEnvironment:"), env)
 		if system == 0 || !moving && system.Send(sel("focusedItem")) != 0 {
 			return
 		}
-		system.Send(sel("requestFocusUpdateToEnvironment:"), c)
+		system.Send(sel("requestFocusUpdateToEnvironment:"), env)
 		system.Send(sel("updateFocusIfNeeded"))
 		if system.Send(sel("focusedItem")) != 0 {
 			s.focusBack = nil

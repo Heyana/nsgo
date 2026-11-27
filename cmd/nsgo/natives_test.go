@@ -177,6 +177,112 @@ func TestTerminalCompanionXCFramework(t *testing.T) {
 	}
 }
 
+func TestTerminalTVOSCompanionXCFramework(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("requires macOS with Xcode")
+	}
+	out := t.TempDir()
+	if err := addAppleEmbeddedLibraries(t.Context(), ghosttyProject(t, true), tvOS, out, t.TempDir(), "17.0"); err != nil {
+		t.Fatal(err)
+	}
+	framework := filepath.Join(out, "GhosttyVT.xcframework")
+	for _, slice := range []struct {
+		dir      string
+		platform string
+		archs    string
+	}{
+		{"tvos-arm64", "AppleTVOS", "arm64"},
+		{"tvos-arm64_x86_64-simulator", "AppleTVSimulator", "x86_64 arm64"},
+	} {
+		fw := filepath.Join(framework, slice.dir, ghosttyFramework)
+		binary := filepath.Join(fw, "GhosttyVT")
+		if info, err := os.Stat(binary); err != nil || info.Size() == 0 {
+			t.Fatalf("missing %s: %v", slice.dir, err)
+		}
+		if out, err := exec.CommandContext(t.Context(), "codesign", "--verify", "--strict", fw).CombinedOutput(); err != nil {
+			t.Fatalf("signature %s: %v %s", slice.dir, err, out)
+		}
+		if _, err := os.Stat(filepath.Join(fw, "Headers", "NSGo.h")); !os.IsNotExist(err) {
+			t.Fatalf("runtime framework exposes app headers: %v", err)
+		}
+		gotArchs, err := output(t.Context(), "lipo", "-archs", binary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gotArchs != slice.archs {
+			t.Errorf("%s archs = %q, want %q", slice.dir, gotArchs, slice.archs)
+		}
+		plistBytes, err := os.ReadFile(filepath.Join(fw, "Info.plist"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decodePlist(plistBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plist := decoded.(map[string]any)
+		if plist["MinimumOSVersion"] != "17.0" {
+			t.Errorf("%s MinimumOSVersion = %v, want 17.0", slice.dir, plist["MinimumOSVersion"])
+		}
+		platforms, _ := plist["CFBundleSupportedPlatforms"].([]any)
+		if len(platforms) != 1 || platforms[0] != slice.platform {
+			t.Errorf("%s CFBundleSupportedPlatforms = %v, want [%s]", slice.dir, platforms, slice.platform)
+		}
+	}
+	if err := addAppleEmbeddedLibraries(t.Context(), ghosttyProject(t, false), tvOS, out, t.TempDir(), "17.0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(framework); !os.IsNotExist(err) {
+		t.Fatalf("stale tvOS terminal companion remains for a build without terminal: %v", err)
+	}
+}
+
+func TestTerminalTVOSAppFramework(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("requires macOS with Xcode")
+	}
+	for _, simulator := range []bool{false, true} {
+		name := "device"
+		wantPlatform := "AppleTVOS"
+		if simulator {
+			name = "simulator"
+			wantPlatform = "AppleTVSimulator"
+		}
+		t.Run(name, func(t *testing.T) {
+			p := ghosttyProject(t, true)
+			app := filepath.Join(t.TempDir(), p.Name+".app")
+			if err := os.MkdirAll(app, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			env := []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1"}
+			if err := addIOSFrameworks(t.Context(), p, tvOS, app, env, simulator); err != nil {
+				t.Fatal(err)
+			}
+			fw := filepath.Join(app, "Frameworks", ghosttyFramework)
+			binary := filepath.Join(fw, "GhosttyVT")
+			if err := checkFramework(binary, tvOS, simulator, ghosttyFramework, "17.0", []string{ghosttyFramework}); err != nil {
+				t.Fatalf("tvOS GhosttyVT.framework check failed: %v", err)
+			}
+			plistBytes, err := os.ReadFile(filepath.Join(fw, "Info.plist"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := decodePlist(plistBytes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plist := decoded.(map[string]any)
+			if plist["MinimumOSVersion"] != "17.0" {
+				t.Errorf("MinimumOSVersion = %v, want 17.0", plist["MinimumOSVersion"])
+			}
+			platforms, _ := plist["CFBundleSupportedPlatforms"].([]any)
+			if len(platforms) != 1 || platforms[0] != wantPlatform {
+				t.Errorf("CFBundleSupportedPlatforms = %v, want [%s]", platforms, wantPlatform)
+			}
+		})
+	}
+}
+
 func TestTerminalAAR(t *testing.T) {
 	if os.Getenv("NSGO_TERMINAL_PACKAGE_NATIVE") != "1" {
 		t.Skip("set NSGO_TERMINAL_PACKAGE_NATIVE=1 with the Android prebuild available")

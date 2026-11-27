@@ -133,6 +133,14 @@ func embedMethods() []objc.MethodDef {
 		{Cmd: sel("pressesBegan:withEvent:"), Fn: pressesBegan},
 		{Cmd: sel("pressesEnded:withEvent:"), Fn: pressesEnded},
 		{Cmd: sel("pressesCancelled:withEvent:"), Fn: pressesEnded},
+		{Cmd: sel("preferredFocusEnvironments"), Fn: func(self objc.ID, cmd objc.SEL) objc.ID {
+			if s := embedded(self); s != nil {
+				if v := s.preferredFocus(); v != 0 {
+					return objc.ID(apple.Class("NSArray")).Send(sel("arrayWithObject:"), v)
+				}
+			}
+			return apple.SendSuper[objc.ID](self, cmd)
+		}},
 		{Cmd: sel("didMoveToWindow"), Fn: embedMoved},
 		{Cmd: sel("dealloc"), Fn: func(self objc.ID, cmd objc.SEL) {
 			if s := embedded(self); s != nil {

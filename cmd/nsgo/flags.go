@@ -269,7 +269,7 @@ func bindBuildFlags(fs *flag.FlagSet) *buildFlags {
 	fs.BoolVar(&f.run, "run", false, "start the package built for this machine: the app, the iPhone's, simulator's or Android device's, or the site served")
 	fs.StringVar(&f.device, "device", "", "the `device` -run starts the package on: an iPhone's name, UDID, serial or ECID, a simulator's name or UDID, or an adb serial or emulator's AVD name (default: the only one connected, or the booted simulator)")
 	fs.StringVar(&f.team, "team", "", "the Apple developer `team` -run signs the iPhone's package with (default: the team Xcode last used)")
-	fs.BoolVar(&f.embed, "embed", false, "package the app for iOS and Android apps of their own to embed: an XCFramework and an AAR")
+	fs.BoolVar(&f.embed, "embed", false, "package the app for iOS, tvOS and Android apps of their own to embed: an XCFramework and an AAR")
 	fs.BoolVar(&f.dynamic, "dynamic", false, "with -embed, make the XCFramework of dynamic frameworks, which the host embeds, in place of static libraries")
 	f.sign.bind(fs)
 	return f
