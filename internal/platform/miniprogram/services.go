@@ -131,6 +131,8 @@ func (s *surface) service(it *driver.MountItem) {
 		}
 	case driver.ItemSpeech:
 		// The environment says it has no speech: the core sends none.
+	case driver.ItemSpeak:
+		s.speak(it)
 	case driver.ItemPermission:
 		if it.Permission != nil {
 			s.permission(it.Count, *it.Permission)

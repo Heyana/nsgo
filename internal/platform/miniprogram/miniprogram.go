@@ -195,6 +195,7 @@ func (s *surface) environment() driver.Environment {
 		OSVersion:    d.Get("osVersion").String(),
 		Tablet:       d.Get("tablet").Truthy(),
 		HasCameraAPI: s.api.Get("chooseMedia").Type() == js.TypeFunction,
+		CanSpeak:     s.bridge.Get("canSpeak").Truthy(),
 		DeviceModel:  model,
 	})
 }

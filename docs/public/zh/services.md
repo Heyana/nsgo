@@ -671,6 +671,8 @@ cx.Speak("おはようございます", core.Voice{Lang: "ja-JP", Rate: 0.8}, fu
 
 `Rate` 和 `Pitch` 的范围是 0.5 到 2，1 为语音本身的语速和音高。`cx.Voices("ja", ...)` 列出某种语言已安装的语音，应用可以提示用户安装缺少的语音，或让用户挑选，把选中语音的 `ID` 填进 `core.Voice`。浏览器要等用户在页面上按过某个控件后才会朗读，在此之前返回 `core.SpeakNotAllowed`。TSX 包里的 Go 组件需要 `text_to_speech` 能力才能朗读。
 
+在小程序中，微信基础库（`wx`）、QQ（`qq`）、手机端支付宝（`my`）和抖音（`tt`）均未内置客户端文本转语音接口，因此 `cx.Env().CanSpeak()` 默认返回 false。在微信上，如果在微信公众平台后台添加了官方「微信同声传译」（`WechatSI`，`wx069ba97219f66d99`）插件，并在 `nsgo.yaml` 中设置 `miniprogram.wechat_speech_plugin`（例如 `"0.3.5"`），则可通过该插件与 `InnerAudioContext` 朗读 `zh-CN` 和 `en-US` 文本（支持 0.5 至 2 倍 `Rate`，忽略 `Pitch`）；仅当运行时成功加载插件时 `CanSpeak()` 才为 true。
+
 ## 循环播放音频
 
 设置 `audio.Voice.Loop` 可让单次音效持续重复，直到调用 `Stop` 或 `Close`。音乐可设置 `audio.PlayerOptions.LoopStart`，再调用 `SetLoop(true)`。第一遍包含前奏，之后从指定位置重复。偏移量为零时重复整条音轨。

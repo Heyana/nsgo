@@ -17,6 +17,7 @@
 const { Tree } = require('./tree.js')
 const pixels = require('./pixels.js')
 const signin = require('./signin.js')
+const { createSpeaker } = require('./speak.js')
 const goExec = require('./wasm_exec.js')
 const config = require('./config.js')
 const { globalOf, apiOf } = require('./api.js')
@@ -283,6 +284,10 @@ function start(page, host = mpHost()) {
   }
   let ready
   const started = new Promise((resolve) => (ready = resolve))
+  const speaker = createSpeaker(config.platform, host.api, {
+    pluginName: config.speechPlugin,
+    requirePlugin: host.requirePlugin,
+  })
   const bridge = {
     // Set by Go: event(name, id, ...).
     event: null,
@@ -290,6 +295,10 @@ function start(page, host = mpHost()) {
     api: host.api,
     canSignIn: signin.available(config.platform, host.api),
     signIn: (options) => signin.signIn(config.platform, host.api, options),
+    canSpeak: speaker.available,
+    speak: (req, complete) => speaker.start(req, complete),
+    stopSpeaking: (id) => speaker.stop(id),
+    voices: () => speaker.voices(),
     updates: updateManager(['none', 'steam'].includes(config.env?.NSGO_UPDATE_CHANNEL) ? null : host.api),
     pixelImages: config.platform === 'wechat' && typeof host.api.createSelectorQuery === 'function',
     pixelBuffer: pixels.buffer,
@@ -352,6 +361,7 @@ function start(page, host = mpHost()) {
           send(name, id, ...rest)
         },
         stop() {
+          speaker.close()
           if (typeof bridge.closeUpdates === 'function') bridge.closeUpdates()
           stopped = true
           pixels.clear()

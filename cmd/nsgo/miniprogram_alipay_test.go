@@ -344,6 +344,10 @@ assert(
 			return rtVM.ToValue(map[string]any{"clear": func() {}})
 		case "./signin.js":
 			return rtVM.ToValue(map[string]any{"available": func() bool { return false }, "signIn": func() {}})
+		case "./speak.js":
+			return rtVM.ToValue(map[string]any{"createSpeaker": func() any {
+				return map[string]any{"available": false, "voices": func() []any { return nil }, "start": func() {}, "stop": func() {}, "close": func() {}}
+			}})
 		case "./updates.js":
 			return rtVM.ToValue(map[string]any{"updateManager": func() any { return nil }})
 		case "./api.js":

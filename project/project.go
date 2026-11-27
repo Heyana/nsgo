@@ -245,8 +245,9 @@ type WebConfig struct {
 
 // MiniProgramConfig is nsgo.yaml's miniprogram section.
 type MiniProgramConfig struct {
-	AppID            map[string]string `yaml:"appid"`
-	CustomNavigation bool              `yaml:"custom_navigation"`
+	AppID              map[string]string `yaml:"appid"`
+	CustomNavigation   bool              `yaml:"custom_navigation"`
+	WeChatSpeechPlugin string            `yaml:"wechat_speech_plugin"`
 }
 
 // AppleConfig is nsgo.yaml's apple section.
@@ -603,6 +604,13 @@ func (c *Config) Validate() error {
 	}
 	if err := ValidateSkipInstallers(c.Build.SkipInstallers); err != nil {
 		return fmt.Errorf("nsgo.yaml: build.skip_installers: %w", err)
+	}
+	if c.MiniProgram.WeChatSpeechPlugin != "" {
+		v := strings.TrimSpace(c.MiniProgram.WeChatSpeechPlugin)
+		if v == "" || strings.ContainsAny(v, " \t\r\n") {
+			return fmt.Errorf("nsgo.yaml: miniprogram.wechat_speech_plugin %q must be a plugin version such as 0.3.5", c.MiniProgram.WeChatSpeechPlugin)
+		}
+		c.MiniProgram.WeChatSpeechPlugin = v
 	}
 	for _, tag := range c.Build.Tags {
 		if !ValidTag(tag) {

@@ -88,7 +88,11 @@ func miniProgramPlatformOf(target string) (miniProgramPlatform, bool) {
 }
 
 // miniprogramSubpackage is the subpackage the module is in.
-const miniprogramSubpackage = "nsgo-app"
+const (
+	miniprogramSubpackage      = "nsgo-app"
+	wechatSpeechPluginName     = "WechatSI"
+	wechatSpeechPluginProvider = "wx069ba97219f66d99"
+)
 
 // miniprogramTags are the build's tags: the backend, and no shader
 // compiler, as the render layer draws no shader.
@@ -198,6 +202,7 @@ type miniprogramConfig struct {
 	Wasm             string            `json:"wasm"`
 	Subpackage       string            `json:"subpackage"`
 	CustomNavigation bool              `json:"customNavigation"`
+	SpeechPlugin     string            `json:"speechPlugin,omitempty"`
 	Env              map[string]string `json:"env"`
 }
 
@@ -238,6 +243,9 @@ func writeMiniProgram(p *project, mp miniProgramPlatform, dir string, module []b
 	}
 	cfg := miniprogramConfig{Platform: mp.name, Wasm: "/" + miniprogramSubpackage + "/app.wasm.br", Subpackage: miniprogramSubpackage,
 		CustomNavigation: p.MiniProgram.CustomNavigation, Env: map[string]string{}}
+	if mp.name == "wechat" && strings.TrimSpace(p.MiniProgram.WeChatSpeechPlugin) != "" {
+		cfg.SpeechPlugin = wechatSpeechPluginName
+	}
 	if p.Updates.Channel != "" {
 		cfg.Env["NSGO_UPDATE_CHANNEL"] = p.Updates.Channel
 	}
@@ -333,6 +341,14 @@ func (mp miniProgramPlatform) app(p *project) map[string]any {
 		app["lazyCodeLoading"] = "requiredComponents"
 		if p.Appearance == "" {
 			app["darkmode"] = false
+		}
+		if v := strings.TrimSpace(p.MiniProgram.WeChatSpeechPlugin); v != "" {
+			app["plugins"] = map[string]any{
+				wechatSpeechPluginName: map[string]any{
+					"version":  v,
+					"provider": wechatSpeechPluginProvider,
+				},
+			}
 		}
 	}
 	return app

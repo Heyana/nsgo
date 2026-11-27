@@ -17,6 +17,7 @@ type deviceInfo struct {
 	OSVersion    string
 	Tablet       bool
 	HasCameraAPI bool
+	CanSpeak     bool
 	DeviceModel  string
 }
 
@@ -44,7 +45,7 @@ func buildEnvironment(env driver.Environment, d deviceInfo) driver.Environment {
 	// Mobile mini programs open the camera through chooseMedia / chooseImage (ItemTakePhoto); desktop mini program hosts do not.
 	env.Camera = d.HasCameraAPI && (env.OS == driver.OSIOS || env.OS == driver.OSAndroid)
 	env.Audio = false
-	env.Speak = false
+	env.Speak = d.CanSpeak
 	env.Speech = false
 	env.ScanCode = false
 	env.HasWebView = false

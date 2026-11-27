@@ -585,6 +585,8 @@ cx.Speak("Guten Morgen", core.Voice{Lang: "de-DE", Rate: 0.8}, func(stopped bool
 
 `Rate` and `Pitch` run from 0.5 to 2, 1 being the voice's own. `cx.Voices("ja", ...)` lists the voices installed for a language, so the app can ask the user to install one it lacks or let them pick one, whose `ID` goes in `core.Voice`. Browsers speak only after the user has pressed something on the page, and fail with `core.SpeakNotAllowed` before. A TSX package's Go components speak only with the `text_to_speech` capability.
 
+On mini programs, core WeChat (`wx`), QQ (`qq`), consumer Alipay (`my`) and Douyin (`tt`) provide no built-in client text-to-speech API, so `cx.Env().CanSpeak()` is false by default. On WeChat, an app that enables WeChat's official `WechatSI` plugin (`wx069ba97219f66d99`) in the WeChat MP console and sets `miniprogram.wechat_speech_plugin` (such as `"0.3.5"`) in `nsgo.yaml` gets `zh-CN` and `en-US` speech through `WechatSI` and `InnerAudioContext` (`Rate` from 0.5 to 2; `Pitch` is ignored); `CanSpeak()` becomes true only when the plugin is loaded at runtime.
+
 ## Looping audio
 
 Set `audio.Voice.Loop` to repeat a sound playback until `Stop` or `Close`. For streamed music, set `audio.PlayerOptions.LoopStart` and call `SetLoop(true)`. The first pass includes the intro. Later passes start at the offset. A zero offset repeats the full track.
