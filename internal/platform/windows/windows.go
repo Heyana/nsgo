@@ -776,19 +776,20 @@ func Run(app engine.App, opts Options) {
 	// Nothing has the focus yet: typing must not open a composition.
 	w.updateIME()
 	w.configureGestures()
-	if w.baseComposed {
-		if w.applyMaterial() {
-			w.material = opts.Material
-		} else {
-			w.backdrop = backdropNone
-		}
-	}
 	w.env = w.environment()
 	w.devFrame.start(w)
 	defer w.devFrame.close()
 	w.appearance = opts.Appearance
 	w.darkTitleBar(w.shownDark())
 	darkMenus(w.appearance)
+	if w.baseComposed {
+		if w.applyMaterial() {
+			w.material = opts.Material
+		} else {
+			w.backdrop = backdropNone
+		}
+		w.env = w.environment()
+	}
 	// The engine starts once the window exists, so Mount can post to it.
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
@@ -1141,21 +1142,22 @@ func (w *window) openSurface(cfg driver.SurfaceConfig) {
 	hearTaskbarButton(hwnd)
 	child.updateIME()
 	child.configureGestures()
+	child.env = child.environment()
+	child.appearance = opts.Appearance
+	child.darkTitleBar(child.shownDark())
+	darkMenus(child.appearance)
 	if child.baseComposed {
 		if child.applyMaterial() {
 			child.material = opts.Material
 		} else {
 			child.backdrop = backdropNone
 		}
+		child.env = child.environment()
 	}
 	if w.ownPerf != nil && cfg.Kind == driver.SurfaceWindow {
 		child.showPerf(w.ownPerf)
 		w.ownPerf = nil
 	}
-	child.env = child.environment()
-	child.appearance = opts.Appearance
-	child.darkTitleBar(child.shownDark())
-	darkMenus(child.appearance)
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
 	size := child.point(client.Right, client.Bottom)

@@ -117,6 +117,18 @@ func (w *window) applyMaterial() bool {
 	return true
 }
 
+// refreshMaterial tells DWM to repaint an active system backdrop after
+// DWMWA_USE_IMMERSIVE_DARK_MODE changes at runtime, since DWM does not
+// re-tint Mica or Acrylic for the dark-mode attribute alone.
+func (w *window) refreshMaterial() {
+	if w.hwnd == 0 || w.material == driver.WindowMaterialNone || w.backdrop == 0 || w.backdrop == backdropNone {
+		return
+	}
+	backdrop := w.backdrop
+	dwmSetWindowAttribute.Call(w.hwnd, dwmwaSystemBackdropType, uintptr(unsafe.Pointer(&backdrop)), 4)
+	setWindowPos.Call(w.hwnd, 0, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoZOrder|swpNoOwnerZOrder|swpNoActivate|swpFrameChanged)
+}
+
 // setMaterial changes the backdrop of a window started with a material,
 // WindowMaterialNone making it opaque; other windows stay opaque.
 func (w *window) setMaterial(m driver.WindowMaterial) {

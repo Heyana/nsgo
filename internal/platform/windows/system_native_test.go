@@ -472,6 +472,27 @@ func TestCaptionButtonsAndMaterialFollowTheApp(t *testing.T) {
 		})
 		cx.Post(func() { cx.SetWindowMaterial(core.WindowMaterialTabbed) })
 		until("Mica Alt", func(w *window) bool { return w.backdrop == backdropMicaAlt })
+		var before rect
+		onMain(t, hwnd, func(w *window) { getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&before))) })
+		cx.Post(func() { cx.SetAppearance(core.AppearanceDark) })
+		until("dark appearance on material", func(w *window) bool {
+			return w.shownDark() && w.backdrop == backdropMicaAlt && w.material == driver.WindowMaterialTabbed
+		})
+		cx.Post(func() { cx.SetAppearance(core.AppearanceLight) })
+		until("light appearance on material", func(w *window) bool {
+			return !w.shownDark() && w.backdrop == backdropMicaAlt && w.material == driver.WindowMaterialTabbed
+		})
+		cx.Post(func() { cx.SetAppearance(core.AppearanceSystem) })
+		until("system appearance on material", func(w *window) bool {
+			return w.appearance == driver.AppearanceSystem && w.backdrop == backdropMicaAlt
+		})
+		onMain(t, hwnd, func(w *window) {
+			var after rect
+			getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&after)))
+			if after != before {
+				t.Errorf("material appearance refresh moved or resized window: got %+v, want %+v", after, before)
+			}
+		})
 	}
 	cx.Post(cx.Quit)
 	select {

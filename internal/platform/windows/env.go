@@ -411,6 +411,7 @@ func (w *window) updateEnvironment() {
 	w.env = env
 	if w.shownDark() != dark {
 		w.darkTitleBar(w.shownDark())
+		w.refreshMaterial()
 		if w.chrome.bar != 0 && menuHasTemplateIcon(w.chrome.menu) {
 			w.showMenuBar()
 		}

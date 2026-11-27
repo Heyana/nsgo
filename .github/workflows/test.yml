@@ -931,6 +931,8 @@ jobs:
         run: go tool nsgo test -run '^TestCanvasCompositeInClip$' ./internal/platform/windows
       - name: Test native window visibility
         run: go tool nsgo test -target windows -run TestWindowStateReadsNativeVisibility ./internal/testhost/testdata/windowstate
+      - name: Test caption buttons, materials and appearance refresh
+        run: go tool nsgo test -run '^TestCaptionButtonsAndMaterialFollowTheApp$' ./internal/platform/windows
       - name: Compare Direct2D atlas pixels in direct and cached drawing
         run: go tool nsgo test -run '^TestCanvasAtlasDrawsLikeImages$' ./internal/platform/windows
       - name: Run the many-sprite and mesh canvas scenarios

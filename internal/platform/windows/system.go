@@ -1207,9 +1207,13 @@ func (w *window) shownDark() bool {
 func (w *window) setAppearance(a driver.Appearance) {
 	dark := w.shownDark()
 	w.appearance = a
-	w.darkTitleBar(w.shownDark())
+	next := w.shownDark()
+	w.darkTitleBar(next)
+	if next != dark {
+		w.refreshMaterial()
+	}
 	darkMenus(a)
-	if w.shownDark() != dark && w.chrome.bar != 0 && menuHasTemplateIcon(w.chrome.menu) {
+	if next != dark && w.chrome.bar != 0 && menuHasTemplateIcon(w.chrome.menu) {
 		w.showMenuBar()
 	}
 	w.redrawAll()
