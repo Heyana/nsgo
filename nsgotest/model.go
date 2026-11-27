@@ -1990,6 +1990,45 @@ func (v *View) TabBadge(index int) core.TabBadge {
 // Bounds is v's layout frame in surface points, as its ancestors and their scroll offsets place it, before transforms: what Ref.Bounds reports.
 func (v *View) Bounds() core.Bounds { return v.surfaceFrame() }
 
+// WindowFrame returns v's bounding frame in window points, accounting for
+// ancestor frames, scroll offsets, scroll content zoom, and style and
+// animated transforms.
+func (v *View) WindowFrame() core.Bounds {
+	m := v.pageMatrix()
+	w, h := float64(v.Frame.Size.Width), float64(v.Frame.Size.Height)
+	x0, y0 := m.Apply(0, 0)
+	minX, maxX := x0, x0
+	minY, maxY := y0, y0
+	for _, c := range [3][2]float64{{w, 0}, {0, h}, {w, h}} {
+		x, y := m.Apply(c[0], c[1])
+		minX, maxX = min(minX, x), max(maxX, x)
+		minY, maxY = min(minY, y), max(maxY, y)
+	}
+	return core.Bounds{
+		Origin: core.Point{X: core.Points(minX), Y: core.Points(minY)},
+		Size:   core.Size{Width: core.Points(maxX - minX), Height: core.Points(maxY - minY)},
+	}
+}
+
+// localBoundsIn returns v's bounding frame in ancestor's local viewport
+// coordinates, accounting for intermediate frames, scroll offsets, scroll
+// content zoom, and transforms.
+func (v *View) localBoundsIn(ancestor *View) driver.Bounds {
+	w, h := v.Frame.Size.Width, v.Frame.Size.Height
+	p0 := ancestor.localPoint(v.pagePoint(driver.Point{}))
+	minX, maxX := p0.X, p0.X
+	minY, maxY := p0.Y, p0.Y
+	for _, c := range [3]driver.Point{{X: w}, {Y: h}, {X: w, Y: h}} {
+		p := ancestor.localPoint(v.pagePoint(c))
+		minX, maxX = min(minX, p.X), max(maxX, p.X)
+		minY, maxY = min(minY, p.Y), max(maxY, p.Y)
+	}
+	return driver.Bounds{
+		Origin: driver.Point{X: minX, Y: minY},
+		Size:   driver.Size{Width: maxX - minX, Height: maxY - minY},
+	}
+}
+
 // surfaceFrame is v's frame in surface points, as its ancestors and their
 // scroll offsets place it; a modal's views are placed over the window.
 func (v *View) surfaceFrame() driver.Bounds {

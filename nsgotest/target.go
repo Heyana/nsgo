@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"log"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1024,6 +1025,97 @@ func (t *target) scroll(v *View, d driver.Points) {
 		delta = driver.Point{X: d}
 	}
 	t.check(t.surface.Scroll(at, delta))
+}
+
+// scrollIntoView scrolls scroll on the platform until match is within scroll's
+// visible viewport, a bounded gesture at a time. Touch platforms (Android, iOS)
+// consume touch slop before a drag begins scrolling, so each step compensates
+// for observed or probed slop along any axis that falls short.
+func (t *target) scrollIntoView(match, scroll *View) {
+	t.a.t.Helper()
+	const maxSlop driver.Points = 24
+	const probeStep driver.Points = 12
+	var slopX, slopY driver.Points
+	for range 30 {
+		delta := scrollIntoViewDelta(match, scroll)
+		if math.Abs(float64(delta.X)) < 0.5 && math.Abs(float64(delta.Y)) < 0.5 {
+			return
+		}
+		_, center := match.center()
+		box, _ := t.a.revealViewport(match, scroll, center)
+		if box.Size.Width <= 0 || box.Size.Height <= 0 {
+			box = scroll.zoomedFrame()
+		}
+		mid := driver.Point{X: box.Origin.X + box.Size.Width/2, Y: box.Origin.Y + box.Size.Height/2}
+		step := driver.Point{
+			X: targetScrollStep(delta.X, box.Size.Width, slopX),
+			Y: targetScrollStep(delta.Y, box.Size.Height, slopY),
+		}
+		before := scroll.Offset
+		t.check(t.surface.Scroll(mid, step))
+		t.settle()
+		movedX := scroll.Offset.X - before.X
+		movedY := scroll.Offset.Y - before.Y
+		if math.Abs(float64(movedX)) >= 0.25 || math.Abs(float64(movedY)) >= 0.25 {
+			slopX = updateScrollSlop(step.X, movedX, slopX, maxSlop)
+			slopY = updateScrollSlop(step.Y, movedY, slopY, maxSlop)
+			continue
+		}
+		retried := false
+		if step.X != 0 && slopX < maxSlop {
+			slopX = min(slopX+probeStep, maxSlop)
+			retried = true
+		}
+		if step.Y != 0 && slopY < maxSlop {
+			slopY = min(slopY+probeStep, maxSlop)
+			retried = true
+		}
+		if !retried {
+			return
+		}
+	}
+}
+
+func targetScrollStep(delta, viewport, slop driver.Points) driver.Points {
+	if math.Abs(float64(delta)) < 0.5 {
+		return 0
+	}
+	want := roundAwaySubPixel(delta)
+	mag := driver.Points(math.Abs(float64(want))) + slop
+	if maxStep := viewport * 0.8; maxStep > 0 && mag > maxStep {
+		mag = maxStep
+	}
+	if delta < 0 {
+		return -mag
+	}
+	return mag
+}
+
+func updateScrollSlop(step, moved, prev, maxSlop driver.Points) driver.Points {
+	if step == 0 || math.Abs(float64(moved)) < 0.25 {
+		return prev
+	}
+	if (step > 0) != (moved > 0) {
+		return prev
+	}
+	ate := driver.Points(math.Abs(float64(step)) - math.Abs(float64(moved)))
+	if ate <= 0 {
+		return 0
+	}
+	if ate <= maxSlop {
+		return ate
+	}
+	return prev
+}
+
+func roundAwaySubPixel(d driver.Points) driver.Points {
+	if d > 0 && d < 1 {
+		return 1
+	}
+	if d < 0 && d > -1 {
+		return -1
+	}
+	return d
 }
 
 // CapturePNG captures the app as the platform shows it and returns its PNG. On macOS, iOS and tvOS its pixels are sRGB. Headless runs skip the test because they have no native pixels.

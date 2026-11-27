@@ -1242,6 +1242,110 @@ func (a *App) ScrollTo(selector string, offset driver.Point) {
 	a.scrollView(v, offset)
 }
 
+// ScrollIntoView scrolls the nearest enclosing scroll view around the view
+// selector matches until the match's frame is fully visible inside its visible
+// viewport (accounting for content insets), or as much of it as fits aligned
+// to the nearest edge. It does nothing when the match is already in view, and
+// fails when no scrollable scroll view encloses the match.
+func (a *App) ScrollIntoView(selector string) {
+	a.t.Helper()
+	a.step("scrollIntoView(%s)", selector)
+	match := a.pick(selector, "view", func(m *View) (*View, bool) { return m, true })
+	var scroll *View
+	var disabledScroll bool
+	for p := match.Parent; p != nil; p = p.Parent {
+		if p.Kind == KindModal {
+			break
+		}
+		if p.Kind == KindScroll {
+			if p.Scroll.Behavior.NoScroll {
+				disabledScroll = true
+				continue
+			}
+			scroll = p
+			break
+		}
+	}
+	if scroll == nil {
+		if disabledScroll {
+			a.t.Fatalf("nsgotest: scrollIntoView(%s): enclosing scroll view has scrolling disabled\n%s", selector, a.Dump())
+		}
+		a.t.Fatalf("nsgotest: scrollIntoView(%s): no scroll view encloses %q\n%s", selector, selector, a.Dump())
+	}
+	delta := scrollIntoViewDelta(match, scroll)
+	if math.Abs(float64(delta.X)) < 0.5 && math.Abs(float64(delta.Y)) < 0.5 {
+		a.done()
+		return
+	}
+	if a.target != nil {
+		a.target.scrollIntoView(match, scroll)
+		a.done()
+		return
+	}
+	a.scrollEvent(scroll, driver.EventScrollDragStart)
+	f := &finger{}
+	left := delta
+	for frames := int(math.Max(math.Abs(float64(left.X)), math.Abs(float64(left.Y)))/dragStep) + 1; frames > 0 && (left.X != 0 || left.Y != 0); frames-- {
+		sx := min(max(left.X, -dragStep), dragStep)
+		sy := min(max(left.Y, -dragStep), dragStep)
+		left.X -= sx
+		left.Y -= sy
+		off := scroll.clamp(driver.Point{X: scroll.Offset.X + sx, Y: scroll.Offset.Y + sy})
+		a.scrollView(scroll, off)
+		a.frame(f)
+	}
+	a.scrollEvent(scroll, driver.EventScrollDragEnd)
+	a.settle(scroll)
+	a.done()
+}
+
+// scrollIntoViewDelta returns the clamped offset delta needed to bring match's
+// frame into scroll's visible viewport (accounting for content insets) along
+// the axes scroll can scroll.
+func scrollIntoViewDelta(match, scroll *View) driver.Point {
+	box := match.localBoundsIn(scroll)
+	in := scroll.Scroll.Behavior.ContentInset
+	vpLeft, vpRight := in.Left, scroll.Frame.Size.Width-in.Right
+	if vpRight <= vpLeft {
+		vpLeft, vpRight = 0, scroll.Frame.Size.Width
+	}
+	vpTop, vpBottom := in.Top, scroll.Frame.Size.Height-in.Bottom
+	if vpBottom <= vpTop {
+		vpTop, vpBottom = 0, scroll.Frame.Size.Height
+	}
+	to := scroll.Offset
+	if scroll.Scroll.Horizontal || scroll.Scroll.Zooms() {
+		to.X += scrollAxisDelta(box.Origin.X, box.Origin.X+box.Size.Width, vpLeft, vpRight)
+	}
+	if !scroll.Scroll.Horizontal || scroll.Scroll.Zooms() {
+		to.Y += scrollAxisDelta(box.Origin.Y, box.Origin.Y+box.Size.Height, vpTop, vpBottom)
+	}
+	to = scroll.clamp(to)
+	return driver.Point{X: to.X - scroll.Offset.X, Y: to.Y - scroll.Offset.Y}
+}
+
+// scrollAxisDelta returns the minimal offset change along one axis to bring
+// [itemStart, itemEnd] into [vpStart, vpEnd], or align its nearest edge so as
+// much as fits is visible when the item is larger than the viewport.
+func scrollAxisDelta(itemStart, itemEnd, vpStart, vpEnd driver.Points) driver.Points {
+	if itemEnd-itemStart <= vpEnd-vpStart {
+		if itemStart < vpStart {
+			return itemStart - vpStart
+		}
+		if itemEnd > vpEnd {
+			return itemEnd - vpEnd
+		}
+		return 0
+	}
+	if itemStart <= vpStart && itemEnd >= vpEnd {
+		return 0
+	}
+	if itemStart > vpStart {
+		return itemStart - vpStart
+	}
+	return itemEnd - vpEnd
+}
+
 func (g *Finger) pagePoint(at driver.Point) driver.Point {
 	x, y := g.matrix.Apply(float64(at.X), float64(at.Y))
 	return driver.Point{X: driver.Points(x), Y: driver.Points(y)}

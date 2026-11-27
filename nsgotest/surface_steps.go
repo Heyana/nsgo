@@ -273,6 +273,12 @@ func (s *Surface) ScrollTo(selector string, offset core.Point) {
 	s.open().ScrollTo(selector, offset)
 }
 
+// ScrollIntoView delegates to App.ScrollIntoView in this surface.
+func (s *Surface) ScrollIntoView(selector string) {
+	s.app.t.Helper()
+	s.open().ScrollIntoView(selector)
+}
+
 // Pan delegates to App.Pan in this surface.
 func (s *Surface) Pan(selector string, translations ...core.Point) {
 	s.app.t.Helper()
