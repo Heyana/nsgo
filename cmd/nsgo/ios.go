@@ -284,6 +284,12 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 	if !simulator {
 		return app, nil
 	}
+	return app, signIOSSimulatorBundle(ctx, p, sys, app, assetPacks)
+}
+
+// signIOSSimulatorBundle signs a simulator .app bundle ad hoc with any
+// entitlements its app group or asset packs require.
+func signIOSSimulatorBundle(ctx context.Context, p *project, sys *appleOS, app string, assetPacks bool) error {
 	stage(ctx, "signing")
 	var ents map[string]any
 	if sys == iOS {
@@ -293,16 +299,16 @@ func buildIOSApp(ctx context.Context, p *project, sys *appleOS, dir string, simu
 		ents = p.groupEntitlements()
 	}
 	if len(ents) == 0 {
-		return app, run(ctx, "codesign", "--force", "--sign", "-", app)
+		return run(ctx, "codesign", "--force", "--sign", "-", app)
 	}
 	// The simulator grants the app group, and ties an app to its clip,
 	// from an ad hoc signature's entitlements.
 	path, err := writeEntitlements(ents)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer os.Remove(path)
-	return app, run(ctx, "codesign", "--force", "--sign", "-", "--entitlements", path, app)
+	return run(ctx, "codesign", "--force", "--sign", "-", "--entitlements", path, app)
 }
 
 // The SDK requires the scene life cycle; platform/ios registers
@@ -381,6 +387,7 @@ func iosSession(sys *appleOS, opts devOptions) session {
 			dir := p.cache("dev", cache)
 			if sys == iOS && opts.clip == "" {
 				inputs = iosSimulatorInputs(p)
+				return installation.build(ctx, p, dir, inputs)
 			}
 			if err := os.RemoveAll(dir); err != nil {
 				return err

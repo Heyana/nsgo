@@ -83,9 +83,9 @@ nsgo dev -target web -preview ./components
 
 保存文件会重新构建预览，保留已选的组件和显示设置。`nsgopreview` 标签将预览排除在普通发布构建之外。在使用同一标签的 `_test.go` 文件中用 `nsgotest.Start(t, PreviewEmpty)` 复用预览，然后用 `GOFLAGS=-tags=nsgopreview nsgo test -target macos ./components` 运行测试以生成原生截图。
 
-使用 `-target ios_simulator` 首次安装主应用后，只改 Go 代码会替换已安装的可执行文件并重新启动应用。修改 `nsgo.yaml`、打包资源或应用图标会重新安装。
+使用 `-target ios_simulator` 首次安装主应用后，只改 Go 代码会仅重新编译并签名可执行文件，直接替换已安装的模拟器应用包内的二进制并重新启动。修改 `nsgo.yaml`、打包资源、翻译目录、应用图标、启动画面或 Go 链接的原生框架会重新打包并安装。
 
-开发 Android 界面时，可以用 `nsgo dev -target android -android-host` 缩短 Go 重建流程。工具先安装原生运行时，再在开发机上运行 Go。每次 Go 重建都会通过 adb 重连到同一个 Activity。打包资源、预编译类、启动器图标或 `nsgo.yaml` 变化时，会重新安装运行时 APK。Go 进程使用开发机的构建约束、文件系统和网络。`Scope.DiskSpace` 报告开发机上 `DataDir` 所在卷的空间。验证 `_android.go` 文件或 Go 在设备上的行为时，请使用常规 Android dev 命令。
+开发 Android 界面时，可以用 `nsgo dev -target android -android-host` 缩短 Go 重建流程。工具先安装原生运行时，再在开发机上运行 Go。每次 Go 重建都会通过 adb 重连到同一个 Activity（如果 Activity 已被关闭，则直接重新启动而不重新安装）。打包资源、预编译类、启动器图标、启动画面、翻译目录或 `nsgo.yaml` 变化时，会重新安装运行时 APK。Go 进程使用开发机的构建约束、文件系统和网络。`Scope.DiskSpace` 报告开发机上 `DataDir` 所在卷的空间。验证 `_android.go` 文件或 Go 在设备上的行为时，请使用常规 Android dev 命令。
 
 ## 错误
 

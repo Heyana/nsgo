@@ -83,9 +83,9 @@ Check the fixtures you want to display together and choose a locale, theme, ligh
 
 Saving a file rebuilds the preview and keeps your selection and display settings. The `nsgopreview` tag excludes the fixtures from ordinary release builds. Use the same fixture in a tagged `_test.go` file with `nsgotest.Start(t, PreviewEmpty)` and run it with `GOFLAGS=-tags=nsgopreview nsgo test -target macos ./components` to take a native screenshot.
 
-After the main app's first install with `-target ios_simulator`, a Go-only rebuild replaces the installed executable and relaunches the app. Editing `nsgo.yaml`, packaged resources or the app icon triggers a reinstall.
+After the main app's first install with `-target ios_simulator`, a Go-only rebuild compiles and signs only the executable, replaces it in the installed simulator bundle and relaunches the app. Editing `nsgo.yaml`, packaged resources, translation catalogs, the app icon, the launch screen or Go-linked native frameworks triggers a full bundle build and reinstall.
 
-Use `nsgo dev -target android -android-host` for Android UI work with a shorter Go rebuild loop. The tool installs the native runtime once and runs Go on the development machine. Each Go rebuild reconnects to the same Activity over adb. Changes to packaged resources, precompiled classes, launcher icons or `nsgo.yaml` install the runtime APK again. The Go process uses the host's build constraints, files and networking. `Scope.DiskSpace` reports the volume containing the host's `DataDir`. Use the regular Android dev command to exercise `_android.go` files and on-device Go behavior.
+Use `nsgo dev -target android -android-host` for Android UI work with a shorter Go rebuild loop. The tool installs the native runtime once and runs Go on the development machine. Each Go rebuild reconnects to the same Activity over adb (relaunching it without reinstalling if dismissed). Changes to packaged resources, precompiled classes, launcher icons, launch screen images, translation catalogs or `nsgo.yaml` install the runtime APK again. The Go process uses the host's build constraints, files and networking. `Scope.DiskSpace` reports the volume containing the host's `DataDir`. Use the regular Android dev command to exercise `_android.go` files and on-device Go behavior.
 
 ## Errors
 
