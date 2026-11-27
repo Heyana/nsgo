@@ -99,7 +99,9 @@ func TestCaptureErrorsAndAccess(t *testing.T) {
 		answer   func(count uint32) driver.Event
 		wantCode string
 	}{
-		{"unavailable", func(c uint32) driver.Event { return driver.Event{Kind: driver.EventFiles, Count: c, Text: driver.NoCapture} }, CodeUnavailable},
+		{"unavailable", func(c uint32) driver.Event {
+			return driver.Event{Kind: driver.EventFiles, Count: c, Text: driver.NoCapture}
+		}, CodeUnavailable},
 		{"empty", func(c uint32) driver.Event { return driver.CaptureResult(c, nil, nil) }, ""},
 		{"failure", func(c uint32) driver.Event { return driver.CaptureResult(c, nil, errors.New("backend failed")) }, ""},
 	}
