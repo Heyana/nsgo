@@ -64,7 +64,7 @@ var unsupportedEvents = map[string]string{
 		EventContextMenu EventFileDragEnter EventFileDragLeave EventFileDrop
 		EventPointerDelta EventPointerUnlocked`,
 	"keyboard, text and selection": `EventKeyPress EventCompositionChange
-		EventCaretMove EventPaste EventAccessibilityAction`,
+		EventCaretMove EventAccessibilityAction`,
 	"loading, media and animation": `EventLoadEnd EventDownload EventNative
 		EventNativeSize EventAnimation EventBuffer`,
 	"overlays, navigation and windows": `EventRequestClose EventModalSize
