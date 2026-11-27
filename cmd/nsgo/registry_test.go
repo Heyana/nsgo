@@ -649,7 +649,7 @@ func TestAddByNameRefusesUntaggedCommit(t *testing.T) {
 	}
 }
 
-// Unknown names fail suggesting -list, and component items are refused naming their kind until #2467 (#2461).
+// Unknown names fail suggesting -list, component items resolve as component copy requests, and duplicates are refused (#2461, #2467).
 func TestAddByNameRefusesUnknownAndComponent(t *testing.T) {
 	idx := testRegistryIndex(t)
 
@@ -658,9 +658,13 @@ func TestAddByNameRefusesUnknownAndComponent(t *testing.T) {
 		t.Errorf("unknown name: err = %v, want name and -list suggestion", err)
 	}
 
-	_, err = parseAddRequestsWithIndex([]string{"chat"}, idx)
-	if err == nil || !strings.Contains(err.Error(), "component") {
-		t.Errorf("component item: err = %v, want kind 'component'", err)
+	got, err := parseAddRequestsWithIndex([]string{"chat"}, idx)
+	if err != nil {
+		t.Fatalf("component item: err = %v", err)
+	}
+	want := addRequest{path: "github.com/nsgo-dev/nsgo", component: "chat", fromName: "chat", registryLicense: "Apache-2.0"}
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("component item = %+v, want [%+v]", got, want)
 	}
 
 	// Duplicate by bare name and module path together is caught.

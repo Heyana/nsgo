@@ -13,11 +13,11 @@
 //	                                                      on a platform
 //	nsgo check [-target T] [-jobs N] [dir]               vet the app and type-check its TSX
 //	nsgo i18n  [-source L] [dir]                         check catalogs and write their Go code
-//	nsgo add    [-dry-run] [-y] name|@registry/name|module[@version] ...
-//	                                                      go get libraries once their plan is shown and
-//	                                                      confirmed, never moving NSGo off its releases;
-//	                                                      -list [@registry] [words...] lists NSGo's index
-//	                                                      and configured registries
+//	nsgo add    [-dry-run] [-y] [-diff] [-dir D] [-tests=false] name|@registry/name|module[@version][#component] ...
+//	                                                      go get libraries or copy declared components once
+//	                                                      their plan is shown and confirmed, never moving NSGo
+//	                                                      off its releases; -list [@registry] [words...] lists
+//	                                                      NSGo's index and configured registries
 //	nsgo remove [-dry-run] [-y] name|@registry/name|module ...
 //	                                                      drop libraries the module no longer imports,
 //	                                                      through a go mod tidy shown and confirmed first
@@ -199,9 +199,13 @@ func main() {
 		fs.BoolVar(&o.dryRun, "dry-run", false, "print the plan and write nothing")
 		fs.BoolVar(&o.yes, "y", false, "apply the plan without asking")
 		fs.BoolVar(&o.list, "list", false, "list libraries and components from NSGo's index and configured registries, filtered by optional @registry or words")
+		fs.BoolVar(&o.diff, "diff", false, "print every copied component file in full")
+		fs.StringVar(&o.dir, "dir", "", "destination `directory` for the copied component, ending in its package name")
+		tests := fs.Bool("tests", true, "copy a component's _test.go files and testdata/")
 		if err = fs.Parse(args); err != nil {
 			break
 		}
+		o.skipTests = !*tests
 		var ask func(context.Context) (bool, error)
 		if stdinIsTerminal() {
 			ask = askToApply
@@ -348,7 +352,7 @@ func usage() {
   nsgo test  [-run REGEXP] [-bench REGEXP] [-junit FILE] [-trace] [-target macos|windows|linux|web|ios_simulator|tvos_simulator|android [-fps]] [packages... | dir | App.tsx < steps] [-- go test flags]
   nsgo check [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [dir]
   nsgo i18n  [-source L] [dir]
-  nsgo add    [-dry-run] [-y] name|@registry/name|module[@version] ...
+  nsgo add    [-dry-run] [-y] [-diff] [-dir D] [-tests=false] name|@registry/name|module[@version][#component] ...
   nsgo add    -list [@registry] [words...]
   nsgo remove [-dry-run] [-y] name|@registry/name|module ...
   nsgo doctor

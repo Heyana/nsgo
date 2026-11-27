@@ -29,28 +29,62 @@ import (
 
 // addOptions are nsgo add's flags.
 type addOptions struct {
-	dryRun bool // print the plan and write nothing
-	yes    bool // apply the plan without asking
-	list   bool // list libraries and components from NSGo's index and configured registries
+	dryRun    bool   // print the plan and write nothing
+	yes       bool   // apply the plan without asking
+	list      bool   // list libraries and components from NSGo's index and configured registries
+	diff      bool   // print every copied component file in full
+	dir       string // destination directory for the one copied component
+	skipTests bool   // -tests=false leaves out _test.go files and testdata/
 }
 
-// addRequest is a module named on nsgo add's command line: its path, the version typed after @ (else the index entry's version or the query upgrade, which takes the newest release and never lowers a version), and the bare or @registry/name index name it was resolved from when named by one.
+// addRequest is a module or component named on nsgo add's command line: its path, the version typed after @ (else the index entry's version or the query upgrade for libraries, or resolved from go.mod/index/upgrade for components), the optional component name, and the bare or @registry/name index name it was resolved from when named by one.
 type addRequest struct {
 	path, version   string
 	typed           bool
+	component       string
 	fromName        string
+	itemVersion     string // version declared in a registry entry for a component item
 	registryLicense string // SPDX expression from a registry entry, when added by name
 }
 
+func (r addRequest) displayName() string {
+	if r.fromName != "" {
+		return r.fromName
+	}
+	if r.component != "" {
+		return r.path + "#" + r.component
+	}
+	return r.path
+}
+
+func (r addRequest) displayArg() string {
+	if r.fromName != "" {
+		if r.typed {
+			return r.fromName + "@" + r.version
+		}
+		return r.fromName
+	}
+	s := r.path
+	if r.typed {
+		s += "@" + r.version
+	}
+	if r.component != "" {
+		s += "#" + r.component
+	}
+	return s
+}
+
 // addSpec is a parsed argument to nsgo add: a @registry/name[@version]
-// reference, a bare name in NSGo's built-in index, or a direct module[@version] path.
+// reference, a bare name in NSGo's built-in index, or a direct module[@version][#component] path.
 type addSpec struct {
 	registry        string
 	item            string
 	path            string
 	version         string
 	typed           bool
+	component       string
 	fromName        string
+	itemVersion     string
 	registryLicense string
 }
 
@@ -59,7 +93,7 @@ func parseAddRequests(args []string) ([]addRequest, error) {
 	return parseAddRequestsWithIndex(args, builtinRegistry())
 }
 
-// parseAddRequestsWithIndex reads nsgo add's arguments, each a bare name in idx or a module[@version], without #name.
+// parseAddRequestsWithIndex reads nsgo add's arguments, each a bare name in idx or a module[@version][#component].
 func parseAddRequestsWithIndex(args []string, idx *registryIndex) ([]addRequest, error) {
 	specs, err := parseAddSpecsWithIndex(args, idx)
 	if err != nil {
@@ -74,19 +108,21 @@ func parseAddRequestsWithIndex(args []string, idx *registryIndex) ([]addRequest,
 			path:            s.path,
 			version:         s.version,
 			typed:           s.typed,
+			component:       s.component,
 			fromName:        s.fromName,
+			itemVersion:     s.itemVersion,
 			registryLicense: s.registryLicense,
 		})
 	}
 	return reqs, nil
 }
 
-// parseAddSpecsWithIndex reads nsgo add's arguments: module[@version],
+// parseAddSpecsWithIndex reads nsgo add's arguments: module[@version][#component],
 // @registry/name[@version], or a bare name in NSGo's built-in index idx.
 // Bare names resolve only in idx so custom registries can never shadow bare names (#2461, #2464).
 func parseAddSpecsWithIndex(args []string, idx *registryIndex) ([]addSpec, error) {
 	if len(args) == 0 {
-		return nil, fmt.Errorf("add: name a module, library or @registry/name: %s add name|@registry/name|module[@version]", nsgoCommand())
+		return nil, fmt.Errorf("add: name a module, library or component: %s add name|@registry/name|module[@version][#component]", nsgoCommand())
 	}
 	var specs []addSpec
 	for _, arg := range args {
@@ -106,49 +142,76 @@ func parseAddSpecsWithIndex(args []string, idx *registryIndex) ([]addSpec, error
 			specs = append(specs, spec)
 			continue
 		}
-		if strings.Contains(arg, "#") {
-			return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
-		}
-		spec, version, hasVersion := strings.Cut(arg, "@")
-		if hasVersion && version == "" {
-			return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
-		}
-		domain, _, _ := strings.Cut(spec, "/")
 		var s addSpec
-		if strings.Contains(domain, ".") {
-			if err := module.CheckPath(spec); err != nil {
+		if strings.Contains(arg, "#") {
+			spec, comp, _ := strings.Cut(arg, "#")
+			if !validComponentName(comp) {
+				return nil, fmt.Errorf("add: %q has an invalid component name %q", arg, comp)
+			}
+			path, version, hasVersion := strings.Cut(spec, "@")
+			if hasVersion && version == "" {
+				return nil, fmt.Errorf("add: %q is not a module path with an optional @version and #component", arg)
+			}
+			if err := module.CheckPath(path); err != nil {
 				return nil, fmt.Errorf("add: %q: %w", arg, err)
 			}
-			if !hasVersion {
-				version = "upgrade"
+			if hasVersion && version == "none" {
+				return nil, fmt.Errorf("add: %s@none would remove %s; add never removes a module", path, path)
 			}
-			if version == "none" {
-				return nil, fmt.Errorf("add: %s@none would remove %s; add never removes a module", spec, spec)
+			s = addSpec{path: path, version: version, typed: hasVersion, component: comp}
+		} else {
+			spec, version, hasVersion := strings.Cut(arg, "@")
+			if hasVersion && version == "" {
+				return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
 			}
-			s = addSpec{path: spec, version: version, typed: hasVersion}
-		} else if isValidRegistryName(spec) {
-			item, ok := idx.lookup(spec)
-			if !ok {
-				return nil, fmt.Errorf("add: unknown name %q; run %s add -list to see listed libraries and components", spec, nsgoCommand())
-			}
-			if item.Component != "" {
-				return nil, fmt.Errorf("add: %s is a component; copying components is not supported yet", spec)
-			}
-			if hasVersion {
+			domain, _, _ := strings.Cut(spec, "/")
+			if strings.Contains(domain, ".") {
+				if err := module.CheckPath(spec); err != nil {
+					return nil, fmt.Errorf("add: %q: %w", arg, err)
+				}
+				if !hasVersion {
+					version = "upgrade"
+				}
 				if version == "none" {
+					return nil, fmt.Errorf("add: %s@none would remove %s; add never removes a module", spec, spec)
+				}
+				s = addSpec{path: spec, version: version, typed: hasVersion}
+			} else if isValidRegistryName(spec) {
+				item, ok := idx.lookup(spec)
+				if !ok {
+					return nil, fmt.Errorf("add: unknown name %q; run %s add -list to see listed libraries and components", spec, nsgoCommand())
+				}
+				if hasVersion && version == "none" {
 					return nil, fmt.Errorf("add: %s@none would remove %s; add never removes a module", spec, item.Module)
 				}
-			} else if item.Version != "" {
-				version = item.Version
+				if item.Component != "" {
+					s = addSpec{
+						path:            item.Module,
+						version:         version,
+						typed:           hasVersion,
+						component:       item.Component,
+						fromName:        spec,
+						itemVersion:     item.Version,
+						registryLicense: item.License,
+					}
+				} else {
+					if !hasVersion {
+						version = cmp.Or(item.Version, "upgrade")
+					}
+					s = addSpec{path: item.Module, version: version, typed: hasVersion, fromName: spec, registryLicense: item.License}
+				}
 			} else {
-				version = "upgrade"
+				return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
 			}
-			s = addSpec{path: item.Module, version: version, typed: hasVersion, fromName: spec, registryLicense: item.License}
-		} else {
-			return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
 		}
-		if slices.ContainsFunc(specs, func(existing addSpec) bool { return existing.registry == "" && existing.path == s.path }) {
-			return nil, fmt.Errorf("add: %s is named twice", s.path)
+		if slices.ContainsFunc(specs, func(existing addSpec) bool {
+			return existing.registry == "" && existing.path == s.path && existing.component == s.component
+		}) {
+			dup := s.path
+			if s.component != "" {
+				dup += "#" + s.component
+			}
+			return nil, fmt.Errorf("add: %s is named twice", dup)
 		}
 		specs = append(specs, s)
 	}
@@ -201,7 +264,9 @@ func resolveAddSpecs(ctx context.Context, specs []addSpec, modDir string) ([]add
 				path:            s.path,
 				version:         s.version,
 				typed:           s.typed,
+				component:       s.component,
 				fromName:        s.fromName,
+				itemVersion:     s.itemVersion,
 				registryLicense: s.registryLicense,
 			}
 		}
@@ -219,14 +284,20 @@ func resolveAddSpecs(ctx context.Context, specs []addSpec, modDir string) ([]add
 
 	for _, s := range specs {
 		if s.registry == "" {
-			if slices.ContainsFunc(reqs, func(r addRequest) bool { return r.path == s.path }) {
-				return nil, nil, fmt.Errorf("add: %s is named twice", s.path)
+			if slices.ContainsFunc(reqs, func(r addRequest) bool { return r.path == s.path && r.component == s.component }) {
+				dup := s.path
+				if s.component != "" {
+					dup += "#" + s.component
+				}
+				return nil, nil, fmt.Errorf("add: %s is named twice", dup)
 			}
 			reqs = append(reqs, addRequest{
 				path:            s.path,
 				version:         s.version,
 				typed:           s.typed,
+				component:       s.component,
 				fromName:        s.fromName,
+				itemVersion:     s.itemVersion,
 				registryLicense: s.registryLicense,
 			})
 			continue
@@ -249,7 +320,19 @@ func resolveAddSpecs(ctx context.Context, specs []addSpec, modDir string) ([]add
 			return nil, nil, fmt.Errorf("add: %s/%s was not found in registry %s (%s); run %s add -list %s to see its items", s.registry, s.item, s.registry, rc.Raw, nsgoCommand(), s.registry)
 		}
 		if item.Component != "" {
-			return nil, nil, fmt.Errorf("add: %s/%s is a component, not a library; adding components is not supported yet", s.registry, s.item)
+			if slices.ContainsFunc(reqs, func(r addRequest) bool { return r.path == item.Module && r.component == item.Component }) {
+				return nil, nil, fmt.Errorf("add: %s#%s is named twice", item.Module, item.Component)
+			}
+			reqs = append(reqs, addRequest{
+				path:            item.Module,
+				version:         s.version,
+				typed:           s.typed,
+				component:       item.Component,
+				fromName:        s.registry + "/" + s.item,
+				itemVersion:     item.Version,
+				registryLicense: item.License,
+			})
+			continue
 		}
 		version := s.version
 		if !s.typed {
@@ -259,7 +342,7 @@ func resolveAddSpecs(ctx context.Context, specs []addSpec, modDir string) ([]add
 				version = "upgrade"
 			}
 		}
-		if slices.ContainsFunc(reqs, func(r addRequest) bool { return r.path == item.Module }) {
+		if slices.ContainsFunc(reqs, func(r addRequest) bool { return r.path == item.Module && r.component == "" }) {
 			return nil, nil, fmt.Errorf("add: %s is named twice", item.Module)
 		}
 		reqs = append(reqs, addRequest{
@@ -386,14 +469,17 @@ func addModules(ctx context.Context, o addOptions, args []string, out io.Writer,
 
 func addModulesWithIndex(ctx context.Context, o addOptions, args []string, idx *registryIndex, out io.Writer, ask func(context.Context) (bool, error)) error {
 	if o.list {
-		if o.dryRun || o.yes {
-			return errors.New("add: -list cannot be combined with -dry-run or -y")
+		if o.dryRun || o.yes || o.diff || o.dir != "" || o.skipTests {
+			return errors.New("add: -list cannot be combined with -dry-run, -y, -diff, -dir or -tests=false")
 		}
 		return listAddItems(ctx, idx, args, out)
 	}
 	specs, err := parseAddSpecsWithIndex(args, idx)
 	if err != nil {
 		return err
+	}
+	if o.dir != "" && len(specs) != 1 {
+		return errors.New("add: -dir applies to one component")
 	}
 	// An interrupt kills the go commands of planning, whose errors would say only that they were killed.
 	planning := func(err error) error {
@@ -412,6 +498,14 @@ func addModulesWithIndex(ctx context.Context, o addOptions, args []string, idx *
 	if err != nil {
 		s.remove()
 		return planning(err)
+	}
+	hasComp := slices.ContainsFunc(reqs, func(r addRequest) bool { return r.component != "" })
+	if hasComp {
+		return addCopyComponentsWithModule(ctx, m, o, reqs, usedRegistries, s, out, ask)
+	}
+	if o.dir != "" || o.diff || o.skipTests {
+		s.remove()
+		return errors.New("add: -dir, -diff and -tests=false apply only when copying a component")
 	}
 	p, err := m.plan(withStep(ctx, s), reqs)
 	s.remove()

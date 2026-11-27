@@ -506,9 +506,9 @@ items:
 		t.Fatalf("nsgo.yaml changed after unconfigured registry error:\n%s", gotYAML)
 	}
 
-	// 5. Component item is refused naming its kind.
-	if _, err := planAdd(t, dir, "@acme/chat"); err == nil || !strings.Contains(err.Error(), "is a component") {
-		t.Fatalf("@acme/chat = %v, want component refusal", err)
+	// 5. Component item resolves to the copy path and checks the source module's nsgo-module.yaml.
+	if _, err := planAdd(t, dir, "@acme/chat"); err == nil || !strings.Contains(err.Error(), "declares no component chat") {
+		t.Fatalf("@acme/chat = %v, want undeclared component error", err)
 	}
 
 	// 6. Registry item resolving to an untagged commit is refused when no version was typed.

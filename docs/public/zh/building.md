@@ -232,6 +232,8 @@ nsgo add -list @acme charts          # 按注册表前缀和关键词（名称�
 
 注册表文件是单个不超过 4 MiB 的严格 YAML 文档，包含 `version: 1` 和 `items` 列表（`name`、`module`、可选 `component`、可选标签 `version`、单行 `description`、SPDX `license`、可选 `https` `homepage` 以及可选小写 `tags`），禁止锚点、别名、合并键、控制字符和 Unicode 格式字符。远程注册表最多跟随 10 次重定向（拒绝重定向到明文 HTTP 或非回环 HTTP），连接超时 30 秒、总超时 5 分钟，并带 ETag 原子缓存到 `<用户缓存目录>/nsgo/registries/<sha256>.yaml`。离线时 `nsgo add` 会复用缓存副本，并在计划第一行与注册表和 URL 一起显示缓存时长；没有缓存副本时，错误信息会指明 URL。私有注册表可使用仓库内的文件或内网服务器，私有 Go 模块继续沿用 `GOPRIVATE` 和 `GOAUTH`。
 
+`nsgo add` 也可以复制模块在 `nsgo-module.yaml` 中声明的组件（`nsgo add [-diff] [-dir D] [-tests=false] name|@registry/name|module[@version]#component`），重写其导入路径、生成多语言目录、检查许可证并在 `nsgo-copy.yaml` 中记录来源。详见[复制组件](copying-components.md)。
+
 ## 移除库
 
 当模块中不再有任何包导入某个库时，用 `nsgo remove` 移除它。它接受 NSGo 内置索引中的短名、`nsgo.yaml` 的 `registries` 中的 `@注册表/名称` 或 Go 模块路径，写入前会在 `go.mod` 和 `go.sum` 的副本上预览 `go mod tidy`：

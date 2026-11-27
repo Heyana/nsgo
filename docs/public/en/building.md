@@ -264,6 +264,8 @@ nsgo add -list @acme charts          # filter one registry by words across name,
 
 A registry file is a single strict YAML document of at most 4 MiB with `version: 1` and an `items` list (`name`, `module`, optional `component`, optional tagged `version`, single-line `description`, SPDX `license`, optional `https` `homepage`, and optional lowercase `tags`), without anchors, aliases, merge keys, control characters or Unicode format characters. Remote registries follow up to 10 redirects (refusing redirects to plain HTTP or non-loopback HTTP), use a 30-second connect timeout and 5-minute total timeout, and cache their copy and ETag at `<user cache dir>/nsgo/registries/<sha256>.yaml`. Offline, `nsgo add` reuses the cached copy and shows its age on the plan's first line alongside the registry and URL; with no cached copy, the error names the URL. Private registries use a file in the repository or an intranet server, and private Go modules keep `GOPRIVATE` and `GOAUTH`.
 
+`nsgo add` also copies components declared in a module's `nsgo-module.yaml` (`nsgo add [-diff] [-dir D] [-tests=false] name|@registry/name|module[@version]#component`), rewriting their imports, generating their catalogs, checking their licenses and recording their source in `nsgo-copy.yaml`. See [Copying components](copying-components.md).
+
 ## Removing libraries
 
 Once no package in the module imports a library, drop it with `nsgo remove`, which takes a bare name from NSGo's built-in index, a `@registry/name` from `nsgo.yaml`'s `registries`, or a Go module path, and previews `go mod tidy` on copies of `go.mod` and `go.sum` before writing:

@@ -178,6 +178,36 @@ func addLicensePackage(sources map[string]*licenseSource, pkg licensePackage) {
 
 func addLicensePackageWith(sources map[string]*licenseSource, pkg licensePackage, rootFirstParty bool) {
 	module := pkg.Module
+	if module.Main {
+		if copyDir, rec, ok := findEnclosingCopy(module.Dir, pkg.Dir); ok {
+			relPath, err := filepath.Rel(module.Dir, copyDir)
+			if err == nil && filepath.IsLocal(relPath) && relPath != "." {
+				copyImport := module.Path + "/" + filepath.ToSlash(relPath)
+				source := sources[copyImport]
+				if source == nil {
+					label := fmt.Sprintf("%s, copied from %s %s", copyImport, rec.Module, rec.ModuleVersion)
+					source = &licenseSource{
+						name:       copyImport,
+						label:      label,
+						root:       copyDir,
+						firstParty: true,
+						dirs:       map[string]bool{copyDir: true},
+					}
+					sources[copyImport] = source
+				}
+				source.addDirs(pkg.Dir)
+				for _, file := range pkg.EmbedFiles {
+					source.addDirs(filepath.Join(pkg.Dir, filepath.Dir(file)))
+				}
+				for _, f := range rec.Files {
+					if _, include := isLicenseDocument(filepath.Base(f)); include {
+						source.addDirs(filepath.Join(copyDir, filepath.Dir(filepath.FromSlash(f))))
+					}
+				}
+				return
+			}
+		}
+	}
 	source := sources[module.Path]
 	if source == nil {
 		label, root := moduleLabel(module), module.Dir

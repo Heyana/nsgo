@@ -82,6 +82,9 @@ type Config struct {
 	// per language, Source's with every message. Their languages are the ones the
 	// app shows.
 	I18n I18nConfig `yaml:"i18n"`
+	// Components configures where copied components are placed: Dir, relative to
+	// nsgo.yaml, holds copies written by nsgo add (default: components).
+	Components ComponentsConfig `yaml:"components"`
 	// Web is the web target's configuration.
 	Web WebConfig `yaml:"web"`
 	// MiniProgram is the mini program targets' configuration.
@@ -245,6 +248,11 @@ type I18nConfig struct {
 	Source string `yaml:"source"`
 	// Coverage is warn (default) or off for dependency translations.
 	Coverage string `yaml:"coverage"`
+}
+
+// ComponentsConfig is nsgo.yaml's components section.
+type ComponentsConfig struct {
+	Dir string `yaml:"dir"`
 }
 
 // WebConfig is nsgo.yaml's web section.
