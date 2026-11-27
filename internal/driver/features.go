@@ -50,8 +50,3 @@ type GPUEnabler interface {
 type GPUSubmitter interface {
 	SubmitGPU(GPUFrame)
 }
-
-// GlassEnabler is implemented by backends that draw a glass effect with a shader program, which links only when a style asks for one.
-type GlassEnabler interface {
-	EnableGlass()
-}

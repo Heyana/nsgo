@@ -55,13 +55,9 @@ func (t *Tree) enableGPU() {
 	if e, ok := p.(driver.GPUEnabler); ok {
 		e.EnableGPU()
 	}
-	if s, ok := p.(driver.GPUSubmitter); ok {
-		t.SetGPUSubmitter(s.SubmitGPU)
-	}
-}
-
-func (t *Tree) enableGlass() {
-	if p, ok := unwrapPlatform(t.text).(driver.GlassEnabler); ok {
-		p.EnableGlass()
+	if t.gpuSubmit == nil {
+		if s, ok := p.(driver.GPUSubmitter); ok {
+			t.SetGPUSubmitter(s.SubmitGPU)
+		}
 	}
 }

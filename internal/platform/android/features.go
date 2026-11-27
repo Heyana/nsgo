@@ -136,6 +136,7 @@ func (*surface) EnableNative() {
 }
 
 func (*overlay) EnableShaders() { (*surface)(nil).EnableShaders() }
+func (*overlay) EnableGPU()     { (*surface)(nil).EnableGPU() }
 func (*overlay) EnableCanvas()  { (*surface)(nil).EnableCanvas() }
 func (*overlay) EnableVideo()   { (*surface)(nil).EnableVideo() }
 func (*overlay) EnableWebView() { (*surface)(nil).EnableWebView() }

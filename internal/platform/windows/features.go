@@ -86,10 +86,6 @@ type gpuOps struct {
 	release   func(*gpuView)
 }
 
-type glassOps struct {
-	program func(*gfx) *glassProgram
-}
-
 var (
 	shaders  atomic.Pointer[shaderOps]
 	canvases atomic.Pointer[canvasOps]
@@ -97,15 +93,7 @@ var (
 	webViews atomic.Pointer[webViewOps]
 	natives  atomic.Pointer[nativeOps]
 	gpus     atomic.Pointer[gpuOps]
-	glasses  atomic.Pointer[glassOps]
 )
-
-func (*window) EnableGlass() {
-	if glasses.Load() != nil {
-		return
-	}
-	glasses.Store(&glassOps{program: glassShaders.program})
-}
 
 func (*window) EnableGPU() {
 	if gpus.Load() != nil {

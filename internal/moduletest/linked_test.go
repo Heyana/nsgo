@@ -49,6 +49,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/apple.(*Video).Configure",
 		"github.com/nsgo-dev/nsgo/internal/platform/apple.(*Web).Configure",
 		"github.com/nsgo-dev/nsgo/internal/platform/macos.(*surface).configureNative",
+		"github.com/nsgo-dev/nsgo/internal/platform/macos.(*surface).SubmitGPU",
 		"github.com/nsgo-dev/nsgo/internal/platform/apple.NewGPULayer",
 	},
 	"windows": {
@@ -57,6 +58,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*video).configure",
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).newWeb",
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).setNative",
+		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).SubmitGPU",
 		"github.com/nsgo-dev/nsgo/internal/platform/windows.(*window).configureGPU",
 	},
 	"linux": {
@@ -65,6 +67,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).configureVideo",
 		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).configureWeb",
 		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).configureNative",
+		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).SubmitGPU",
 		"github.com/nsgo-dev/nsgo/internal/platform/linux.(*window).setGPU",
 	},
 	"android": {
@@ -73,6 +76,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/android.writeVideo",
 		"github.com/nsgo-dev/nsgo/internal/platform/android.writeWebConfig",
 		"github.com/nsgo-dev/nsgo/internal/platform/android.writeNative",
+		"github.com/nsgo-dev/nsgo/internal/platform/android.(*surface).SubmitGPU",
 		"github.com/nsgo-dev/nsgo/internal/platform/android.writeGPUViewConfig",
 	},
 	"js": {
@@ -81,6 +85,7 @@ var featureSymbols = map[string][]string{
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).setVideo",
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).setWeb",
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).configureNative",
+		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).SubmitGPU",
 		"github.com/nsgo-dev/nsgo/internal/platform/web.(*surface).configureGPU",
 	},
 }

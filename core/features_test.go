@@ -8,14 +8,16 @@ import (
 
 type spyFeatures struct {
 	ApproxTextEngine
-	shaders, canvas, video, web, native int
+	shaders, canvas, video, web, native, gpu, gpuSubmit int
 }
 
-func (s *spyFeatures) EnableShaders() { s.shaders++ }
-func (s *spyFeatures) EnableCanvas()  { s.canvas++ }
-func (s *spyFeatures) EnableVideo()   { s.video++ }
-func (s *spyFeatures) EnableWebView() { s.web++ }
-func (s *spyFeatures) EnableNative()  { s.native++ }
+func (s *spyFeatures) EnableShaders()            { s.shaders++ }
+func (s *spyFeatures) EnableCanvas()             { s.canvas++ }
+func (s *spyFeatures) EnableVideo()              { s.video++ }
+func (s *spyFeatures) EnableWebView()            { s.web++ }
+func (s *spyFeatures) EnableNative()             { s.native++ }
+func (s *spyFeatures) EnableGPU()                { s.gpu++ }
+func (s *spyFeatures) SubmitGPU(driver.GPUFrame) { s.gpuSubmit++ }
 
 type wrappedFeatures struct {
 	driver.TextEngine
@@ -42,7 +44,7 @@ func TestFeatureEnablersCalledOnDemand(t *testing.T) {
 
 	t.Run("minimal enables none", func(t *testing.T) {
 		spy := run(t, true, func(*Scope) Node { return Text{Content: "hi"} })
-		if spy.shaders+spy.canvas+spy.video+spy.web+spy.native != 0 {
+		if spy.shaders+spy.canvas+spy.video+spy.web+spy.native+spy.gpu+spy.gpuSubmit != 0 {
 			t.Fatalf("enabled = %+v, want all zero", spy)
 		}
 	})
@@ -85,6 +87,27 @@ func TestFeatureEnablersCalledOnDemand(t *testing.T) {
 		spy := run(t, true, func(*Scope) Node { return WebView{Source: WebSource{HTML: "<p>x</p>"}} })
 		if spy.web == 0 || spy.shaders != 0 || spy.canvas != 0 || spy.video != 0 || spy.native != 0 {
 			t.Fatalf("enabled = %+v, want web only", spy)
+		}
+	})
+
+	t.Run("gpu submitter connects on mount", func(t *testing.T) {
+		spy := &spyFeatures{}
+		var text driver.TextEngine = spy
+		root := testRoot(RootOptions{})
+		defer root.Dispose()
+		tree := NewTree(root, text)
+		tree.Resize(Size{Width: 100, Height: 100}, Geometry{})
+		tree.Mount(func(*Scope) Node { return GPUView{} })
+		tree.Commit()
+		if tree.gpuSubmit == nil {
+			t.Fatal("the GPU submitter did not connect when a GPU view mounted")
+		}
+	})
+
+	t.Run("gpu view", func(t *testing.T) {
+		spy := run(t, true, func(*Scope) Node { return GPUView{} })
+		if spy.gpu == 0 || spy.shaders != 0 || spy.canvas != 0 || spy.video != 0 || spy.web != 0 || spy.native != 0 {
+			t.Fatalf("enabled = %+v, want the GPU enabler and submitter only", spy)
 		}
 	})
 

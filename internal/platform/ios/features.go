@@ -251,8 +251,9 @@ func switchViewOf(c driver.NativeComponent) objc.ID {
 	return 0
 }
 
-func (s *surface) EnableGPU() {
-	if !s.env.GPU || gpus.Load() != nil {
+// nsgo:allow-duplicate the two Apple backends install the same GPU table.
+func (*surface) EnableGPU() {
+	if gpus.Load() != nil {
 		return
 	}
 	gpus.Store(&gpuOps{

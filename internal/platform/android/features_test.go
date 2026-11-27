@@ -9,4 +9,5 @@ func init() {
 	s.EnableVideo()
 	s.EnableWebView()
 	s.EnableNative()
+	s.EnableGPU()
 }
