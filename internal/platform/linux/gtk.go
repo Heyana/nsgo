@@ -527,15 +527,12 @@ func bind() {
 	bindSyscall(&gGetMonotonicTime, glibLib, "g_get_monotonic_time")
 	purego.RegisterLibFunc(&gSourceRemove, glibLib, "g_source_remove")
 	purego.RegisterLibFunc(&gIdleAdd, glibLib, "g_idle_add")
-	bindSyscall(&gFree, glibLib, "g_free")
 	purego.RegisterLibFunc(&gErrorFree, glibLib, "g_error_free")
 	purego.RegisterLibFunc(&gSetPrgname, glibLib, "g_set_prgname")
 	purego.RegisterLibFunc(&gStrfreev, glibLib, "g_strfreev")
 	purego.RegisterLibFunc(&gVariantNewString, glibLib, "g_variant_new_string")
 	purego.RegisterLibFunc(&gVariantNewBoolean, glibLib, "g_variant_new_boolean")
 	purego.RegisterLibFunc(&gVariantUnref, glibLib, "g_variant_unref")
-	bindSyscall(&gObjectRef, gobjectLib, "g_object_ref")
-	bindSyscall(&gObjectUnref, gobjectLib, "g_object_unref")
 	purego.RegisterLibFunc(&gObjectGetData, gobjectLib, "g_object_get_data")
 	purego.RegisterLibFunc(&gObjectSetData, gobjectLib, "g_object_set_data")
 	purego.RegisterLibFunc(&gTypeIsA, gobjectLib, "g_type_check_instance_is_a")
@@ -733,8 +730,9 @@ func bind() {
 // bindCanvasLibs binds the GLib, GObject, Pango and Cairo symbols needed by
 // text layout and canvas playback without GTK or a display.
 func bindCanvasLibs() {
-	purego.RegisterLibFunc(&gFree, glibLib, "g_free")
-	purego.RegisterLibFunc(&gObjectUnref, gobjectLib, "g_object_unref")
+	bindSyscall(&gFree, glibLib, "g_free")
+	bindSyscall(&gObjectRef, gobjectLib, "g_object_ref")
+	bindSyscall(&gObjectUnref, gobjectLib, "g_object_unref")
 
 	// Pango.
 	purego.RegisterLibFunc(&pangoCairoFontMapNew, pangocairoLib, "pango_cairo_font_map_new")
