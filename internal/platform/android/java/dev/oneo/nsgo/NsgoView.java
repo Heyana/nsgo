@@ -1073,9 +1073,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
 
     private void start() {
         if (hostSocket != null) {
-            if (automation) {
-                agent = new TestAgent(this);
-            }
+            prepareAgent(null);
             try {
                 engine.start(hostSocket);
             } catch (IOException error) {
@@ -1114,6 +1112,13 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         destroyNodes();
     }
 
+    private void prepareAgent(ProcessBuilder builder) {
+        if (test != null || automation) {
+            agent = new TestAgent(this);
+            if (test != null && builder != null) TestAgent.apply(test, builder);
+        }
+    }
+
     private void startProcess() {
         File exe = new File(getContext().getApplicationInfo().nativeLibraryDir, "libnsgo.so");
         ProcessBuilder builder = new ProcessBuilder(exe.getAbsolutePath());
@@ -1125,10 +1130,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         if (!host.params.isEmpty()) builder.environment().put("NSGO_HOST_PARAMS", host.params);
         String installer = installer();
         if (installer != null) builder.environment().put("NSGO_INSTALLER", installer);
-        if (test != null || automation) {
-            agent = new TestAgent(this);
-            if (test != null) TestAgent.apply(test, builder);
-        }
+        prepareAgent(builder);
         try {
             engine.start(builder);
         } catch (IOException e) {
