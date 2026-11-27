@@ -49,7 +49,7 @@ mount(() => <Text testID="count" onPress={() => n.set(n() + 1)}>{made + " " + n(
 		t.Fatal(err)
 	}
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return core.View{Children: []core.Node{core.Text{Content: "host", TestID: "host"}, tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}}}
+		return core.View{Children: []core.Node{core.Text{Content: "host", TestID: "host"}, tsx.View{Package: p}}}
 	})
 	if got := app.Find("id:count").Text; got != "refused 0" {
 		t.Fatalf("the package shows %q\n%s", got, app.Dump())
@@ -76,7 +76,7 @@ func TestViewThrowsUnderCatch(t *testing.T) {
 	}
 	var failed error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return core.Catch{Try: tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}.Render, Fallback: func(cx *core.Scope, err error, _ func()) core.Node {
+		return core.Catch{Try: tsx.View{Package: p}.Render, Fallback: func(cx *core.Scope, err error, _ func()) core.Node {
 			failed = err
 			return core.Text{Content: "failed", TestID: "failed"}
 		}}
@@ -96,8 +96,8 @@ export function Second() { const n = signal(0); return <Text testID="second" onP
 	}
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		return core.View{Children: []core.Node{
-			tsx.View{Package: p, Export: "First", Sandbox: tsx.Sandbox{WebUnisolated: true}},
-			tsx.View{Package: p, Export: "Second", Sandbox: tsx.Sandbox{WebUnisolated: true}},
+			tsx.View{Package: p, Export: "First"},
+			tsx.View{Package: p, Export: "Second"},
 		}}
 	})
 	if app.Find("id:first").Text != "first 0" || app.Find("id:second").Text != "second 0" {
@@ -129,7 +129,7 @@ export function Panel() { return <Text testID="export">{() => "export " + ticks(
 		t.Fatal(err)
 	}
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return tsx.View{Package: p, Export: "Panel", Sandbox: tsx.Sandbox{WebUnisolated: true}}
+		return tsx.View{Package: p, Export: "Panel"}
 	})
 	if app.Exists("id:mounted") || app.Find("id:export").Text != "export 0 0 0" {
 		t.Fatalf("entry mount was left in the root\n%s", app.Dump())
@@ -155,7 +155,7 @@ export function Panel() {
 	var root *core.Scope
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		root = cx
-		return tsx.View{Package: p, Export: "Panel", Sandbox: tsx.Sandbox{WebUnisolated: true}}
+		return tsx.View{Package: p, Export: "Panel"}
 	})
 	root.RunFrameAt(app.Clock.Now().Add(16 * time.Millisecond))
 	app.Settle()
@@ -180,7 +180,7 @@ func TestViewNamedExportErrors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var failed error
 			app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-				return core.Catch{Try: tsx.View{Package: p, Export: test.name, Sandbox: tsx.Sandbox{WebUnisolated: true}}.Render, Fallback: func(cx *core.Scope, err error, _ func()) core.Node {
+				return core.Catch{Try: tsx.View{Package: p, Export: test.name}.Render, Fallback: func(cx *core.Scope, err error, _ func()) core.Node {
 					failed = err
 					return core.Text{Content: "failed", TestID: "failed"}
 				}}
@@ -208,7 +208,7 @@ export function Panel(props) {
 }`, pkg.Capabilities{Clipboard: true, Host: []string{"greet"}})
 	props := map[string]any{"title": "panel"}
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return tsx.View{Package: p, Export: "Panel", Props: props, Sandbox: tsx.Sandbox{WebUnisolated: true, Host: greeter(), Grant: &pkg.Capabilities{Host: []string{"greet"}}}}
+		return tsx.View{Package: p, Export: "Panel", Props: props, Sandbox: tsx.Sandbox{Host: greeter(), Grant: &pkg.Capabilities{Host: []string{"greet"}}}}
 	})
 	app.WaitUntil(10*time.Second, func() bool { return strings.Contains(app.Find("id:log").Text, "done") })
 	if got := app.Find("id:log").Text; got != "changed: clipboard ERR_ACCESS_DENIED, host ok, done" {

@@ -105,8 +105,6 @@ mount(() => <Text testID="log">{() => log().join("\n")}</Text>);
 func results(t *testing.T, attempts string, caps pkg.Capabilities, s tsx.Sandbox) map[string]string {
 	t.Helper()
 	p := verified(t, "const attempts = {"+attempts+"};\n"+tries, caps)
-	// What Go holds the package to, which holds on the web too.
-	s.WebUnisolated = true
 	s.Limits = &tsx.Limits{Load: 10 * time.Second, Call: 2 * time.Second, Body: 50, Requests: 2, Timers: 3, Storage: 64}
 	app := nsgotest.Start(t, tsx.WithFetcher(func(cx *core.Scope) core.Node {
 		return tsx.View{Package: p, Sandbox: s}
@@ -159,8 +157,6 @@ mount(() => <Text testID="storage-log">{log}</Text>);
 			var partition core.Storage
 			var seedErr error
 			sandbox := c.sandbox
-			// Exercise the module even on targets that share page authority.
-			sandbox.WebUnisolated = runtime.GOOS == "js"
 			app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 				seed := cx.Child()
 				seed.Run(func() {
@@ -260,7 +256,7 @@ func TestSandboxKeepsAPackagesSecretsApart(t *testing.T) {
 };
 `+tries, pkg.Capabilities{Secrets: true})
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}
+		return tsx.View{Package: p}
 	}, nsgotest.Secrets(map[string]string{"token": "the app's"}))
 	app.WaitUntil(10*time.Second, func() bool { return strings.Contains(app.Find("id:log").Text, "done: 1") })
 	got := map[string]string{}
@@ -293,7 +289,7 @@ func TestSandboxHoldsWhatWebPagesCapture(t *testing.T) {
 mount(() => <View>
 	<WebView testID="web" src="https://call.example.com/" media={["microphone", "camera"]} style={{ height: 50 }} />
 </View>);`, pkg.Capabilities{WebView: &pkg.WebView{Hosts: []string{"call.example.com"}, Media: []string{"microphone"}}})
-	app := nsgotest.Start(t, func(cx *core.Scope) core.Node { return tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}} })
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node { return tsx.View{Package: p} })
 	app.WaitFor("id:web", 10*time.Second)
 	if v := app.Find("id:web"); v.Web.Source.Src != "https://call.example.com/" || v.Web.Media != core.WebMicrophone {
 		t.Fatalf("the web view loads %q capturing %v", v.Web.Source.Src, v.Web.Media)
@@ -308,8 +304,7 @@ mount(() => <View>
 </View>);`, pkg.Capabilities{WebView: &pkg.WebView{Hosts: []string{"allowed.example", "extra.example"}}})
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		return tsx.View{Package: p, Sandbox: tsx.Sandbox{
-			Grant:         &pkg.Capabilities{WebView: &pkg.WebView{Hosts: []string{"allowed.example"}}},
-			WebUnisolated: true,
+			Grant: &pkg.Capabilities{WebView: &pkg.WebView{Hosts: []string{"allowed.example"}}},
 		}}
 	})
 	app.WaitFor("id:ok", 10*time.Second)
@@ -326,13 +321,15 @@ mount(() => <View>
 	}
 }
 
-// TestTheWebRefusesWhatItCannotIsolate runs a package with capabilities: the page's engine cannot isolate it, so on the web View and Load refuse it unless the host opts in.
-func TestTheWebRefusesWhatItCannotIsolate(t *testing.T) {
+// TestTheWebIsolatesPackagesByDefault runs a package with capabilities in both View and Load without WebUnisolated: on the web both isolate the package in an opaque-origin frame, and WebUnisolated still opts into the page's engine.
+func TestTheWebIsolatesPackagesByDefault(t *testing.T) {
 	p := verified(t, `import { mount, Text } from "nsgo";
-mount(() => <Text testID="ran">ran</Text>);`, pkg.Capabilities{Clipboard: true})
+mount(() => <Text testID="ran">ran</Text>);
+export function ping() { return "pong"; }`, pkg.Capabilities{Clipboard: true})
 	var viewErr, loadErr error
+	var plugin *tsx.Plugin
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		_, loadErr = tsx.Load(cx, p, tsx.Sandbox{})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{})
 		return core.View{Children: []core.Node{
 			core.Catch{Try: tsx.View{Package: p}.Render, Fallback: func(cx *core.Scope, err error, _ func()) core.Node {
 				viewErr = err
@@ -341,19 +338,17 @@ mount(() => <Text testID="ran">ran</Text>);`, pkg.Capabilities{Clipboard: true})
 			tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}},
 		}}
 	})
-	if runtime.GOOS == "js" {
-		if !errors.Is(viewErr, tsx.ErrUnisolated) || !errors.Is(loadErr, tsx.ErrUnisolated) || app.Find("id:refused").Text != "refused" {
-			t.Fatalf("the view failed with %v and the plugin with %v\n%s", viewErr, loadErr, app.Dump())
-		}
-		if !strings.Contains(viewErr.Error(), "cannot isolate") {
-			t.Fatalf("the refusal says %q", viewErr)
-		}
-	} else if viewErr != nil || loadErr != nil {
+	if viewErr != nil || loadErr != nil {
 		t.Fatalf("the view failed with %v and the plugin with %v", viewErr, loadErr)
 	}
 	if !app.Exists("id:ran") {
-		t.Fatalf("the package the host opted in for did not run\n%s", app.Dump())
+		t.Fatalf("the isolated package did not render\n%s", app.Dump())
 	}
+	if got, err := callPlugin(t, app, plugin, "ping"); err != nil || got != "pong" {
+		t.Fatalf("isolated plugin.Call(ping) = %v, %v, want pong", got, err)
+	}
+	app.Post(plugin.Close)
+	app.Settle()
 }
 
 func greeter() *core.Host {
@@ -468,7 +463,7 @@ export function surface() {
 	var plugin *tsx.Plugin
 	var loadErr error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{})
 		return core.View{}
 	})
 	if loadErr != nil {
@@ -510,7 +505,7 @@ mount(() => <View><Input testID="plugin-field" /><Text testID="plugin-log">{() =
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		cx.OnKey("mod+s", func() { host = append(host, "save") })
 		cx.OnBackPress(func() bool { host = append(host, "back"); return true })
-		return core.View{Children: []core.Node{core.Input{TestID: "host-field"}, tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}}}
+		return core.View{Children: []core.Node{core.Input{TestID: "host-field"}, tsx.View{Package: p}}}
 	})
 	app.Focus("id:host-field")
 	app.Key("mod+s")
@@ -547,7 +542,7 @@ mount(() => <View>
 		var plugin func(cx *core.Scope) core.Node
 		if sandboxed {
 			p := verified(t, source, pkg.Capabilities{})
-			plugin = tsx.View{Package: p, Sandbox: tsx.Sandbox{WebUnisolated: true}}.Render
+			plugin = tsx.View{Package: p}.Render
 		} else {
 			code, err := bundler.Compile(fstest.MapFS{"App.tsx": {Data: []byte(source)}}, "App.tsx")
 			if err != nil {
@@ -606,7 +601,7 @@ mount(() => <View testID="plugin-root">
 		name := map[bool]string{true: "sandboxed", false: "not sandboxed"}[sandboxed]
 		var plugin func(cx *core.Scope) core.Node
 		if sandboxed {
-			plugin = tsx.View{Package: verified(t, source, pkg.Capabilities{}), Sandbox: tsx.Sandbox{WebUnisolated: true}}.Render
+			plugin = tsx.View{Package: verified(t, source, pkg.Capabilities{})}.Render
 		} else {
 			code, err := bundler.Compile(fstest.MapFS{"App.tsx": {Data: []byte(source)}}, "App.tsx")
 			if err != nil {
@@ -658,7 +653,7 @@ mount(() => <NavStack state={nav}>{(route) => <NavPage title={route}>
 	<Text testID="open" onPress={() => open.set(true)}>Open</Text>
 	<Dialog open={open()} statusBar={hide() ? { hidden: true } : undefined}><Text testID="hide" onPress={() => hide.set(true)}>Hide</Text></Dialog>
 </NavPage>}</NavStack>);`
-	app := nsgotest.Start(t, tsx.View{Package: verified(t, source, pkg.Capabilities{}), Sandbox: tsx.Sandbox{WebUnisolated: true}}.Render)
+	app := nsgotest.Start(t, tsx.View{Package: verified(t, source, pkg.Capabilities{})}.Render)
 	app.Press("id:open")
 	app.Settle()
 	refusals := func() int { return strings.Count(logged.String(), `"statusBar" capability`) }
@@ -680,7 +675,7 @@ mount(() => <View testID="plugin-root" onPress={() => {}} style={{ height: 300 }
 		name := map[bool]string{true: "sandboxed", false: "not sandboxed"}[sandboxed]
 		var plugin func(cx *core.Scope) core.Node
 		if sandboxed {
-			plugin = tsx.View{Package: verified(t, source, pkg.Capabilities{}), Sandbox: tsx.Sandbox{WebUnisolated: true}}.Render
+			plugin = tsx.View{Package: verified(t, source, pkg.Capabilities{})}.Render
 		} else {
 			code, err := bundler.Compile(fstest.MapFS{"App.tsx": {Data: []byte(source)}}, "App.tsx")
 			if err != nil {
@@ -717,7 +712,7 @@ mount(() => <View>
 </View>);`, pkg.Capabilities{})
 	var failed error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		return core.Catch{Try: tsx.View{Package: p, Sandbox: tsx.Sandbox{Limits: &tsx.Limits{Nodes: 50}, WebUnisolated: true}}.Render,
+		return core.Catch{Try: tsx.View{Package: p, Sandbox: tsx.Sandbox{Limits: &tsx.Limits{Nodes: 50}}}.Render,
 			Fallback: func(cx *core.Scope, err error, _ func()) core.Node {
 				failed = err
 				return core.Text{Content: "stopped", TestID: "stopped"}
@@ -774,7 +769,7 @@ export const notAFunction = 1;`, pkg.Capabilities{Network: &pkg.Network{Hosts: [
 	var plugin *tsx.Plugin
 	var loadErr error
 	app := nsgotest.Start(t, tsx.WithFetcher(func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{})
 		return core.View{}
 	}, network))
 	if loadErr != nil {
@@ -1085,7 +1080,7 @@ func TestPluginCallTotalStopsYieldingWork(t *testing.T) {
 	var plugin *tsx.Plugin
 	var loadErr error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Limits: &limits, WebUnisolated: true})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Limits: &limits})
 		return core.View{}
 	})
 	if loadErr != nil {
@@ -1116,7 +1111,7 @@ func TestPluginCallTotalCutsATimerQuietly(t *testing.T) {
 	var plugin *tsx.Plugin
 	var loadErr error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Limits: &limits, WebUnisolated: true})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Limits: &limits})
 		return core.View{}
 	})
 	if loadErr != nil {
@@ -1139,7 +1134,7 @@ func deadlinePlugin(t *testing.T, source string, load, total time.Duration) (*ns
 	var plugin *tsx.Plugin
 	var loadErr error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Limits: &limits, WebUnisolated: true})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Limits: &limits})
 		return core.View{}
 	})
 	if loadErr != nil {
@@ -1344,7 +1339,7 @@ func TestPluginInterruptFailsAWaitingCall(t *testing.T) {
 	var loadErr error
 	var notifications []error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true, OnStop: func(err error) {
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{OnStop: func(err error) {
 			notifications = append(notifications, err)
 		}})
 		return core.View{}
@@ -1393,7 +1388,7 @@ func TestPluginCloseFailsAWaitingCall(t *testing.T) {
 	var plugin *tsx.Plugin
 	var loadErr error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{})
 		return core.View{}
 	})
 	if loadErr != nil {
@@ -1431,7 +1426,7 @@ export async function wait() {
 	var cleanupsAtStop int
 	var callErrorAtStop error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true, Host: h, OnStop: func(err error) {
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{Host: h, OnStop: func(err error) {
 			notifications = append(notifications, err)
 			cleanupsAtStop, callErrorAtStop = byes, callErr
 			plugin.Close()
@@ -1467,7 +1462,7 @@ func TestPluginOwnerDisposalNotifiesOnce(t *testing.T) {
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		owner = cx.Child()
 		owner.Run(func() {
-			plugin, loadErr = tsx.Load(owner, p, tsx.Sandbox{WebUnisolated: true, OnStop: func(err error) {
+			plugin, loadErr = tsx.Load(owner, p, tsx.Sandbox{OnStop: func(err error) {
 				notifications = append(notifications, err)
 			}})
 		})
@@ -1530,7 +1525,7 @@ func TestPluginCloseAfterInterrupt(t *testing.T) {
 	var loadErr error
 	var notifications []error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true, OnStop: func(err error) {
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{OnStop: func(err error) {
 			notifications = append(notifications, err)
 		}})
 		return core.View{}
@@ -1565,7 +1560,7 @@ func TestPluginInterruptStopsCall(t *testing.T) {
 	var plugin *tsx.Plugin
 	var loadErr error
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
-		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true})
+		plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{})
 		return core.View{}
 	})
 	if loadErr != nil {
@@ -1606,7 +1601,7 @@ throw new Error("entry failed");`, "entry failed"},
 		var caught []error
 		app := nsgotest.Start(t, tsx.WithFetcher(func(cx *core.Scope) core.Node {
 			return core.Catch{Try: func(cx *core.Scope) core.Node {
-				plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{WebUnisolated: true})
+				plugin, loadErr = tsx.Load(cx, p, tsx.Sandbox{})
 				return core.View{}
 			}, Fallback: func(cx *core.Scope, err error, _ func()) core.Node {
 				caught = append(caught, err)

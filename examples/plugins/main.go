@@ -6,7 +6,8 @@
 // own; or it shows why the package was refused. search.nsgopkg is a
 // plugin of functions, which the app loads with tsx.Load and calls.
 //
-// The web cannot isolate a package from the page, so there both are refused with tsx.ErrUnisolated: the app does not set Sandbox.WebUnisolated, which would give them the page's authority whatever they declare.
+// On the web, both packages run isolated in opaque-origin sandboxed iframes
+// over an asynchronous bridge without needing Sandbox.WebUnisolated.
 //
 // The packages are the apps in plugin/ and search/, signed by a release
 // key of a root whose secret was thrown away. To sign them again, print

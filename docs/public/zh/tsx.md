@@ -140,7 +140,7 @@ trust.Accept(p) // 运行之后，更旧的构建会被拒绝
 
 `Plugin.JSTime` 和 `ViewRuntime.JSTime` 报告原生运行时执行 JavaScript 的累计时长，包括当前正在执行的入口。两次执行之间的等待时间和注册的同步 Go 函数耗时不计入。`ViewRuntime.EngineTime` 还计入同步 Go 调用以及视图所属的响应式计算、挂载、提交和布局工作，包括当前尚未完成的工作；两次引擎执行之间的等待、宿主或其他视图的工作、共享提交管理工作和原生绘制不计入。两个计数器均可从任意 goroutine 读取。浏览器在 NSGo 之外执行的 JavaScript 无法测量或打断，因此两个计数器均返回不可用，`Interrupt` 在宿主重新取得控制后停止后续 NSGo 回调。
 
-Web 上暂时无法将包与页面隔离：包拥有页面自身的网络、剪贴板和存储权限，包括信任库。因此 `tsx.View` 和 `tsx.Load` 会以 `tsx.ErrUnisolated` 拒绝运行包，除非设置 `Sandbox.WebUnisolated`；带有权限限制或设置了 `DisableStorage` 的自定义 `tsx.Sandboxed` 也需要这一选项。它不会恢复被禁用的 NSGo `Storage`，也不会保护页面自身的存储。只对你愿意授予应用自身权限的代码启用它。
+在 Web 上，`tsx.View`、`tsx.Load` 以及设置了权限、`Grant` 或 `DisableStorage` 的 `tsx.Sandboxed` 会在带严格 `Content-Security-Policy`（`connect-src 'none'`）的不透明源 `<iframe sandbox="allow-scripts">` 中运行包代码，并通过私有 `MessagePort` 异步桥接访问 Go 运行时的能力接口。包代码无法访问页面的 `XMLHttpRequest`、`WebSocket`、剪贴板、`localStorage`、Cookie、信任库或宿主窗口，其权限约束与 goja 上一致（但浏览器引擎仍无法打断正在同步执行的 JS 片段）。在没有 DOM iframe 的 JS 宿主上，仍会以 `tsx.ErrUnisolated` 拒绝。仅在你希望让受信任的包直接运行在页面同源上下文中时才设置 `Sandbox.WebUnisolated`；该选项不会恢复被禁用的 NSGo `Storage`，也不会保护页面自身的存储。
 
 ## 编辑器与测试
 

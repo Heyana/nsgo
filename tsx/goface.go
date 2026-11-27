@@ -1228,6 +1228,38 @@ func registeredExports(name string) ([]export, bool) {
 	return e, ok
 }
 
+func registeredModuleNames() []string {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	out := make([]string, 0, len(registered))
+	for name := range registered {
+		out = append(out, name)
+	}
+	return out
+}
+
+func isRegisteredClass(module, name string) bool {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	for _, def := range registeredClasses[module] {
+		if def.name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func isRegisteredComponent(module, name string) bool {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	for _, rt := range registeredTypes[module] {
+		if rt.name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // results is what a ref method returned as JS sees it: null for a false
 // trailing ok, an object of several.
 func (r *runtime) results(out []reflect.Value, ft reflect.Type, names []string) js.Value {

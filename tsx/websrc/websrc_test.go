@@ -21,3 +21,9 @@ func TestBundleKeepsSourceMapLines(t *testing.T) {
 		t.Errorf("last line = %q, want the source map's", got)
 	}
 }
+
+func TestIsolatedScriptSafeForSrcdoc(t *testing.T) {
+	if strings.Contains(strings.ToLower(Isolated.Source), "</script") {
+		t.Fatal("isolated.js must not contain </script so it embeds safely in srcdoc")
+	}
+}

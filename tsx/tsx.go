@@ -149,6 +149,9 @@ type runtime struct {
 	exportView bool
 	// retainPromiseJobs keeps a native plugin's unstarted work across a budget cut.
 	retainPromiseJobs bool
+	// isolated holds the opaque-origin iframe bridge when a sandboxed package
+	// runs isolated on the web (GOOS=js).
+	isolated *isolatedBridge
 }
 
 // maxCallStack is the native runtime's default and maximum call depth.
@@ -294,6 +297,11 @@ func (r *runtime) warn(format string, args ...any) {
 // called the Go code calling it, else to core, which reports it or
 // shows the nearest boundary.
 func (r *runtime) call(fn js.Value, args ...js.Value) js.Value {
+	if r.isolated != nil {
+		if fnID, ok := r.isolated.guestFnID(fn); ok {
+			return r.isolated.callGuest(fnID, args)
+		}
+	}
 	f, ok := js.AssertFunction(fn)
 	if !ok {
 		panic(r.vm.NewTypeError("nsgo: %s is not a function", fn))

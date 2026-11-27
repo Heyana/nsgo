@@ -35,12 +35,6 @@ func TestInstallsAndRunsThePackages(t *testing.T) {
 		t.Fatalf("the consent says %q", texts)
 	}
 	app.Press("id:install")
-	if runtime.GOOS == "js" {
-		// The page's engine cannot isolate the packages: both are refused.
-		want := "Refused: " + tsx.ErrUnisolated.Error()
-		app.WaitUntil(wait, func() bool { return strings.Count(strings.Join(app.Texts(), "\n"), want) == 2 })
-		return
-	}
 	app.WaitUntil(wait, func() bool { return app.Exists("id:greeting") && app.Find("id:greeting").Text == "Hello from the host" })
 	app.Press("id:wave")
 	app.Press("id:wave")

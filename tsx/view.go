@@ -12,7 +12,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// View runs the app of a package a pkg.Trust verified where it is placed in a Go app, sandboxed: the app's own screens delivered anew, or a plugin. The package's capabilities hold it, narrowed by Grant; it keeps a partition of the app's storage of its app ID's, and its host module reaches Host alone. A package that throws as it loads, or stops at a quota, panics, as any component does; place it under a core.Catch to show something else. Export names a component the package's entry module exports, which it shows in place of the root the entry mounts, with Props, so one package provides several views, each with state of its own; it runs within the same sandbox, capabilities and limits. The web cannot isolate a package from the page, so there it panics with ErrUnisolated unless Sandbox.WebUnisolated.
+// View runs the app of a package a pkg.Trust verified where it is placed in a Go app, sandboxed: the app's own screens delivered anew, or a plugin. The package's capabilities hold it, narrowed by Grant; it keeps a partition of the app's storage of its app ID's, and its host module reaches Host alone. A package that throws as it loads, or stops at a quota, panics, as any component does; place it under a core.Catch to show something else. Export names a component the package's entry module exports, which it shows in place of the root the entry mounts, with Props, so one package provides several views, each with state of its own; it runs within the same sandbox, capabilities and limits. On the web, it runs in an opaque-origin sandboxed iframe over an asynchronous bridge unless Sandbox.WebUnisolated is set (or panics with ErrUnisolated where no DOM iframe is available).
 //
 //	p, err := trust.Verify(data) // off the engine's goroutine
 //	...
@@ -129,7 +129,7 @@ var ErrViewExportNotComponent = errors.New("tsx: the view export is not a compon
 // ErrNoTree is what Load reports when its scope has no view tree.
 var ErrNoTree = errors.New("tsx: Load needs a scope attached to a view tree")
 
-// Load runs package p as a plugin under cx, within s as View runs it, and returns it once its entry module ran, or a nil Plugin and what that threw, which goes to no Catch above cx and not to the app's report, or ErrNoTree when cx is not attached to a view tree, or ErrUnisolated on the web as View panics with it. It runs synchronously on the caller's goroutine. Call it on the engine's goroutine.
+// Load runs package p as a plugin under cx, within s as View runs it, and returns it once its entry module ran, or a nil Plugin and what that threw, which goes to no Catch above cx and not to the app's report, or ErrNoTree when cx is not attached to a view tree, or ErrUnisolated on a JS host without DOM iframe isolation unless Sandbox.WebUnisolated. It runs synchronously on the caller's goroutine. Call it on the engine's goroutine.
 func Load(cx *core.Scope, p *pkg.Package, s Sandbox) (plugin *Plugin, err error) {
 	if cx == nil || !cx.HasTree() {
 		return nil, ErrNoTree
@@ -161,13 +161,19 @@ func Load(cx *core.Scope, p *pkg.Package, s Sandbox) (plugin *Plugin, err error)
 				plugin.dispose()
 			}
 		})
-		r = s.start(inner, p.App.ID, p.Source())
+		if s.needsWebIsolation() {
+			r = s.startIsolated(inner, p.App.ID, p.Source(), ViewOptions{})
+		} else {
+			r = s.start(inner, p.App.ID, p.Source())
+		}
 	})
 	if err != nil {
 		return nil, err
 	}
 	plugin = &Plugin{r: r, cx: inner}
-	plugin.exports, _ = r.vm.Get(exportsGlobal).(*js.Object)
+	if r.isolated == nil {
+		plugin.exports, _ = r.vm.Get(exportsGlobal).(*js.Object)
+	}
 	r.onStop = s.OnStop
 	return plugin, nil
 }
@@ -178,6 +184,9 @@ const exportsGlobal = "__nsgo_exports"
 
 // Exports are the names of the functions the plugin exports.
 func (p *Plugin) Exports() []string {
+	if p.r != nil && p.r.isolated != nil {
+		return p.r.isolated.exportNames()
+	}
 	if p.exports == nil {
 		return nil
 	}
@@ -208,6 +217,9 @@ func (p *Plugin) CallWithBudget(name string, args []any, done func(result any, e
 
 func (p *Plugin) startCall(name string, args []any, done func(result any, err error)) *deadline {
 	r := p.r
+	if r.isolated != nil {
+		return r.isolated.startCall(p, name, args, done)
+	}
 	if err := r.stoppedErr(); err != nil || p.cx.Disposed() {
 		done(nil, cmp.Or(err, ErrPluginClosed))
 		return nil
@@ -332,8 +344,14 @@ func (p *Plugin) Close() {
 }
 
 func (p *Plugin) dispose() {
+	if p.r.isolated != nil && p.r.stoppedErr() == nil {
+		p.r.isolated.dispose()
+	}
 	p.r.markStopped(ErrPluginClosed)
 	p.r.stopTimers()
+	if p.r.isolated != nil {
+		p.r.isolated.close()
+	}
 	if p.closing {
 		return
 	}

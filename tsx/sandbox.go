@@ -162,16 +162,26 @@ type Sandbox struct {
 	// whose message is "tsx: Storage is disabled for this sandbox". It
 	// leaves existing data and the Secrets module alone.
 	DisableStorage bool
-	// WebUnisolated runs it on the web with the page's authority. The page's engine runs it in a realm of the page's origin, which reaches the page's own APIs (XMLHttpRequest, WebSocket, navigator, localStorage, the page's window) past Go. Capabilities and Grant hold only the requests the runtime and core make, and DisableStorage still withholds the nsgo Storage module's operations, not the page's storage APIs. Storage's partition and a pkg.Trust kept in the page's storage are open to its code. Without WebUnisolated, a sandbox with Capabilities, Grant or DisableStorage refuses to start on the web with ErrUnisolated. Other targets isolate it and ignore WebUnisolated.
+	// WebUnisolated runs it on the web in the page's origin with the page's authority instead of an opaque-origin sandboxed iframe. Capabilities and Grant then hold only the requests the runtime and core make, and DisableStorage still withholds the nsgo Storage module's operations, not the page's storage APIs. Storage's partition and a pkg.Trust kept in the page's storage are open to its code. Without WebUnisolated, a sandbox with Capabilities, Grant or DisableStorage runs in an opaque-origin sandboxed iframe over an asynchronous bridge on the web (or fails with ErrUnisolated where no DOM iframe is available). Other targets isolate it and ignore WebUnisolated.
 	WebUnisolated bool
 }
 
-// ErrUnisolated is what a sandbox with Capabilities, Grant or DisableStorage fails with on the web unless Sandbox.WebUnisolated is set: the page's engine cannot isolate a package's realm from the page, so its restrictions would not hold.
+// ErrUnisolated is what a sandbox with Capabilities, Grant or DisableStorage fails with on a JS host that cannot create an opaque-origin sandboxed frame unless Sandbox.WebUnisolated is set.
 var ErrUnisolated = errors.New("tsx: the web cannot isolate a sandboxed package from the page, so its restrictions would not hold; set Sandbox.WebUnisolated to run it with the page's authority")
 
-// isolation checks whether the realm's access to the page would bypass the sandbox's restrictions.
+// needsWebIsolation reports whether s should run in an opaque-origin
+// sandboxed iframe on the web.
+func (s Sandbox) needsWebIsolation() bool {
+	return js.Properties().SharesPageAuthority && (s.Capabilities != nil || s.Grant != nil || s.DisableStorage) && !s.WebUnisolated
+}
+
+// isolation checks whether the host can isolate the sandbox when required.
 func (s Sandbox) isolation(sharesPageAuthority bool) error {
-	if sharesPageAuthority && (s.Capabilities != nil || s.Grant != nil || s.DisableStorage) && !s.WebUnisolated {
+	return s.isolationWith(sharesPageAuthority, webIsolationAvailable())
+}
+
+func (s Sandbox) isolationWith(sharesPageAuthority, hasIsolatedFrame bool) error {
+	if sharesPageAuthority && (s.Capabilities != nil || s.Grant != nil || s.DisableStorage) && !s.WebUnisolated && !hasIsolatedFrame {
 		return ErrUnisolated
 	}
 	return nil
@@ -186,7 +196,7 @@ type ViewOptions struct {
 	Props  map[string]any
 }
 
-// Sandboxed returns the app of a bundle, as App does, run within s, in a view of its own: its frame, which fills the room its parent gives it, no more, so the bundle cannot grow over the host's views, and clips what the bundle shows, overlays included (core.Scope.Confine). In a scroll view that room is the scroll view's height: a host that wants the bundle as tall as its content puts it in a view of its own. On the web it panics with ErrUnisolated when s has Capabilities, Grant or DisableStorage, unless s.WebUnisolated. When options has an Export, that named component, which runs within s as the rest of the bundle is, is rendered instead of the entry-mounted root; a missing one panics with ErrNoViewExport and one that is not a function with ErrViewExportNotComponent.
+// Sandboxed returns the app of a bundle, as App does, run within s, in a view of its own: its frame, which fills the room its parent gives it, no more, so the bundle cannot grow over the host's views, and clips what the bundle shows, overlays included (core.Scope.Confine). In a scroll view that room is the scroll view's height: a host that wants the bundle as tall as its content puts it in a view of its own. On the web, a sandbox with Capabilities, Grant or DisableStorage runs in an opaque-origin sandboxed iframe unless s.WebUnisolated is set (or panics with ErrUnisolated where no DOM iframe is available). When options has an Export, that named component, which runs within s as the rest of the bundle is, is rendered instead of the entry-mounted root; a missing one panics with ErrNoViewExport and one that is not a function with ErrViewExportNotComponent.
 func Sandboxed(name, src string, s Sandbox, options ...ViewOptions) func(cx *core.Scope) core.Node {
 	var view ViewOptions
 	if len(options) > 0 {
@@ -197,9 +207,14 @@ func Sandboxed(name, src string, s Sandbox, options ...ViewOptions) func(cx *cor
 		inner := cx.Child()
 		var root core.Node
 		inner.Run(func() {
-			r := s.start(inner, name, src)
-			if view.Export != "" && r.stoppedErr() == nil {
-				r.renderExport(view.Export, view.Props)
+			var r *runtime
+			if s.needsWebIsolation() {
+				r = s.startIsolated(inner, name, src, view)
+			} else {
+				r = s.start(inner, name, src)
+				if view.Export != "" && r.stoppedErr() == nil {
+					r.renderExport(view.Export, view.Props)
+				}
 			}
 			root = r.root.elem
 		})
@@ -483,11 +498,17 @@ func (r *runtime) stop(err error) {
 	}
 	r.stopTimers()
 	r.stopWatches()
+	if r.isolated != nil {
+		r.isolated.close()
+	}
 	if len(r.calls) > 0 || r.onStop != nil {
 		r.cx.Post(func() { r.finishStop(err) })
 	}
 	if !canInterrupt {
-		// A throw unwinds the page's engine.
+		// A throw unwinds the page's engine, or propagates out of isolated op application into core.Catch.
+		if r.isolated != nil {
+			panic(err)
+		}
 		panic(r.goError(err))
 	}
 	r.vm.Interrupt(err)
@@ -503,6 +524,9 @@ func (r *runtime) interrupt(err error) {
 	}
 	r.interrupted.Store(true)
 	r.vm.Interrupt(err)
+	if r.isolated != nil {
+		r.isolated.close()
+	}
 	r.cx.Post(func() {
 		r.stopTimers()
 		r.finishStop(r.stoppedErr())

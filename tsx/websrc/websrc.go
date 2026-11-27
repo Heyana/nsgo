@@ -34,6 +34,9 @@ var (
 	Merge = Source{"merge.js", mergeJS}
 	// Harden is a sandbox's: it closes what makes code from strings.
 	Harden = Source{"harden.js", hardenJS}
+	// Isolated is the guest runtime that runs inside an opaque-origin
+	// sandboxed iframe on the web and talks to Go over a private MessagePort.
+	Isolated = Source{"isolated.js", isolatedJS}
 )
 
 // Sources returns what a page ships for a TSX app's realm.
@@ -108,3 +111,6 @@ var mergeJS string
 
 //go:embed harden.js
 var hardenJS string
+
+//go:embed isolated.js
+var isolatedJS string
