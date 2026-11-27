@@ -127,7 +127,10 @@ func (s *state) enclosing(from, to pos) (pos, pos, bool) {
 // has of them), pt's row primary.
 func (e *ed) blockSels(pt core.Point) []selection {
 	n := e.st.disp.count()
-	rowOf := func(y core.Points) int { return min(max(int(float32(y)/e.lh), 0), n-1) }
+	if n == 0 {
+		return nil
+	}
+	rowOf := func(y core.Points) int { return min(max(e.rowAtY(float32(y)), 0), n-1) }
 	from, to := rowOf(e.blockAt.Y), rowOf(pt.Y)
 	step := 1
 	if to < from {
@@ -135,12 +138,17 @@ func (e *ed) blockSels(pt core.Point) []selection {
 	}
 	var out []selection
 	for row := from; ; row += step {
-		y := core.Points((float32(row) + 0.5) * e.lh)
-		a, h := e.posAt(core.Point{X: e.blockAt.X, Y: y}), e.posAt(core.Point{X: pt.X, Y: y})
-		out = append(out, selection{anchor: a, head: h, goal: -1})
+		if e.st.disp.row(row, e.st.r()).block == nil {
+			y := core.Points(e.rowTop(row) + e.rowHeight(row)/2)
+			a, h := e.posAt(core.Point{X: e.blockAt.X, Y: y}), e.posAt(core.Point{X: pt.X, Y: y})
+			out = append(out, selection{anchor: a, head: h, goal: -1})
+		}
 		if row == to {
 			break
 		}
+	}
+	if len(out) == 0 {
+		return []selection{caret(e.posAt(pt))}
 	}
 	return out
 }

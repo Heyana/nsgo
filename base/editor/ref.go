@@ -19,6 +19,30 @@ func (r *Ref) Edit(edits []Edit) {
 	if e == nil || e.p.ReadOnly || len(edits) == 0 {
 		return
 	}
+	e.applyEdits(edits, true)
+}
+
+// EditOutsideHistory applies edits, ranges of the text as it is, without
+// recording an undo step: one overlapping an earlier one is skipped, the
+// undo and redo history and current selections map through the changes, and
+// the viewport stays put. Use this for remote sync merges or external file
+// changes that Ctrl+Z must not undo.
+func (r *Ref) EditOutsideHistory(edits []Edit) {
+	e := r.e
+	if e == nil || len(edits) == 0 {
+		return
+	}
+	e.applyEdits(edits, false)
+}
+
+// ClearHistory drops every step of the undo and redo history.
+func (r *Ref) ClearHistory() {
+	if r.e != nil {
+		r.e.st.buf.clearHistory()
+	}
+}
+
+func (e *ed) applyEdits(edits []Edit, recorded bool) {
 	list := make([]edit, len(edits))
 	for i, x := range edits {
 		from, to := e.pos(x.Range.Start), e.pos(x.Range.End)
@@ -35,9 +59,12 @@ func (r *Ref) Edit(edits []Edit) {
 		}
 		kept = append(kept, x)
 	}
-	e.edit(func() []change {
+	run := func() []change {
 		before := slices.Clone(e.st.sels)
 		changes := e.st.buf.apply(kept)
+		if len(changes) == 0 {
+			return nil
+		}
 		// A caret goes after what is inserted at it; a selection grows over
 		// what is inserted at its ends.
 		next := make([]selection, len(e.st.sels))
@@ -50,9 +77,21 @@ func (r *Ref) Edit(edits []Edit) {
 		}
 		e.st.afterEdit(changes)
 		e.st.setSels(next)
-		e.st.buf.record(changes, before, slices.Clone(e.st.sels), kindOther)
+		if recorded {
+			e.st.buf.record(changes, before, slices.Clone(e.st.sels), kindOther)
+		} else {
+			e.st.buf.rebase(changes)
+		}
 		return changes
-	})
+	}
+	if recorded {
+		e.edit(run)
+		return
+	}
+	e.clearSink()
+	if changes := run(); len(changes) > 0 {
+		e.changed(changes, true)
+	}
 }
 
 // FoldRecursive folds the fold on line, or the innermost one around it,
@@ -176,12 +215,24 @@ func (r *Ref) VisibleRange() Range {
 		return Range{}
 	}
 	n := e.st.disp.count()
+	if n == 0 {
+		return Range{}
+	}
 	y, h := float32(e.scrollY.GetUntracked()), float32(e.viewport.GetUntracked().Height)
-	first := min(max(int(y/e.lh), 0), n-1)
-	last := min(max(int((y+h-1)/e.lh), first), n-1)
+	first := min(max(e.rowAtY(y), 0), n-1)
+	last := min(max(e.rowAtY(y+h-1), first), n-1)
 	rd := e.st.r()
 	a, b := e.st.disp.row(first, rd), e.st.disp.row(last, rd)
-	return Range{e.position(pos{a.line, a.start}), e.position(pos{b.line, b.end})}
+	start := pos{a.line, a.start}
+	if a.block != nil {
+		start = pos{a.block.startLine, 0}
+	}
+	end := pos{b.line, b.end}
+	if b.block != nil {
+		endLine := min(max(b.block.endLine, 0), rd.lines()-1)
+		end = pos{endLine, len(rd.line(endLine))}
+	}
+	return Range{e.position(start), e.position(end)}
 }
 
 // OffsetToPosition returns the place at offset, in UTF-16 units of the
@@ -273,13 +324,17 @@ func (e *ed) boxOf(x rect) (Bounds, bool) {
 }
 
 // charAt is the character at pt in the rows' box; ok is false off the
-// text, past a row's end or outside the rows.
+// text, past a row's end, over a block widget or outside the rows.
 func (e *ed) charAt(pt core.Point) (pos, bool) {
-	if pt.X < 0 || pt.Y < 0 || int(float32(pt.Y)/e.lh) >= e.st.disp.count() {
+	row := e.rowAtY(float32(pt.Y))
+	if pt.X < 0 || row < 0 || row >= e.st.disp.count() {
+		return pos{}, false
+	}
+	d := e.st.disp.row(row, e.st.r())
+	if d.block != nil {
 		return pos{}, false
 	}
 	near := e.posAt(pt)
-	d := e.st.disp.row(int(float32(pt.Y)/e.lh), e.st.r())
 	shapes := e.shapesIn(d.line)
 	if e.xOf(near) > float32(pt.X) {
 		p := near

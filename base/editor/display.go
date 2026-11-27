@@ -6,42 +6,104 @@ import (
 	"unicode/utf8"
 )
 
-// dispRow is a display row: part of a line, from byte start to end.
-type dispRow struct{ line, start, end int }
+// dispRow is a display row: part of a line (from byte start to end), or a
+// block decoration row when block != nil.
+type dispRow struct {
+	line, start, end int
+	block            *blockSpec
+}
 
 // display lays the text out in rows: a line is a row unless soft wrap
-// breaks it, and a fold shows its first line and hides the others. With
-// neither, rows are lines and nothing is laid out, so 200 000 lines cost
-// nothing to show.
+// breaks it, a fold shows its first line and hides the others, and a block
+// decoration replaces or hides whole lines or inserts a row between lines.
+// With none of those, rows are lines and nothing is laid out, so 200 000
+// lines cost nothing to show.
 type display struct {
 	identity bool
 	lines    int
 	rows     []dispRow
 	// first is each line's first row; a hidden line's is the row of the
-	// fold that hides it.
+	// fold or block that hides it (or the nearest row when collapsed to zero
+	// rows).
 	first []int
 }
 
 // layout lays r out with the folds (sorted, outermost, not overlapping)
-// hiding their lines, wrapping rows at wrap columns (none when 0).
-func layout(r *rope, folds []foldRange, wrap, tab int) *display {
+// hiding their lines, blocks (sorted, non-overlapping replacing/hidden
+// blocks) replacing, hiding or inserting rows between lines, wrapping rows
+// at wrap columns (none when 0; lineWrap overrides wrap per line when
+// non-nil).
+func layout(r *rope, folds []foldRange, blocks []blockSpec, wrap, tab int, lineWrap func(int) int) *display {
 	n := r.lines()
-	if len(folds) == 0 && wrap <= 0 {
+	if len(folds) == 0 && len(blocks) == 0 && wrap <= 0 {
 		return &display{identity: true, lines: n}
 	}
-	d := &display{lines: n, rows: make([]dispRow, 0, n), first: make([]int, n)}
+	d := &display{lines: n, rows: make([]dispRow, 0, n+len(blocks)), first: make([]int, n)}
 	f := 0
+	bi := 0
 	for line := 0; line < n; line++ {
+		// Emit inserted blocks placed before this line.
+		for bi < len(blocks) && blocks[bi].startLine < line {
+			bi++
+		}
+		for bi < len(blocks) && blocks[bi].startLine == line && blocks[bi].inserted && !blocks[bi].after {
+			b := blocks[bi]
+			d.rows = append(d.rows, dispRow{line: line, block: &b})
+			bi++
+		}
+
+		// Check if a replacing or hidden block starts on this line.
+		if bi < len(blocks) && blocks[bi].startLine == line && !blocks[bi].inserted {
+			b := blocks[bi]
+			bi++
+			endLine := min(max(b.endLine, line), n-1)
+			row := len(d.rows)
+			if !b.hidden {
+				d.rows = append(d.rows, dispRow{line: line, block: &b})
+			}
+			for l := line; l <= endLine; l++ {
+				d.first[l] = row
+			}
+			// Emit any inserted-after blocks attached to lines inside the
+			// replaced/hidden range only if they belong to endLine and are
+			// explicitly after it.
+			for bi < len(blocks) && blocks[bi].startLine <= endLine {
+				if blocks[bi].inserted && blocks[bi].after && blocks[bi].startLine == endLine {
+					ab := blocks[bi]
+					d.rows = append(d.rows, dispRow{line: endLine, block: &ab})
+				}
+				bi++
+			}
+			line = endLine
+			continue
+		}
+
 		row := len(d.rows)
 		d.first[line] = row
 		text := r.line(line)
-		if wrap <= 0 {
-			d.rows = append(d.rows, dispRow{line, 0, len(text)})
+		wcols := wrap
+		if wrap > 0 && lineWrap != nil {
+			wcols = lineWrap(line)
+		}
+		if wcols <= 0 {
+			d.rows = append(d.rows, dispRow{line: line, start: 0, end: len(text)})
 		} else {
-			for _, w := range wrapLine(text, wrap, tab) {
-				d.rows = append(d.rows, dispRow{line, w[0], w[1]})
+			for _, w := range wrapLine(text, wcols, tab) {
+				d.rows = append(d.rows, dispRow{line: line, start: w[0], end: w[1]})
 			}
 		}
+
+		// Emit inserted blocks placed after this line (unless folded below).
+		emitAfter := func(at int) {
+			for bi < len(blocks) && blocks[bi].startLine <= at {
+				if blocks[bi].inserted && blocks[bi].after && blocks[bi].startLine == at {
+					ab := blocks[bi]
+					d.rows = append(d.rows, dispRow{line: at, block: &ab})
+				}
+				bi++
+			}
+		}
+
 		for f < len(folds) && folds[f].end < line {
 			f++
 		}
@@ -49,10 +111,24 @@ func layout(r *rope, folds []foldRange, wrap, tab int) *display {
 			// A folded line shows as one row.
 			d.rows = d.rows[:row+1]
 			d.rows[row].end = len(text)
-			for hidden := line + 1; hidden <= folds[f].end && hidden < n; hidden++ {
+			endFold := min(folds[f].end, n-1)
+			for hidden := line + 1; hidden <= endFold; hidden++ {
 				d.first[hidden] = row
 			}
-			line = folds[f].end
+			// Skip blocks inside folded lines, except inserted-after on endFold.
+			emitAfter(endFold)
+			line = endFold
+			continue
+		}
+		emitAfter(line)
+	}
+	// Clamp any trailing hidden lines' first index to a valid row when rows exist.
+	if len(d.rows) > 0 {
+		last := len(d.rows) - 1
+		for i, r := range d.first {
+			if r > last {
+				d.first[i] = last
+			}
 		}
 	}
 	return d
@@ -91,7 +167,7 @@ func (d *display) count() int {
 
 func (d *display) row(i int, r *rope) dispRow {
 	if d.identity {
-		return dispRow{i, 0, len(r.line(i))}
+		return dispRow{line: i, start: 0, end: len(r.line(i))}
 	}
 	return d.rows[i]
 }
@@ -99,10 +175,19 @@ func (d *display) row(i int, r *rope) dispRow {
 // rowOf is the row p shows in.
 func (d *display) rowOf(p pos) int {
 	if d.identity {
-		return p.line
+		return min(max(p.line, 0), max(d.lines-1, 0))
 	}
-	row := d.first[min(p.line, len(d.first)-1)]
-	for row+1 < len(d.rows) && d.rows[row+1].line == p.line && d.rows[row+1].start <= p.col {
+	if len(d.rows) == 0 || len(d.first) == 0 {
+		return 0
+	}
+	row := d.first[min(max(p.line, 0), len(d.first)-1)]
+	if row >= len(d.rows) {
+		return len(d.rows) - 1
+	}
+	if d.rows[row].block != nil || d.rows[row].line != p.line {
+		return row
+	}
+	for row+1 < len(d.rows) && d.rows[row+1].block == nil && d.rows[row+1].line == p.line && d.rows[row+1].start <= p.col {
 		row++
 	}
 	return row
@@ -111,14 +196,27 @@ func (d *display) rowOf(p pos) int {
 // lineRow is the first row of line, or the row hiding it.
 func (d *display) lineRow(line int) int {
 	if d.identity {
-		return line
+		return min(max(line, 0), max(d.lines-1, 0))
 	}
-	return d.first[line]
+	if len(d.first) == 0 {
+		return 0
+	}
+	return d.first[min(max(line, 0), len(d.first)-1)]
 }
 
-// visibleLine reports whether line shows (no fold hides it).
+// visibleLine reports whether line shows (no fold or block hides it).
 func (d *display) visibleLine(line int) bool {
-	return d.identity || d.rows[d.first[line]].line == line
+	if d.identity {
+		return line >= 0 && line < d.lines
+	}
+	if len(d.rows) == 0 || line < 0 || line >= len(d.first) {
+		return false
+	}
+	row := d.first[line]
+	if row < 0 || row >= len(d.rows) {
+		return false
+	}
+	return d.rows[row].block == nil && d.rows[row].line == line
 }
 
 // rowsOfLines is the rows of lines from to to, sorted.

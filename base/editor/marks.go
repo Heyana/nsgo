@@ -132,18 +132,34 @@ func (e *ed) rowMarks(row, reach int) []rowMark {
 		return nil
 	}
 	d := s.disp.row(row, s.r())
-	lastOfLine := row+1 >= s.disp.count() || s.disp.row(row+1, s.r()).start == 0
-	first := d.start == 0
-	endLine := d.line + 1
-	if lastOfLine {
-		endLine = s.r().lines()
-		if row+1 < s.disp.count() {
-			endLine = s.disp.row(row+1, s.r()).line
+	var first, lastOfLine bool
+	var startLine, endLine int
+	if d.block != nil {
+		if d.block.inserted {
+			return nil
 		}
-		endLine = max(endLine, d.line+1)
+		first, lastOfLine = true, true
+		startLine, endLine = d.block.startLine, d.block.endLine+1
+	} else {
+		startLine = d.line
+		lastOfLine = row+1 >= s.disp.count() || s.disp.row(row+1, s.r()).block != nil || s.disp.row(row+1, s.r()).start == 0
+		first = d.start == 0
+		endLine = d.line + 1
+		if lastOfLine {
+			endLine = s.r().lines()
+			if row+1 < s.disp.count() {
+				next := s.disp.row(row+1, s.r())
+				if next.block != nil {
+					endLine = next.block.startLine
+				} else {
+					endLine = next.line
+				}
+			}
+			endLine = max(endLine, d.line+1)
+		}
 	}
 	var out []rowMark
-	from := sort.Search(len(e.marks), func(i int) bool { return e.marks[i].from.line >= d.line-reach })
+	from := sort.Search(len(e.marks), func(i int) bool { return e.marks[i].from.line >= startLine-reach })
 	for i := from; i < len(e.marks) && e.marks[i].from.line < endLine; i++ {
 		m := &e.marks[i]
 		if m.deco == nil || m.deco.Gutter == nil {
@@ -153,10 +169,10 @@ func (e *ed) rowMarks(row, reach int) []rowMark {
 		if m.deco.Gutter.Placement == GutterBefore {
 			at := m.from.line
 			switch {
-			case at < d.line:
+			case at < startLine:
 				continue
-			case at > d.line:
-				// A boundary inside a fold: the folded row is marked.
+			case at > startLine:
+				// A boundary inside a fold or block: the row is marked.
 			case m.from.col == 0 && first:
 				place = placeTop
 			case m.from.col != 0 && lastOfLine:
@@ -164,7 +180,7 @@ func (e *ed) rowMarks(row, reach int) []rowMark {
 			default:
 				continue
 			}
-		} else if lastLine(m) < d.line {
+		} else if lastLine(m) < startLine {
 			continue
 		}
 		out = append(out, rowMark{deco: m.deco, place: place})
@@ -194,14 +210,13 @@ func (e *ed) rulerMarks() []rulerMark {
 	return out
 }
 
-// rulerPlace is where a mark of rows rows is down a ruler track tall: its
-// top and height, the rows' place in the rows' box, content tall or the
-// ruler's height when shorter, scaled to the ruler and kept within it.
-func rulerPlace(first, rows int, lineHeight, content, track float32) (top, height float32) {
+// rulerPlaceY is where a span starting at topY and spanH tall is down a ruler
+// track tall, scaled from content (or track when shorter) and kept within it.
+func rulerPlaceY(topY, spanH, content, track float32) (top, height float32) {
 	content = max(content, track, 1)
 	scale := track / content
-	height = max(lineHeight*float32(rows)*scale, rulerMarkMin)
-	top = min(lineHeight*float32(first)*scale, max(track-height, 0))
+	height = max(spanH*scale, rulerMarkMin)
+	top = min(topY*scale, max(track-height, 0))
 	return top, height
 }
 
@@ -261,8 +276,11 @@ func (e *ed) overviewRuler() core.Node {
 				deco := m().deco
 				return core.View{Class: deco.OverviewRuler.Class, PointerEvents: core.PointerEventsNone,
 					StyleFunc: func() core.Style {
+						e.textRev.Get()
 						r := m()
-						top, height := rulerPlace(r.first, r.end-r.first, e.lh, e.contentHeight(), float32(e.viewport.Get().Height))
+						topY := e.rowTop(r.first)
+						spanH := max(e.rowTop(r.end)-topY, e.rowHeight(r.first))
+						top, height := rulerPlaceY(topY, spanH, e.contentHeight(), float32(e.viewport.Get().Height))
 						before, share := rulerLane(deco.OverviewRuler.Lane)
 						return merge(core.Style{Position: core.Absolute, Left: core.Pct(before), Width: core.Pct(share), Top: core.Pt(core.Points(top)), Height: core.Pt(core.Points(height))},
 							deco.OverviewRuler.Style)

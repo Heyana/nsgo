@@ -35,6 +35,8 @@ type state struct {
 	sels                  []selection
 	disp                  *display
 	wrap                  int
+	blocks                []blockSpec
+	lineWrap              func(int) int
 	// folded is every folded range, nested ones too; candidates the folds
 	// that can start, computed when asked after an edit.
 	folded     []foldRange
@@ -56,7 +58,7 @@ func (s *state) primary() selection { return s.sels[len(s.sels)-1] }
 
 // relayout lays the text out again.
 func (s *state) relayout() {
-	s.disp = layout(s.r(), outermost(s.folded), s.wrap, s.tab)
+	s.disp = layout(s.r(), outermost(s.folded), s.blocks, s.wrap, s.tab, s.lineWrap)
 }
 
 // foldCandidates is where folds can start.
@@ -280,28 +282,58 @@ func (s *state) lineStart(p pos) pos {
 
 func (s *state) lineEnd(p pos) pos { return pos{p.line, len(s.line(p.line))} }
 
-// vertical is p moved by n rows, at display column goal.
+// vertical is p moved by n rows, at display column goal. Inserted block
+// widget rows (which replace no lines) are skipped in the direction of
+// motion; stepping onto a replacing block enters its first line when moving
+// down or its last line when moving up, and moving again steps past it.
 func (s *state) vertical(sel selection, n int) selection {
+	count := s.disp.count()
+	if count == 0 || n == 0 {
+		return sel
+	}
 	p := sel.head
-	row := s.disp.rowOf(p) + n
+	curRow := s.disp.rowOf(p)
 	goal := sel.goal
 	if goal < 0 {
 		goal = colAt(s.line(p.line), p.col, s.tab)
-		if d := s.disp.row(s.disp.rowOf(p), s.r()); d.start > 0 {
+		if d := s.disp.row(curRow, s.r()); d.block == nil && d.start > 0 {
 			goal -= colAt(s.line(p.line), d.start, s.tab)
 		}
+	}
+	dir := 1
+	if n < 0 {
+		dir = -1
+	}
+	row := curRow + n
+	// Skip inserted-only block rows in the direction of movement.
+	for row >= 0 && row < count {
+		if d := s.disp.row(row, s.r()); d.block != nil && d.block.inserted {
+			row += dir
+			continue
+		}
+		break
 	}
 	switch {
 	case row < 0:
 		return selection{anchor: sel.anchor, head: pos{}, goal: goal}
-	case row >= s.disp.count():
+	case row >= count:
 		return selection{anchor: sel.anchor, head: s.r().end(), goal: goal}
 	}
 	d := s.disp.row(row, s.r())
+	if d.block != nil {
+		targetLine := d.block.startLine
+		if dir < 0 {
+			targetLine = d.block.endLine
+		}
+		targetLine = min(max(targetLine, 0), s.r().lines()-1)
+		l := s.line(targetLine)
+		col := byteAtCol(l, 0, len(l), goal, s.tab)
+		return selection{anchor: sel.anchor, head: pos{targetLine, col}, goal: goal}
+	}
 	l := s.line(d.line)
 	base := colAt(l, d.start, s.tab)
 	end := d.end
-	if row+1 < s.disp.count() && s.disp.row(row+1, s.r()).line == d.line {
+	if row+1 < count && s.disp.row(row+1, s.r()).block == nil && s.disp.row(row+1, s.r()).line == d.line {
 		// The end of a wrapped row is the next row's start.
 		_, n := utf8.DecodeLastRuneInString(l[:end])
 		end -= n

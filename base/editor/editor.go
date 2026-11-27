@@ -42,6 +42,7 @@ const (
 // through edits.
 type mark struct {
 	from, to pos
+	after    bool
 	diag     *Diagnostic
 	deco     *Decoration
 }
@@ -82,6 +83,7 @@ type ed struct {
 	font                                      core.Font
 	charW, lh                                 float32
 	widest                                    int
+	widestPx                                  float32
 	// The last text OnChange reported, to know its echo.
 	reported string
 	version  int
@@ -94,12 +96,21 @@ type ed struct {
 	scope     []span
 	marks     []mark
 	// strip says the gutter holds its strip of marks, hasShapes that a
-	// decoration hides or replaces its range.
+	// decoration hides or replaces its inline range.
 	strip     bool
 	hasShapes bool
-	comp      completion
-	compSel   int
-	nextID    int
+	// Variable row geometry: block decorations, per-line font/height metrics,
+	// measured block heights and prefix-sum row tops (nil while uniform).
+	blocks      []blockSpec
+	blockH      map[*Decoration]float32
+	blockPosH   map[blockPosKey]float32
+	lineMetrics map[int]lineMetric
+	fontWidths  map[core.Font]float32
+	tops        []float32
+	uniform     bool
+	comp        completion
+	compSel     int
+	nextID      int
 	// nextInline numbers the inline completion requests apart.
 	nextInline int
 	// The pending definition request and the hover.
@@ -146,7 +157,7 @@ func newEd(cx *core.Scope, p Editor) *ed {
 		composing: core.NewSignal(cx, ""), sink: core.NewSignal(cx, ""),
 		link: core.NewSignalFunc(cx, span{}, func(a, b span) bool { return a == b }), hasLink: core.NewSignal(cx, false),
 		inline:  core.NewSignal(cx, ""),
-		sinkRef: &core.Ref{}, vs: &core.Ref{}, hs: &core.Ref{}, box: &core.Ref{}, win: window.New(4, 16)}
+		sinkRef: &core.Ref{}, vs: &core.Ref{}, hs: &core.Ref{}, box: &core.Ref{}, win: window.New(4, 16), uniform: true}
 	lang := languageOf(p.Language)
 	e.st.lang = lang
 	e.st.tab, e.st.hard = lang.tabSize, lang.hardTabs
@@ -263,12 +274,21 @@ func (e *ed) wrapToWidth() bool {
 		return false
 	}
 	w := e.viewport.GetUntracked().Width
-	cols := max(int((float32(w)-e.gutterWidth()-2*pad)/e.charW), 8)
-	if cols == e.st.wrap {
+	avail := float32(w) - e.gutterWidth() - 2*pad
+	cols := max(int(avail/e.charW), 8)
+	if len(e.lineMetrics) > 0 {
+		e.st.lineWrap = func(line int) int {
+			return max(int(avail/e.lineCharW(line)), 8)
+		}
+	} else {
+		e.st.lineWrap = nil
+	}
+	if cols == e.st.wrap && len(e.lineMetrics) == 0 {
 		return false
 	}
 	e.st.wrap = cols
 	e.st.relayout()
+	e.rebuildGeometry()
 	return true
 }
 
@@ -305,6 +325,7 @@ func (e *ed) changed(changes []change, report bool) {
 		m := &e.marks[i]
 		m.from, m.to = mapThrough(changes, m.from, true), mapThrough(changes, m.to, false)
 	}
+	e.syncLayout(false)
 	if len(e.scope) > 0 {
 		for i := range e.scope {
 			e.scope[i] = span{mapThrough(changes, e.scope[i].from, true), mapThrough(changes, e.scope[i].to, false)}
@@ -371,13 +392,24 @@ func (e *ed) selMoved() {
 func (e *ed) measure() {
 	r := e.st.r()
 	if r.lines() > measureAll {
+		e.widestPx = max(e.widestPx, float32(e.widest)*e.charW)
 		return
 	}
 	w := 0
+	var wpx float32
 	for i := range r.lines() {
-		w = max(w, colAt(r.line(i), len(r.line(i)), e.st.tab))
+		cols := colAt(r.line(i), len(r.line(i)), e.st.tab)
+		w = max(w, cols)
+		if e.lineMetrics != nil {
+			wpx = max(wpx, float32(cols)*e.lineCharW(i))
+		}
 	}
 	e.widest = w
+	if e.lineMetrics == nil {
+		e.widestPx = float32(w) * e.charW
+	} else {
+		e.widestPx = wpx
+	}
 }
 
 func (e *ed) measureChanged(changes []change) {
@@ -388,7 +420,9 @@ func (e *ed) measureChanged(changes []change) {
 	}
 	for _, c := range changes {
 		for l := c.from.line; l <= c.newEnd.line && l < r.lines(); l++ {
-			e.widest = max(e.widest, colAt(r.line(l), len(r.line(l)), e.st.tab))
+			cols := colAt(r.line(l), len(r.line(l)), e.st.tab)
+			e.widest = max(e.widest, cols)
+			e.widestPx = max(e.widestPx, float32(cols)*e.lineCharW(l))
 		}
 	}
 }
@@ -476,10 +510,15 @@ func (e *ed) clearSink() {
 // run runs a command.
 func (e *ed) run(c Command) {
 	s := e.st
-	page := max(int(float32(e.viewport.GetUntracked().Height)/e.lh)-1, 1)
 	move := func(extend bool, f func(p pos) pos) { s.moveBy(extend, f); e.moved() }
 	vert := func(extend bool, n int) {
 		s.move(extend, func(sel selection) selection { return s.vertical(sel, n) })
+		e.moved()
+	}
+	pageVert := func(extend bool, dir int) {
+		s.move(extend, func(sel selection) selection {
+			return s.vertical(sel, e.pageStep(s.disp.rowOf(sel.head), dir))
+		})
 		e.moved()
 	}
 	switch c {
@@ -494,9 +533,9 @@ func (e *ed) run(c Command) {
 	case MoveDown, SelectDown:
 		vert(c == SelectDown, 1)
 	case MovePageUp, SelectPageUp:
-		vert(c == SelectPageUp, -page)
+		pageVert(c == SelectPageUp, -1)
 	case MovePageDown, SelectPageDown:
-		vert(c == SelectPageDown, page)
+		pageVert(c == SelectPageDown, 1)
 	case MoveWordLeft, SelectWordLeft:
 		move(c == SelectWordLeft, s.wordLeft)
 	case MoveWordRight, SelectWordRight:
@@ -828,11 +867,12 @@ func (e *ed) keys(cx *core.Scope) {
 // with center.
 func (e *ed) reveal(p pos, center bool) {
 	vp := e.viewport.GetUntracked()
-	if vp.Height == 0 {
+	if vp.Height == 0 || e.st.disp.count() == 0 {
 		return
 	}
 	row := e.st.disp.rowOf(p)
-	top := float32(row) * e.lh
+	top := e.rowTop(row)
+	rh := e.rowHeight(row)
 	y := float32(e.scrollY.GetUntracked())
 	h := float32(vp.Height)
 	around := e.p.CursorSurroundingLines
@@ -843,11 +883,11 @@ func (e *ed) reveal(p pos, center bool) {
 	to := y
 	switch {
 	case center:
-		to = top - h/2 + e.lh/2
+		to = top - h/2 + rh/2
 	case top-margin < y:
 		to = top - margin
-	case top+e.lh+margin > y+h:
-		to = top + e.lh + margin - h
+	case top+rh+margin > y+h:
+		to = top + rh + margin - h
 	}
 	to = max(min(to, e.contentHeight()-h), 0)
 	if to != y {
@@ -856,14 +896,15 @@ func (e *ed) reveal(p pos, center bool) {
 	}
 	if !e.p.SoftWrap {
 		x := e.xOf(p)
+		cw := e.lineCharW(p.line)
 		sx := float32(e.scrollX.GetUntracked())
 		w := float32(vp.Width) - e.gutterWidth()
 		toX := sx
 		switch {
-		case x-e.charW < sx:
-			toX = max(x-4*e.charW, 0)
-		case x+2*e.charW > sx+w:
-			toX = x + 4*e.charW - w
+		case x-cw < sx:
+			toX = max(x-4*cw, 0)
+		case x+2*cw > sx+w:
+			toX = x + 4*cw - w
 		}
 		if toX != sx {
 			e.hs.ScrollTo(core.Point{X: core.Points(toX)}, false)
@@ -874,28 +915,45 @@ func (e *ed) reveal(p pos, center bool) {
 
 // xOf is where p is across its row, in the rows' box.
 func (e *ed) xOf(p pos) float32 {
+	if e.st.disp.count() == 0 {
+		return pad
+	}
 	d := e.st.disp.row(e.st.disp.rowOf(p), e.st.r())
-	return pad + float32(e.shownCols(p.line, 0, p.col)-e.shownCols(p.line, 0, d.start))*e.charW
+	if d.block != nil {
+		return pad
+	}
+	return pad + float32(e.shownCols(p.line, 0, p.col)-e.shownCols(p.line, 0, d.start))*e.lineCharW(p.line)
 }
 
 // posAt is the place at pt in the rows' box.
 func (e *ed) posAt(pt core.Point) pos {
 	n := e.st.disp.count()
-	row := min(max(int(float32(pt.Y)/e.lh), 0), n-1)
-	if float32(pt.Y) < 0 {
+	if n == 0 || float32(pt.Y) < 0 {
 		return pos{}
 	}
-	if int(float32(pt.Y)/e.lh) >= n {
+	row := e.rowAtY(float32(pt.Y))
+	if row < 0 {
+		return pos{}
+	}
+	if row >= n {
 		return e.st.r().end()
 	}
 	d := e.st.disp.row(row, e.st.r())
+	if d.block != nil {
+		line := min(max(d.block.startLine, 0), e.st.r().lines()-1)
+		return pos{line, 0}
+	}
 	l := e.st.line(d.line)
 	end := d.end
-	if row+1 < n && e.st.disp.row(row+1, e.st.r()).line == d.line && end > d.start {
-		_, w := utf8.DecodeLastRuneInString(l[:end])
-		end -= w
+	if row+1 < n {
+		next := e.st.disp.row(row+1, e.st.r())
+		if next.block == nil && next.line == d.line && end > d.start {
+			_, w := utf8.DecodeLastRuneInString(l[:end])
+			end -= w
+		}
 	}
-	col := e.shownCols(d.line, 0, d.start) + int((float32(pt.X)-pad+e.charW/2)/e.charW)
+	cw := e.lineCharW(d.line)
+	col := e.shownCols(d.line, 0, d.start) + int((float32(pt.X)-pad+cw/2)/cw)
 	return pos{d.line, e.byteAtShownCol(d.line, d.start, end, col)}
 }
 
@@ -914,7 +972,7 @@ func (e *ed) gutterWidth() float32 {
 }
 
 func (e *ed) contentHeight() float32 {
-	rows := float32(e.st.disp.count()) * e.lh
+	rows := e.totalRowsHeight()
 	switch {
 	case e.autoHeight() || e.p.ScrollBeyondLastLine < 0:
 		return rows
@@ -932,13 +990,23 @@ func (e *ed) autoHeight() bool { return e.p.MinRows > 0 || e.p.MaxRows > 0 }
 // within MinRows and MaxRows.
 func (e *ed) rootHeight() float32 {
 	n := e.st.disp.count()
+	if e.uniform {
+		if e.p.MinRows > 0 {
+			n = max(n, e.p.MinRows)
+		}
+		if e.p.MaxRows > 0 {
+			n = min(n, e.p.MaxRows)
+		}
+		return float32(n) * e.lh
+	}
+	h := e.totalRowsHeight()
+	if e.p.MaxRows > 0 && n > e.p.MaxRows {
+		h = e.rowTop(e.p.MaxRows)
+	}
 	if e.p.MinRows > 0 {
-		n = max(n, e.p.MinRows)
+		h = max(h, float32(e.p.MinRows)*e.lh)
 	}
-	if e.p.MaxRows > 0 {
-		n = min(n, e.p.MaxRows)
-	}
-	return float32(n) * e.lh
+	return h
 }
 
 // windowRows is the rows made (tracked).
@@ -947,14 +1015,17 @@ func (e *ed) windowRows() (int, int) {
 	vp := e.viewport.Get()
 	y := float32(e.scrollY.Get())
 	n := e.st.disp.count()
-	first := min(max(int(y/e.lh), 0), n)
-	last := min(int((y+max(float32(vp.Height), 40*e.lh))/e.lh)+1, n)
+	if n == 0 {
+		return 0, 0
+	}
+	first := e.rowAtYClamped(y)
+	last := min(e.rowAtYClamped(y+max(float32(vp.Height), 40*e.lh))+1, n)
 	return e.win.Span(first, max(last, first), n)
 }
 
 // highlight hands the next job to a goroutine of its own.
 func (e *ed) highlight(from, to int) {
-	if e.hlRunning || e.hl == nil {
+	if e.hlRunning || e.hl == nil || e.st.disp.count() == 0 {
 		return
 	}
 	r := e.st.r()
@@ -1132,22 +1203,27 @@ func (e *ed) setMarks(diags []Diagnostic, decos []Decoration) {
 		e.marks = append(e.marks, mark{from: from, to: to, diag: &d})
 	}
 	hasShapes := false
+	lines := e.st.r().lines()
 	for i := range decos {
 		d := decos[i]
-		if d.Hidden || d.Replace != nil {
+		if !d.Block && (d.Hidden || d.Replace != nil) {
 			hasShapes = true
 		}
-		e.marks = append(e.marks, mark{from: e.pos(d.Range.Start), to: e.pos(d.Range.End), deco: &d})
+		after := d.Range.Start.Column > 0 || d.Range.Start.Line >= lines
+		e.marks = append(e.marks, mark{from: e.pos(d.Range.Start), to: e.pos(d.Range.End), after: after, deco: &d})
 	}
 	e.hasShapes = hasShapes
 	sort.SliceStable(e.marks, func(i, j int) bool { return e.marks[i].from.less(e.marks[j].from) })
 	strip := e.hasGutterMarks()
+	layoutChanged := e.syncLayout(false)
 	e.cx.Batch(func() {
 		e.marksRev.Update(inc)
 		if strip != e.strip {
 			// The text moves over or back, and may wrap otherwise.
 			e.strip = strip
 			e.wrapToWidth()
+			e.textRev.Update(inc)
+		} else if layoutChanged {
 			e.textRev.Update(inc)
 		}
 	})
@@ -1192,6 +1268,7 @@ func (e *ed) fold(line int, fold bool) {
 
 func (e *ed) foldsChanged() {
 	e.st.relayout()
+	e.rebuildGeometry()
 	e.textRev.Update(inc)
 	e.selRev.Update(inc)
 	if e.p.OnFoldChange != nil {

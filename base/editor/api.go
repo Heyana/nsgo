@@ -129,9 +129,11 @@ type Edit struct {
 type Bounds struct{ Bounds, PageBounds core.Bounds }
 
 // Decoration styles a range of the text with Style, and the rows of its
-// lines behind the text with LineStyle; Kind, when set, colors its text as
-// the highlighting's kind of that name (keyword, string, comment, number,
-// title, attr, built), the app's own highlighting.
+// lines with LineStyle; Kind, when set, colors its text as the highlighting's
+// kind of that name (keyword, string, comment, number, title, attr, built),
+// the app's own highlighting. LineStyle's FontSize, LineHeight, FontFamily,
+// FontWeight, FontStyle and Color also style the lines' text and adjust each
+// line's height and column metrics.
 type Decoration struct {
 	Range Range
 	// Class goes under Style, and LineClass under LineStyle.
@@ -151,16 +153,34 @@ type Decoration struct {
 	// bold word while the caret is off it, giving new decorations as the
 	// caret moves. The text keeps its offsets, so keys, selections and
 	// copying see the characters as they are; a range across lines hides
-	// each line's part and keeps the line breaks. Soft wrap still breaks
-	// rows at the text's own columns.
+	// each line's part and keeps the line breaks unless Block is set. Soft
+	// wrap still breaks rows at the text's own columns.
 	Hidden bool
 	// Replace shows a view in the range's place instead of its characters,
 	// keeping their columns: the text after it stays where it was, so
 	// carets, selections and presses keep their places. The view fills a box
 	// as wide as the columns and as tall as the line, and takes its own
-	// presses. A range across lines, or split by soft wrap, hides its text
-	// and shows no view.
+	// presses. Unless Block is set, a range across lines, or split by soft
+	// wrap, hides its text and shows no view.
 	Replace core.Node
+	// Block makes a Replace or Hidden decoration operate on whole lines
+	// between lines instead of inline characters:
+	//   - With a non-empty Range and Replace != nil: hides every line the
+	//     range covers (Start.Line through End.Line, excluding End.Line when
+	//     End.Column == 0 and End.Line > Start.Line) and draws Replace as a
+	//     full-width row in their place (a table, image or embedded note).
+	//   - With a non-empty Range and Hidden == true (and Replace == nil):
+	//     hides those whole lines completely with zero height (such as
+	//     frontmatter).
+	//   - With an empty Range (Start == End) and Replace != nil: inserts
+	//     Replace as a row between lines without hiding any line — before
+	//     Start.Line when Start.Column == 0 (such as a code block header),
+	//     or after Start.Line when Start.Column > 0.
+	Block bool
+	// Height fixes the height in points of a Block decoration's view. When
+	// 0, the block uses one line height until its view lays out and then
+	// sizes to its laid-out height.
+	Height core.Points
 }
 
 // TokenKind is a kind of token the highlighting colors: comment,

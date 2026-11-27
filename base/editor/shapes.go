@@ -50,7 +50,7 @@ func (e *ed) shapesIn(line int) []shape {
 			break
 		}
 		d := m.deco
-		if d == nil || !d.Hidden && d.Replace == nil {
+		if d == nil || d.Block || !d.Hidden && d.Replace == nil {
 			continue
 		}
 		if m.to.line < line {
@@ -256,7 +256,7 @@ func (e *ed) byteAtShownCol(line, from, to, target int) int {
 // replacement is a Decoration.Replace drawn in its range's columns on a row.
 type replacement struct {
 	deco          *Decoration
-	row           int
+	row, line     int
 	leftCol, cols int
 }
 
@@ -276,6 +276,9 @@ func (e *ed) replacementList() []replacement {
 	var shapes []shape
 	for row := s; row < end; row++ {
 		dr := e.st.disp.row(row, r)
+		if dr.block != nil {
+			continue
+		}
 		if dr.line != line {
 			line = dr.line
 			l = r.line(line)
@@ -304,6 +307,7 @@ func (e *ed) replacementList() []replacement {
 			out = append(out, replacement{
 				deco:    sh.deco,
 				row:     row,
+				line:    dr.line,
 				leftCol: leftCol,
 				cols:    cols,
 			})
@@ -320,8 +324,10 @@ func (e *ed) replacementLayer() core.Node {
 		deco := rep().deco
 		return core.View{
 			StyleFunc: func() core.Style {
+				e.textRev.Get()
 				r := rep()
-				return merge(at(pad+float32(r.leftCol)*e.charW, float32(r.row)*e.lh, float32(r.cols)*e.charW, e.lh),
+				cw := e.lineCharW(r.line)
+				return merge(at(pad+float32(r.leftCol)*cw, e.rowTop(r.row), float32(r.cols)*cw, e.rowHeight(r.row)),
 					core.Style{Overflow: core.Hidden, Cursor: core.CursorDefault})
 			},
 			Children: []core.Node{deco.Replace},

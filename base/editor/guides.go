@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"math"
 	"slices"
 	"strings"
 
@@ -40,18 +41,24 @@ func (e *ed) guideRects() []rect {
 	var open []int
 	for row := s; row < end; row++ {
 		d := e.st.disp.row(row, r)
+		if d.block != nil {
+			for k := range open {
+				open[k] = -1
+			}
+			continue
+		}
 		levels := e.indentLevel(d.line) / tab
-		y := float32(row) * e.lh
+		y, rh := e.rowTop(row), e.rowHeight(row)
 		for k := range levels {
-			if k < len(open) && open[k] >= 0 && out[open[k]].y+out[open[k]].h == y {
-				out[open[k]].h += e.lh
+			if k < len(open) && open[k] >= 0 && math.Abs(float64(out[open[k]].y+out[open[k]].h-y)) < 0.01 {
+				out[open[k]].h += rh
 				continue
 			}
 			for len(open) <= k {
 				open = append(open, -1)
 			}
 			open[k] = len(out)
-			out = append(out, rect{pad + float32(k*tab)*e.charW, y, 1, e.lh, &e.styles().IndentGuide, e.p.Classes.IndentGuide})
+			out = append(out, rect{pad + float32(k*tab)*e.charW, y, 1, rh, &e.styles().IndentGuide, e.p.Classes.IndentGuide})
 		}
 		for k := levels; k < len(open); k++ {
 			open[k] = -1
@@ -78,10 +85,11 @@ func (e *ed) indentLevel(line int) int {
 	return min(near(-1), near(1))
 }
 
-// glyph is a mark drawn over the rows: its place and text.
+// glyph is a mark drawn over the rows: its place, metrics and text.
 type glyph struct {
-	x, y float32
-	text string
+	x, y, h float32
+	fs      core.Points
+	text    string
 }
 
 // glyphs are the whitespace marks of the rows made: a · per space, a run
@@ -98,15 +106,19 @@ func (e *ed) glyphs() core.Node {
 		var out []glyph
 		for row := s; row < end; row++ {
 			d := e.st.disp.row(row, r)
+			if d.block != nil {
+				continue
+			}
 			l := r.line(d.line)
 			shapes := e.shapesIn(d.line)
-			y := float32(row) * e.lh
+			y, rh := e.rowTop(row), e.rowHeight(row)
+			cw, fs := e.lineCharW(d.line), e.lineFontSize(d.line)
 			base := e.shownCols(d.line, 0, d.start)
 			col := base
 			run, runCol := 0, 0
 			flush := func() {
 				if run > 0 {
-					out = append(out, glyph{pad + float32(runCol-base)*e.charW, y, strings.Repeat("·", run)})
+					out = append(out, glyph{pad + float32(runCol-base)*cw, y, rh, fs, strings.Repeat("·", run)})
 					run = 0
 				}
 			}
@@ -127,7 +139,7 @@ func (e *ed) glyphs() core.Node {
 					run++
 				case '\t':
 					flush()
-					out = append(out, glyph{pad + float32(col-base)*e.charW, y, "→"})
+					out = append(out, glyph{pad + float32(col-base)*cw, y, rh, fs, "→"})
 				default:
 					flush()
 				}
@@ -158,7 +170,7 @@ func (e *ed) glyphs() core.Node {
 			StyleFunc: func() core.Style {
 				x := g()
 				return merge(core.Style{Position: core.Absolute, Left: core.Pt(core.Points(x.x)), Top: core.Pt(core.Points(x.y)),
-					LineHeight: core.Points(e.lh), WhiteSpace: core.WhiteSpaceNoWrap}, e.styles().Whitespace)
+					FontSize: x.fs, LineHeight: core.Points(x.h), WhiteSpace: core.WhiteSpaceNoWrap}, e.styles().Whitespace)
 			},
 		}
 	})
@@ -176,15 +188,22 @@ func (e *ed) inlineView() core.Node {
 			e.marksRev.Get()
 			h := e.st.primary().head
 			row := e.st.disp.rowOf(h)
+			top, rh := e.rowTop(row), e.rowHeight(row)
+			fs := e.lineFontSize(h.line)
 			var lines []core.Node
 			for i, l := range strings.Split(text, "\n") {
 				x := float32(pad)
+				y := top
+				lh := rh
 				if i == 0 {
 					x = e.xOf(h)
+				} else {
+					y = top + rh + float32(i-1)*e.lh
+					lh = e.lh
 				}
 				lines = append(lines, core.Text{Content: strings.ReplaceAll(l, "\t", strings.Repeat(" ", e.st.tab)), MaxLines: 1, Class: e.p.Classes.InlineCompletion,
-					Style: core.Style{Position: core.Absolute, Left: core.Pt(core.Points(x)), Top: core.Pt(core.Points(float32(row+i) * e.lh)),
-						LineHeight: core.Points(e.lh), WhiteSpace: core.WhiteSpaceNoWrap},
+					Style: core.Style{Position: core.Absolute, Left: core.Pt(core.Points(x)), Top: core.Pt(core.Points(y)),
+						FontSize: fs, LineHeight: core.Points(lh), WhiteSpace: core.WhiteSpaceNoWrap},
 					StyleFunc: func() core.Style { return e.styles().InlineCompletion }})
 			}
 			return core.Group(lines)

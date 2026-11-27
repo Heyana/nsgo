@@ -121,6 +121,26 @@ func (e *ed) rows() []int {
 	return out
 }
 
+// textRows is the non-block display rows made, for Each.
+func (e *ed) textRows() []int {
+	s, end := e.windowRows()
+	if len(e.blocks) == 0 {
+		out := make([]int, end-s)
+		for i := range out {
+			out[i] = s + i
+		}
+		return out
+	}
+	r := e.st.r()
+	out := make([]int, 0, end-s)
+	for row := s; row < end; row++ {
+		if e.st.disp.row(row, r).block == nil {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
 func (e *ed) gutter() core.Node {
 	s, c := e.styles, &e.p.Classes
 	reach := core.NewMemo(e.cx, e.reach)
@@ -138,14 +158,17 @@ func (e *ed) gutter() core.Node {
 					return -1
 				}
 				d := e.st.disp.row(r, e.st.r())
-				if d.start != 0 {
-					return -1 // a wrapped line's continuation
+				if d.block != nil || d.start != 0 {
+					return -1 // a block row or wrapped line's continuation
 				}
 				return d.line
 			}
 			active := func() bool {
 				e.selRev.Get()
 				l := line()
+				if l < 0 {
+					return false
+				}
 				for _, sel := range e.st.sels {
 					if sel.head.line == l {
 						return true
@@ -170,7 +193,8 @@ func (e *ed) gutter() core.Node {
 						return ""
 					},
 					StyleFunc: func() core.Style {
-						st := merge(core.Style{FlexGrow: 1, TextAlign: core.TextAlignEnd, LineHeight: core.Points(e.lh)}, s().LineNumber)
+						e.textRev.Get()
+						st := merge(core.Style{FlexGrow: 1, TextAlign: core.TextAlignEnd, LineHeight: core.Points(e.rowHeight(row()))}, s().LineNumber)
 						if active() {
 							st = merge(st, s().ActiveLineNumber)
 						}
@@ -187,7 +211,7 @@ func (e *ed) gutter() core.Node {
 				folded := func() bool {
 					e.textRev.Get()
 					l := line()
-					return slices.ContainsFunc(e.st.folded, func(f foldRange) bool { return f.start == l })
+					return l >= 0 && slices.ContainsFunc(e.st.folded, func(f foldRange) bool { return f.start == l })
 				}
 				children = append(children, core.View{
 					Class:     c.FoldMarker,
@@ -211,7 +235,10 @@ func (e *ed) gutter() core.Node {
 							return "⌄"
 						}
 						return ""
-					}, Style: core.Style{LineHeight: core.Points(e.lh)}}},
+					}, StyleFunc: func() core.Style {
+						e.textRev.Get()
+						return core.Style{LineHeight: core.Points(e.rowHeight(row()))}
+					}}},
 				})
 			}
 			return core.View{
@@ -221,8 +248,9 @@ func (e *ed) gutter() core.Node {
 					if e.p.NoLineNumbers && e.p.NoFolding {
 						padding = core.Edges{}
 					}
-					return core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Top: core.Pt(core.Points(float32(row()) * e.lh)),
-						Height: core.Pt(core.Points(e.lh)), Direction: core.Row, Padding: padding}
+					r := row()
+					return core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0), Top: core.Pt(core.Points(e.rowTop(r))),
+						Height: core.Pt(core.Points(e.rowHeight(r))), Direction: core.Row, Padding: padding}
 				},
 				Children: children,
 			}
@@ -237,7 +265,11 @@ func (e *ed) boxWidth() float32 {
 	if e.p.SoftWrap {
 		return w
 	}
-	return max(float32(e.widest+2)*e.charW+2*pad, w)
+	wpx := e.widestPx
+	if wpx == 0 && e.widest > 0 {
+		wpx = float32(e.widest) * e.charW
+	}
+	return max(wpx+2*e.charW+2*pad, w)
 }
 
 func (e *ed) textArea() core.Node {
@@ -290,23 +322,39 @@ func (e *ed) textArea() core.Node {
 		e.layer(func() []rect { return e.matchRects() }),
 		e.layer(func() []rect { return e.selectionRects() }),
 		e.layer(func() []rect { return e.bracketRects() }),
-		core.Each(e.rows, func(r int) int { return r }, func(cx *core.Scope, row func() int, _ func() int) core.Node {
+		core.Each(e.textRows, func(r int) int { return r }, func(cx *core.Scope, row func() int, _ func() int) core.Node {
 			return core.View{
 				Class: c.Line,
 				StyleFunc: func() core.Style {
+					e.textRev.Get()
+					e.marksRev.Get()
+					r := row()
 					return merge(core.Style{Position: core.Absolute, Left: core.Pt(0), Right: core.Pt(0),
-						Top: core.Pt(core.Points(float32(row()) * e.lh)), Height: core.Pt(core.Points(e.lh))}, s().Line)
+						Top: core.Pt(core.Points(e.rowTop(r))), Height: core.Pt(core.Points(e.rowHeight(r)))}, s().Line)
 				},
 				Children: []core.Node{core.Text{
 					MaxLines:  1,
 					SpansFunc: func() []core.Span { return e.rowSpans(row()) },
-					Style: core.Style{Position: core.Absolute, Left: core.Pt(pad), Top: core.Pt(0), LineHeight: core.Points(e.lh),
-						WhiteSpace: core.WhiteSpaceNoWrap},
+					StyleFunc: func() core.Style {
+						e.textRev.Get()
+						e.marksRev.Get()
+						r := row()
+						base := core.Style{Position: core.Absolute, Left: core.Pt(pad), Top: core.Pt(0), LineHeight: core.Points(e.rowHeight(r)),
+							WhiteSpace: core.WhiteSpaceNoWrap}
+						if r < e.st.disp.count() {
+							d := e.st.disp.row(r, e.st.r())
+							if d.block == nil {
+								return merge(base, e.lineTextStyle(d.line))
+							}
+						}
+						return base
+					},
 				}},
 			}
 		}),
 		e.glyphs(),
 		e.replacementLayer(),
+		e.blockLayer(),
 		e.layer(func() []rect { return e.linkRects() }),
 		e.layer(func() []rect { return e.caretRects() }),
 		e.inlineView(),
@@ -359,18 +407,30 @@ func (e *ed) spanRects(a, b pos, style *core.Style, class string, out []rect) []
 
 // rowRects is the boxes of the text from a to b on rows from to to.
 func (e *ed) rowRects(a, b pos, from, to int, style *core.Style, class string, out []rect) []rect {
+	if e.st.disp.count() == 0 || from >= to {
+		return out
+	}
 	r := e.st.r()
 	first := max(e.st.disp.rowOf(a), from)
 	last := min(e.st.disp.rowOf(b), to-1)
 	for row := first; row <= last; row++ {
 		d := e.st.disp.row(row, r)
+		y, h := e.rowTop(row), e.rowHeight(row)
+		if d.block != nil {
+			if !d.block.inserted && a.line <= d.block.endLine && b.line >= d.block.startLine {
+				w := max(e.boxWidth()-pad, e.charW)
+				out = append(out, rect{pad, y, w, h, style, class})
+			}
+			continue
+		}
 		if !e.st.disp.visibleLine(d.line) {
 			continue
 		}
 		l := r.line(d.line)
+		cw := e.lineCharW(d.line)
 		// Measure on this row: a wrapped row's end is the next row's start.
 		xAt := func(col int) float32 {
-			return pad + float32(e.shownCols(d.line, 0, col)-e.shownCols(d.line, 0, d.start))*e.charW
+			return pad + float32(e.shownCols(d.line, 0, col)-e.shownCols(d.line, 0, d.start))*cw
 		}
 		x0 := float32(pad)
 		if a.line == d.line && a.col >= d.start {
@@ -380,10 +440,10 @@ func (e *ed) rowRects(a, b pos, from, to int, style *core.Style, class string, o
 		if b.line == d.line && b.col <= d.end {
 			x1 = xAt(b.col)
 		} else if d.end == len(l) {
-			x1 += e.charW / 2
+			x1 += cw / 2
 		}
 		if x1 > x0 {
-			out = append(out, rect{x0, float32(row) * e.lh, x1 - x0, e.lh, style, class})
+			out = append(out, rect{x0, y, x1 - x0, h, style, class})
 		}
 	}
 	return out
@@ -395,6 +455,22 @@ func (e *ed) lineRects() []rect {
 	var out []rect
 	w := e.boxWidth()
 	s, end := e.windowRows()
+	n := e.st.disp.count()
+	r := e.st.r()
+	emitLine := func(line int, style *core.Style, class string) {
+		if !e.st.disp.visibleLine(line) {
+			return
+		}
+		for row := e.st.disp.lineRow(line); row < n; row++ {
+			d := e.st.disp.row(row, r)
+			if d.block != nil || d.line != line {
+				break
+			}
+			if row >= s && row < end {
+				out = append(out, rect{0, e.rowTop(row), w, e.rowHeight(row), style, class})
+			}
+		}
+	}
 	if !e.p.NoActiveLine {
 		seen := map[int]bool{}
 		for _, sel := range e.st.sels {
@@ -402,21 +478,17 @@ func (e *ed) lineRects() []rect {
 				continue
 			}
 			seen[sel.head.line] = true
-			row := e.st.disp.lineRow(sel.head.line)
-			if row >= s && row < end {
-				out = append(out, rect{0, float32(row) * e.lh, w, e.lh, &e.styles().ActiveLine, e.p.Classes.ActiveLine})
-			}
+			emitLine(sel.head.line, &e.styles().ActiveLine, e.p.Classes.ActiveLine)
 		}
 	}
-	for _, m := range e.marks {
-		if m.deco == nil || m.deco.LineStyle.IsZero() && m.deco.LineClass == "" {
+	for i := range e.marks {
+		m := &e.marks[i]
+		if m.deco == nil || m.deco.Block || !hasLineBoxStyle(m.deco.LineStyle) && m.deco.LineClass == "" {
 			continue
 		}
-		for line := m.from.line; line <= m.to.line; line++ {
-			row := e.st.disp.lineRow(line)
-			if row >= s && row < end && e.st.disp.visibleLine(line) {
-				out = append(out, rect{0, float32(row) * e.lh, w, e.lh, &m.deco.LineStyle, m.deco.LineClass})
-			}
+		toLine := lastLine(m)
+		for line := m.from.line; line <= toLine; line++ {
+			emitLine(line, &m.deco.LineStyle, m.deco.LineClass)
 		}
 	}
 	return out
@@ -425,7 +497,7 @@ func (e *ed) lineRects() []rect {
 func (e *ed) matchRects() []rect {
 	e.marksRev.Get()
 	e.selRev.Get()
-	if len(e.matches) == 0 {
+	if len(e.matches) == 0 || e.st.disp.count() == 0 {
 		return nil
 	}
 	current := e.currentMatch()
@@ -493,7 +565,7 @@ func (e *ed) linkRects() []rect {
 	l := e.link.Get()
 	var out []rect
 	for _, r := range e.spanRects(l.from, l.to, &e.styles().DefinitionLink, e.p.Classes.DefinitionLink, nil) {
-		out = append(out, rect{r.x, r.y + e.lh - 2, r.w, 1, r.style, r.class})
+		out = append(out, rect{r.x, r.y + r.h - 2, r.w, 1, r.style, r.class})
 	}
 	return out
 }
@@ -501,7 +573,7 @@ func (e *ed) linkRects() []rect {
 func (e *ed) caretRects() []rect {
 	e.selRev.Get()
 	e.marksRev.Get()
-	if !e.focused.Get() || e.composing.Get() != "" {
+	if !e.focused.Get() || e.composing.Get() != "" || e.st.disp.count() == 0 {
 		return nil
 	}
 	s, end := e.windowRows()
@@ -511,7 +583,7 @@ func (e *ed) caretRects() []rect {
 		if row < s || row >= end {
 			continue
 		}
-		out = append(out, rect{e.xOf(sel.head), float32(row) * e.lh, 1, e.lh, &e.styles().Caret, e.p.Classes.Caret})
+		out = append(out, rect{e.xOf(sel.head), e.rowTop(row), 1, e.rowHeight(row), &e.styles().Caret, e.p.Classes.Caret})
 	}
 	return out
 }
@@ -528,6 +600,9 @@ func (e *ed) rowSpans(row int) []core.Span {
 		return nil
 	}
 	d := e.st.disp.row(row, r)
+	if d.block != nil {
+		return nil
+	}
 	l := r.line(d.line)
 	if d.end > len(l) {
 		d.end = len(l)
@@ -686,8 +761,9 @@ func (e *ed) diagClass(d *Diagnostic) string {
 func (e *ed) caretPage() core.Bounds {
 	b, _ := e.box.Bounds()
 	h := e.st.primary().head
-	return core.Bounds{Origin: core.Point{X: b.Origin.X + core.Points(e.xOf(h)), Y: b.Origin.Y + core.Points(float32(e.st.disp.rowOf(h))*e.lh)},
-		Size: core.Size{Width: 1, Height: core.Points(e.lh)}}
+	row := e.st.disp.rowOf(h)
+	return core.Bounds{Origin: core.Point{X: b.Origin.X + core.Points(e.xOf(h)), Y: b.Origin.Y + core.Points(e.rowTop(row))},
+		Size: core.Size{Width: 1, Height: core.Points(e.rowHeight(row))}}
 }
 
 // sinkView is the input that takes typing, at the primary caret in the
@@ -751,14 +827,16 @@ func (e *ed) sinkView() core.Node {
 			e.textRev.Get()
 			e.marksRev.Get()
 			h := e.st.primary().head
+			row := e.st.disp.rowOf(h)
+			rh := e.rowHeight(row)
 			vp := e.viewport.Get()
 			x := e.gutterWidth() + e.xOf(h) - float32(e.scrollX.Get())
-			y := float32(e.st.disp.rowOf(h))*e.lh - float32(e.scrollY.Get())
+			y := e.rowTop(row) - float32(e.scrollY.Get())
 			x = max(min(x, float32(vp.Width)-2), 0)
-			y = max(min(y, float32(vp.Height)-e.lh), 0)
+			y = max(min(y, float32(vp.Height)-rh), 0)
 			return core.Style{Position: core.Absolute, Left: core.Pt(core.Points(x)), Top: core.Pt(core.Points(y)),
-				Width: core.Pt(1), Height: core.Pt(core.Points(e.lh)), Color: clear, Background: clear,
-				SelectionColor: clear, FontSize: e.font.Size, Padding: core.Edges{}, BorderWidth: 0}
+				Width: core.Pt(1), Height: core.Pt(core.Points(rh)), Color: clear, Background: clear,
+				SelectionColor: clear, FontSize: e.lineFontSize(h.line), Padding: core.Edges{}, BorderWidth: 0}
 		},
 	}
 }
@@ -870,7 +948,7 @@ func (e *ed) completionList() core.Node {
 				e.marksRev.Get()
 				b := e.caretPage()
 				q := len(e.query())
-				b.Origin.X -= core.Points(float32(q) * e.charW)
+				b.Origin.X -= core.Points(float32(q) * e.lineCharW(e.st.primary().head.line))
 				return b
 			},
 			Placement: core.PlaceBottom, Align: core.AlignStart, Offset: 2, Margin: 4,
@@ -1002,12 +1080,14 @@ func (e *ed) handles() core.Node {
 					e.selRev.Get()
 					e.marksRev.Get()
 					p := end()
-					y := float32(e.st.disp.rowOf(p)) * e.lh
+					row := e.st.disp.rowOf(p)
+					rh := e.rowHeight(row)
+					y := e.rowTop(row)
 					if start {
 						y -= knob
 					}
 					return core.Style{Position: core.Absolute, Left: core.Pt(core.Points(e.xOf(p) - knob)), Top: core.Pt(core.Points(y)),
-						Width: core.Pt(core.Points(2 * knob)), Height: core.Pt(core.Points(e.lh + knob)), AlignItems: core.AlignCenter,
+						Width: core.Pt(core.Points(2 * knob)), Height: core.Pt(core.Points(rh + knob)), AlignItems: core.AlignCenter,
 						JustifyContent: map[bool]core.Justify{true: core.JustifyStart, false: core.JustifyEnd}[start]}
 				},
 				Responder: &core.Responder{Claims: []core.TouchClaim{{}}, Keep: true, OnMove: func(ev core.ResponderEvent) {
@@ -1209,7 +1289,8 @@ func (r *Ref) CaretBounds() (b Bounds, ok bool) {
 		return Bounds{}, false
 	}
 	h := r.e.st.primary().head
-	return r.e.boxOf(rect{x: r.e.xOf(h), y: float32(r.e.st.disp.rowOf(h)) * r.e.lh, w: 1, h: r.e.lh})
+	row := r.e.st.disp.rowOf(h)
+	return r.e.boxOf(rect{x: r.e.xOf(h), y: r.e.rowTop(row), w: 1, h: r.e.rowHeight(row)})
 }
 
 // ShowCompletions asks for completions at the caret.

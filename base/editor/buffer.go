@@ -310,6 +310,13 @@ func (b *buffer) merges(step undoStep, changes []change, kind editKind) bool {
 
 func isSpace(r rune) bool { return r == ' ' || r == '\t' || r == '\n' }
 
+// clearHistory drops every step of the undo and redo stacks.
+func (b *buffer) clearHistory() {
+	b.undo = nil
+	b.redo = nil
+	b.open = false
+}
+
 // takeUndo undoes the last step: the inverse changes, applied, and the
 // selections it had.
 func (b *buffer) takeUndo() ([]change, []selection, bool) {
