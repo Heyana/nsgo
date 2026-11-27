@@ -152,6 +152,7 @@ An icon prop takes a name `ui.Icons` gave or an SVG document. An app lists the L
 - `nsgo/mobile` and `nsgo/desktop` are importable everywhere; where they do not apply their calls do nothing and their components render nothing.
 - `nsgo/gamepad` exposes connected game controllers (`pads`, reactive on connect/disconnect), per-frame snapshots (`state`), capability/platform availability (`supported`), and the W3C Standard Gamepad index constants (`Button`, `Axis`), held to the `gamepad` capability (`core.AccessGamepad`).
 - `nsgo/audio` exposes the audio package's sounds on `Scope.LoadSound` (`loadSound`, a URI only, and `supported`) with a handle for each playback, held to the `audio` capability (`core.AccessAudio`). It has no limit setter: a package's scope is restricted, so core keeps its sounds within NSH's default quotas whatever `audio.SetSoundLimits` set, and a load past one rejects with `ERR_NSH_QUOTA_EXCEEDED` and the reason `quota-exceeded`. It has no `AudioPlayer` yet ([roadmap](../roadmap.md#games)).
+- `nsgo/updater` exposes Go's `updater` package (`checkForUpdate`, `checkInBackground`, `checkDaily`, `capability`, `status`, `setAutomaticChecks`, `setAutomaticDownloads`) on the same platform updaters ([updates](updates.md)). Like `nsgo/desktop` and `nsgo/web`, it is withheld from `SandboxModules` by default because update checks, installs, restarts and updater preferences act on the host app; hosts opt a sandbox in through `Sandbox.Modules`.
 
 ## Core's part
 

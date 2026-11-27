@@ -466,6 +466,8 @@ updates:
 
 在绑定中读取 `updater.Status(cx)`，即可跟踪 `Capability`、`AutomaticChecks`、`AutomaticDownloads`、`Available`、`Notes` 和 `LastCheck`，在 Linux 和 Android 上还能跟踪更新的 `Phase`、`Loaded` 和 `Total`（进度条可用 `Fraction()`）。`updater.SetAutomaticChecks(cx, on)` 保存用户的选择，并在运行时改变每日检查；Sparkle 和 WinSparkle 使用各自的设置，Linux、Android 和 iOS 使用私有存储分区。`updater.SetAutomaticDownloads(cx, on)` 仅支持 macOS，初始值来自 `updates.automatic_downloads`；其他平台报告 false 并忽略该设置。不支持更新或由外部分发渠道管理的版本将两个设置都报告为 false。WinSparkle 在发现更新的回调后读取 appcast，取得状态所需的版本说明，安装仍由 WinSparkle 决定。Linux 在启动时确认 Debian 或 Arch 软件包是否拥有可执行文件，以及应用是否运行于 AppImage；这些副本报告 `ManagedSelf`，其他未受支持的软件包或解压副本在首次检查之前就会报告 `ManagedPage`。
 
+TSX 应用从 `nsgo/updater` 导入对应接口：`checkForUpdate`、`checkInBackground`、`checkDaily`、`capability`、响应式的 `status`、`setAutomaticChecks` 与 `setAutomaticDownloads`，在相同的平台更新器上运行。沙箱中的插件默认不可导入 `nsgo/updater`，除非宿主在 `Sandbox.Modules` 中明确授予。
+
 ## 登录时启动
 
 `desktop.SetLaunchAtLogin(cx, on)` 通过平台的登录机制登记应用，`desktop.LaunchAtLogin(cx, done)` 读取状态。当前工具构建的 MSIX 会自动声明一个默认禁用的启动任务；启用时遵循用户在“启动应用”中的开关和管理员策略。普通 Windows 和 Linux 安装仍使用 Run 注册表项和 XDG 自启动文件，macOS 使用应用包的原生登录服务。

@@ -37,7 +37,7 @@ mount(App);
 
 ## 组件与模块
 
-TSX 从 `nsgo` 导入基本元素，从 `nsgo/base` 导入 `base` 的组件，从 `nsgo/gamepad` 读取游戏手柄（签名包需声明 `gamepad` 权限），从 `nsgo/audio` 加载音效（需声明 `audio` 权限）；应用导入 `tsx/ui` 后，还能从 `nsgo/ui` 导入 `ui` 的组件；`examples/gallery-tsx` 展示了这些组件。
+TSX 从 `nsgo` 导入基本元素，从 `nsgo/base` 导入 `base` 的组件，从 `nsgo/gamepad` 读取游戏手柄（签名包需声明 `gamepad` 权限），从 `nsgo/audio` 加载音效（需声明 `audio` 权限），从 `nsgo/updater` 检查与管理应用更新（`checkForUpdate`、`checkInBackground`、`checkDaily`、`capability`、`status`、`setAutomaticChecks` 与 `setAutomaticDownloads`，沙箱默认不可导入，需通过 `Sandbox.Modules` 放行）；应用导入 `tsx/ui` 后，还能从 `nsgo/ui` 导入 `ui` 的组件；`examples/gallery-tsx` 展示了这些组件。
 
 在 Go 宿主中副作用导入 `github.com/nsgo-dev/nsgo/tsx/diagram`，并导入 `tsx/textview` 或 `tsx/ui`，即可从 `nsgo/base` 使用 Mermaid `Diagram`；未使用它的应用不会链接图表解析器。它接受 `source`、`fontSize`、部分 `theme`、`accessibilityLabel` 和常用样式属性。可以直接使用，也可以给 TextView 提供渲染函数：
 

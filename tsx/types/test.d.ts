@@ -41,7 +41,33 @@ export interface OpenOptions {
   speech?: boolean | null;
   /** Whether the platform has a camera: without it, Picker.canTakePhoto() is false and Picker.takePhoto() rejects. */
   camera?: boolean | null;
+  /** Initial updater capability and preferences seeded before the first render. */
+  updater?: UpdaterTestOptions | null;
 }
+export type TestUpdaterManaged = "unavailable" | "self" | "page" | "development" | "channel" | "store";
+export interface UpdaterTestOptions {
+  managed?: TestUpdaterManaged;
+  store?: string | null;
+  nativePreferences?: boolean;
+  automaticChecks?: boolean;
+  automaticDownloads?: boolean;
+  available?: string | null;
+  notes?: string | null;
+  lastCheck?: Date | number | null;
+}
+export interface UpdateCheckResult {
+  shown?: boolean;
+  restart?: boolean;
+  managed?: TestUpdaterManaged;
+  store?: string | null;
+  app?: string | null;
+  current?: string | null;
+  version?: string | null;
+  url?: string | null;
+  notes?: string | null;
+  error?: string | null;
+}
+export interface UpdateCheckRecord { background: boolean }
 /** A response open's network gives a request. */
 export interface StubResponse {
   /** The status code (200). */
@@ -133,6 +159,12 @@ export declare class App {
   menu(): MenuEntry[] | null;
   /** The URLs the app opened: recorded, never opened. */
   openedUrls(): string[];
+  /** Answers update checks from now on (`updater.Check` / `checkForUpdate`). */
+  onUpdateCheck(handler: ((background: boolean) => UpdateCheckResult | null | undefined) | null): void;
+  /** The update checks the app requested, in order. */
+  updateChecks(): UpdateCheckRecord[];
+  /** How many times the app requested a restart. */
+  restarts(): number;
   /** The speech session running, null when none is. */
   speech(): { lang: string; interim: boolean } | null;
   /** Has the session running hear `text`, the whole transcript so far, final once it will not change. */

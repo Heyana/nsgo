@@ -1,6 +1,6 @@
 # Updates
 
-An app updates the way its platform and the channel it reached the user through do: package `updater` asks, the platform's own updater answers, and `nsgo build` decides from `nsgo.yaml`'s `updates` what each package carries. Read this before changing `updater`, `internal/platform/updates`, a backend's `updates.go` or the tool's ([tool](tool.md#updates)).
+An app updates the way its platform and the channel it reached the user through do: package `updater` asks (and TSX apps reach it through `nsgo/updater`'s `checkForUpdate`, `checkInBackground`, `checkDaily`, `capability`, `status`, `setAutomaticChecks` and `setAutomaticDownloads`), the platform's own updater answers, and `nsgo build` decides from `nsgo.yaml`'s `updates` what each package carries. Read this before changing `updater`, `tsx/updater.go`, `internal/platform/updates`, a backend's `updates.go` or the tool's ([tool](tool.md#updates)).
 
 NSH's `nsh/updater` downloads, verifies and swaps in the next version itself. NSGo leaves that to Sparkle, WinSparkle and the stores, with their windows (decided by the user, 2026-11-10): they handle installs and restarts better than an app's own code would, and stores forbid self-updating apps anyway. Linux and Android have no such updater, so on the direct channel `updater` streams the appcast's signed package directly to disk, verifies it as Sparkle does, and hands it to the package manager that installed the app (`dpkg` or `pacman`), atomically replaces the running AppImage and restarts, or hands the APK to Android's package installer.
 

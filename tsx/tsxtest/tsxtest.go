@@ -371,6 +371,9 @@ func (r *runner) open(call goja.FunctionCall) goja.Value {
 		text := v.String()
 		opts = append(opts, func(a *nsgotest.App) { a.Clipboard = text })
 	}
+	if u, ok := opt("updater").(*goja.Object); ok {
+		opts = append(opts, nsgotest.UpdaterState(r.updaterStateOption(u)))
+	}
 	picks := &pickState{}
 	opts = append(opts, func(a *nsgotest.App) {
 		a.PickImages = func(p nsgotest.ImagePick) []driver.PickedFile {
@@ -794,6 +797,29 @@ func (r *runner) app(a *nsgotest.App, tb *appTB, env driver.Environment, net *ne
 		return append([]map[string]any{}, net.requests...)
 	})
 	read("openedUrls", func(goja.FunctionCall) any { return append([]string{}, a.OpenedURLs...) })
+	read("updateChecks", func(goja.FunctionCall) any {
+		out := make([]map[string]any, len(a.UpdateChecks))
+		for i, bg := range a.UpdateChecks {
+			out[i] = map[string]any{"background": bg}
+		}
+		return out
+	})
+	read("restarts", func(goja.FunctionCall) any { return a.Restarts })
+	read("onUpdateCheck", func(c goja.FunctionCall) any {
+		h, ok := goja.AssertFunction(c.Argument(0))
+		if !ok {
+			a.Update = nil
+			return nil
+		}
+		a.Update = func(background bool) core.UpdateCheck {
+			res, err := h(goja.Undefined(), r.vm.ToValue(background))
+			if err != nil {
+				panic(err)
+			}
+			return r.updateCheckResult(res)
+		}
+		return nil
+	})
 	read("speech", func(goja.FunctionCall) any {
 		if a.Speech == nil {
 			return nil
@@ -1050,4 +1076,107 @@ func (r *runner) bytes(v goja.Value) []byte {
 		out[i] = byte(o.Get(strconv.Itoa(i)).ToInteger())
 	}
 	return out
+}
+
+func parseUpdaterManaged(name string) core.UpdaterManaged {
+	switch name {
+	case "self":
+		return core.UpdaterSelf
+	case "page":
+		return core.UpdaterPage
+	case "development":
+		return core.UpdaterDevelopment
+	case "channel":
+		return core.UpdaterChannel
+	case "store":
+		return core.UpdaterStore
+	default:
+		return core.UpdaterUnavailable
+	}
+}
+
+func (r *runner) updaterStateOption(o *goja.Object) core.UpdaterState {
+	get := func(k string) goja.Value {
+		v := o.Get(k)
+		if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+			return nil
+		}
+		return v
+	}
+	state := core.UpdaterState{Managed: core.UpdaterSelf, AutomaticChecks: true}
+	if v := get("managed"); v != nil {
+		state.Managed = parseUpdaterManaged(v.String())
+	}
+	if v := get("store"); v != nil {
+		state.Store = v.String()
+	}
+	if v := get("nativePreferences"); v != nil {
+		state.NativePreferences = v.ToBoolean()
+	}
+	if v := get("automaticChecks"); v != nil {
+		state.AutomaticChecks = v.ToBoolean()
+	}
+	if v := get("automaticDownloads"); v != nil {
+		state.AutomaticDownloads = v.ToBoolean()
+	}
+	if v := get("available"); v != nil {
+		state.Available = v.String()
+	}
+	if v := get("notes"); v != nil {
+		state.Notes = v.String()
+	}
+	if v := get("lastCheck"); v != nil {
+		if d, ok := v.Export().(time.Time); ok {
+			state.LastCheck = d
+		} else {
+			state.LastCheck = time.UnixMilli(v.ToInteger())
+		}
+	}
+	return state
+}
+
+func (r *runner) updateCheckResult(res goja.Value) core.UpdateCheck {
+	if res == nil || goja.IsNull(res) || goja.IsUndefined(res) {
+		return core.UpdateCheck{}
+	}
+	o := res.ToObject(r.vm)
+	get := func(k string) goja.Value {
+		v := o.Get(k)
+		if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+			return nil
+		}
+		return v
+	}
+	var c core.UpdateCheck
+	if v := get("shown"); v != nil {
+		c.Shown = v.ToBoolean()
+	}
+	if v := get("restart"); v != nil {
+		c.Restart = v.ToBoolean()
+	}
+	if v := get("managed"); v != nil {
+		c.Managed = parseUpdaterManaged(v.String())
+	}
+	if v := get("store"); v != nil {
+		c.Store = v.String()
+	}
+	if v := get("app"); v != nil {
+		c.App = v.String()
+	}
+	if v := get("current"); v != nil {
+		c.Current = v.String()
+	}
+	if v := get("version"); v != nil {
+		c.Version = v.String()
+	}
+	if v := get("url"); v != nil {
+		c.URL = v.String()
+	}
+	if v := get("notes"); v != nil {
+		c.Notes = v.String()
+	}
+	if v := get("error"); v != nil {
+		c.Err = errors.New(v.String())
+	}
+	return c
 }

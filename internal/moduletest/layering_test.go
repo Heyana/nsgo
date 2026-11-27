@@ -130,7 +130,7 @@ var layers = []struct {
 	{"tsx/ui/", []string{"core", "base/", "ui/", "tsx", "tsx/"}},
 	// The scripts the page ships, which the tool writes as the page's files.
 	{"tsx/websrc", nil},
-	{"tsx/", []string{"core", "base/", "mobile", "desktop", "gamepad", "web", "internal/devtools", "tsx", "tsx/bundler", "tsx/internal/js", "tsx/pkg", "tsx/websrc"}},
+	{"tsx/", []string{"core", "base/", "mobile", "desktop", "gamepad", "web", "updater", "internal/devtools", "tsx", "tsx/bundler", "tsx/internal/js", "tsx/pkg", "tsx/websrc"}},
 	// Apps use the public packages only, and the hosts that embed an
 	// example app its package.
 	{"examples/", []string{"", "audio", "cloud", "automation", "core", "base/", "ui/", "gpu", "mobile", "desktop", "desktop/locales", "web", "gamepad", "gameservices", "i18n", "icons/", "nsgotest", "tsx/", "updater", "widget", "examples/"}},

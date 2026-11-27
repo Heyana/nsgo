@@ -159,7 +159,7 @@ A line means "imports". `internal/moduletest/layering_test.go` checks the graph 
 - `nsgotest` imports `internal/shaderir/` for headless fragment translation checks. The `gpu` package keeps the separate pipeline translation API.
 - `gamepad` imports `core`, `internal/driver` and `internal/platform/objcblock`, reaching GameController on Apple, XInput on Windows, evdev on Linux, `navigator.getGamepads` on the web, and `internal/driver`'s bridge on Android and in `nsgotest`. `tsx` imports `gamepad` for `nsgo/gamepad`.
 - `i18n` imports only `core` and `internal/cldr`; `base`'s packages import it for their catalogs, as `mobile/locales` and `ui/chat/locales` do for theirs.
-- `updater` imports only `core` and its catalogs; `internal/backend` imports it, to check as the app starts where the platform's updater keeps no schedule.
+- `updater` imports only `core` and its catalogs; `internal/backend` imports it, to check as the app starts where the platform's updater keeps no schedule, and `tsx` imports it for `nsgo/updater`.
 - `ui` imports `base`, `core`, `mobile`, `desktop` and the icons; `base` never imports it.
 - `tsx/tsxtest` is the one package that imports both `tsx` and `nsgotest`, and `tsx/ui` with the packages below it the TSX packages that import `ui`. `tsx/internal/js`, the engines' API, imports nothing of NSGo's, and on the web reaches the page through `syscall/js`.
 - `base/terminal` is the one package of `base` that is not portable: it loads native libghostty-vt through purego or an embedded browser WebAssembly module, runs programs on desktops and remote sessions there, on iOS and Android and in the browser, and elsewhere builds to report that it cannot (`unportable` in `layering_test.go`).

@@ -21,6 +21,10 @@ func TestTestDeclarationsIncludeCameraPick(t *testing.T) {
 		"camera?: boolean | null;",
 		"camera?: boolean",
 		"onPick(handler: ((pick: Pick) => PickFile | PickFile[] | null) | null): void;",
+		"updater?: UpdaterTestOptions | null;",
+		"onUpdateCheck(handler: ((background: boolean) => UpdateCheckResult | null | undefined) | null): void;",
+		"updateChecks(): UpdateCheckRecord[];",
+		"restarts(): number;",
 	} {
 		if !strings.Contains(decl, want) {
 			t.Errorf("test.d.ts missing %q", want)
