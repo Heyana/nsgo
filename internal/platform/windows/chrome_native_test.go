@@ -14,7 +14,7 @@ import (
 
 // TestHiddenTitleBarNoSystemCaptionButtonsOnMaximize checks that a hidden
 // title bar suppresses WM_NCPAINT, WM_NCUAHDRAWCAPTION and WM_NCUAHDRAWFRAME
-// while keeping DWM non-client rendering (shadow/backdrop), so Windows/DWM
+// while keeping the framed non-client borders (shadow/backdrop), so Windows/DWM
 // never paints system caption buttons behind NSGo's custom buttons on Mica in
 // either normal (unmaximized) or maximized state.
 func TestHiddenTitleBarNoSystemCaptionButtonsOnMaximize(t *testing.T) {
@@ -129,10 +129,22 @@ func TestHiddenTitleBarNoSystemCaptionButtonsOnMaximize(t *testing.T) {
 	}
 
 	onMain(t, hwnd, func(w *window) {
-		const dwmwaNCRenderingEnabled = 1
-		enabled := int32(-1)
-		if hr, _, _ := dwmGetWindowAttribute.Call(w.hwnd, dwmwaNCRenderingEnabled, uintptr(unsafe.Pointer(&enabled)), 4); !failed(hr) && enabled == 0 {
-			t.Error("DWM non-client rendering is disabled on a framed Mica window with a hidden title bar")
+		// Note: DWMWA_NCRENDERING_ENABLED reports FALSE for WS_EX_NOREDIRECTIONBITMAP
+		// windows even while DWM draws their shadow, rounded corners, and Mica backdrop.
+		// Check the frame style and non-client borders instead to confirm the window
+		// stays framed (not shadowless).
+		if w.shadowless() {
+			t.Error("framed Mica window with a hidden title bar should not be shadowless")
+		}
+		style, _, _ := getWindowLongPtrW.Call(w.hwnd, gwlStyle)
+		if style&(wsCaption|wsThickFrame) != wsCaption|wsThickFrame {
+			t.Errorf("framed Mica window lost caption/frame style: %#x", style)
+		}
+		var outer, client rect
+		getWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&outer)))
+		getClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&client)))
+		if outer.Right-outer.Left-client.Right <= 0 || outer.Bottom-outer.Top-client.Bottom <= 0 {
+			t.Errorf("framed Mica window lost its non-client frame borders: outer=%+v client=%+v", outer, client)
 		}
 		for _, msg := range []struct {
 			name string
