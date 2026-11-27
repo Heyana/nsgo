@@ -7,9 +7,9 @@
 //	nsgo mcp   [dev flags] [dir]                         serve MCP on standard input and output to drive the
 //	                                                      app nsgo dev -automation runs, started if none does
 //	nsgo build [-target all|T,...] [flags] [dir]         build packages for nsgo.yaml's targets or all platforms
-//	nsgo test  [-run R] [-bench R] [-junit F] [-trace] [-target T [-fps]] [dir | entry] [-- go test flags]
-//	                                                      run the app's tests or benchmarks, or an entry
-//	                                                      with the steps of standard input, headless or
+//	nsgo test  [-run R] [-bench R] [-junit F] [-trace] [-target T [-fps]] [packages... | dir | entry] [-- go test flags]
+//	                                                      run the packages' or app's tests or benchmarks, or an
+//	                                                      entry with the steps of standard input, headless or
 //	                                                      on a platform
 //	nsgo check [-target T] [-jobs N] [dir]               vet the app and type-check its TSX
 //	nsgo i18n  [-source L] [dir]                         check catalogs and write their Go code
@@ -40,11 +40,15 @@
 //
 // dir is the app's directory, holding nsgo.yaml and its main package; it
 // defaults to the current directory, and may end in /..., as go's
-// patterns do. test and check also take a directory without nsgo.yaml,
-// such as a library or a module's root, and run on every package under
-// it. Flags replace the nsgo.yaml values they name; -h lists them.
+// patterns do. check also takes a directory without nsgo.yaml, such as a
+// library or a module's root, and vets every package under it. Headless,
+// test takes Go package patterns relative to the working directory (a
+// directory names its own package, /... its tree, none tests ./...); a
+// single app directory (with nsgo.yaml), a directory in another Go
+// module, a TSX entry, or a -target run takes that directory or entry.
+// Flags replace the nsgo.yaml values they name; -h lists them.
 //
-// Put flags before the path. Headless, test forwards go test flags after the path, -run, -timeout, -bench and -trace there included; a target run accepts only -short, -count, -cpu, -parallel, -failfast and -fullpath there.
+// Put flags before the path or package patterns. Headless, test forwards go test flags after them, -run, -timeout, -bench and -trace there included; a target run accepts only -short, -count, -cpu, -parallel, -failfast and -fullpath there.
 package main
 
 import (
@@ -138,13 +142,14 @@ func main() {
 		}
 		paths, forwarded := splitTestArgs(fs.Args())
 		o.args = forwarded
-		// A run takes go package patterns, so a shard of the suite names
-		// exactly the packages it tests; one app directory or entry still
-		// tests its own tree, as it always has.
+		// A headless run takes Go package patterns relative to cwd, so a shard
+		// of the suite names exactly the packages it tests; a -target run, an
+		// app directory, another Go module's directory, or a TSX entry loads
+		// that directory or entry whole.
 		dir := ""
 		switch {
 		case len(paths) == 0:
-		case len(paths) == 1 && testEntry(paths[0]):
+		case len(paths) == 1 && (o.target != "" || testEntry(paths[0])):
 			dir = paths[0]
 		default:
 			o.patterns = paths
@@ -177,7 +182,7 @@ func main() {
 		if _, statErr := os.Stat(filepath.Join(dir, "nsgo.yaml")); statErr == nil {
 			var p *project
 			if p, err = load(dir); err == nil {
-				err = p.prepareCatalogs(ctx, ".", false)
+				err = p.prepareCatalogs(ctx, false, ".")
 			}
 		} else {
 			err = generateCatalog(ctx, dir, *source)
@@ -315,7 +320,7 @@ func usage() {
   nsgo dev   [-target native|web|ios|ios_simulator|tvos|tvos_simulator|android] [-android-host] [-hot-reload=false] [-release] [-trace] [-profile cpu|heap|trace] [-automation] [-fps] [-lang L] [-device D] [-port N] [-open=false] [dir]
   nsgo mcp   [dev flags] [dir]
   nsgo build [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [-output DIR] [-open] [-fps] [-run [-device D]] [dir]
-  nsgo test  [-run REGEXP] [-bench REGEXP] [-junit FILE] [-trace] [-target macos|windows|linux|web|ios_simulator|tvos_simulator|android [-fps]] [dir | App.tsx < steps] [-- go test flags]
+  nsgo test  [-run REGEXP] [-bench REGEXP] [-junit FILE] [-trace] [-target macos|windows|linux|web|ios_simulator|tvos_simulator|android [-fps]] [packages... | dir | App.tsx < steps] [-- go test flags]
   nsgo check [-target all|macos_arm64,windows_x64,linux_x64,ios,web,...] [dir]
   nsgo i18n  [-source L] [dir]
   nsgo add   [-dry-run] [-y] module[@version] ...
@@ -332,9 +337,9 @@ func usage() {
   nsgo revoke  -sequence N [-days N] [-keys IDs] [-packages H,...] -out F
 
 dev and build take -name, -id and -version, which replace nsgo.yaml's
-values, and -h lists every flag. Put NSGo flags before the path.
-After --, headless tests accept go test flags; target tests accept
--short, -count, -cpu, -parallel, -failfast and -fullpath.
+values, and -h lists every flag. Put NSGo flags before the path or
+package patterns. After --, headless tests accept go test flags; target
+tests accept -short, -count, -cpu, -parallel, -failfast and -fullpath.
 
 add is go get after a plan: it shows what go.mod and go.sum would
 get, refuses to move NSGo off its releases, and asks before writing;

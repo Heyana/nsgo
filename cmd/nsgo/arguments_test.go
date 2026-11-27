@@ -39,8 +39,11 @@ func TestCommandsRefuseTrailingArguments(t *testing.T) {
 		{[]string{"mcp", "missing-app", "-target", "web"}, "directory: nsgo mcp -target"},
 		{[]string{"check", "missing-app", "-target", "all"}, "directory: nsgo check -target"},
 		{[]string{"test", "missing-app", "-target", "web"}, "directory: nsgo test -target"},
+		{[]string{"test", ".", "./cmd/...", "-target", "web"}, `directory: nsgo test -target "web" "." "./cmd/..."`},
 		{[]string{"test", "missing-app", "--", "-test.target=web"}, "directory: nsgo test -target=web"},
 		{[]string{"test", "--", "-target", "web"}, "directory: nsgo test -target"},
+		{[]string{"test", "missing.tsx", "-v", "./extra"}, `takes package patterns before its flags, not "./extra" after them`},
+		{[]string{"test", "--", "-v", "./extra"}, `takes package patterns before its flags, not "./extra" after them`},
 		{[]string{"init", "missing-app", "-name", "Name"}, "directory: nsgo init -name"},
 		{[]string{"init", "-list", "app"}, "-list takes only -template"},
 		{[]string{"init", "-list", "-name", "Name"}, "-list takes only -template"},
@@ -81,9 +84,16 @@ func TestMisplacedFlagsNameTheCommand(t *testing.T) {
 		executable = func() (string, error) { return exe, nil }
 		fs := flag.NewFlagSet("build", flag.ContinueOnError)
 		fs.String("target", "", "")
-		if err := misplacedFlags(fs, "app", []string{"-target", "web"}, nil); err == nil || err.Error() != want {
+		if err := misplacedFlags(fs, []string{"app"}, []string{"-target", "web"}, nil); err == nil || err.Error() != want {
 			t.Errorf("from %s: %v, want %q", exe, err, want)
 		}
+	}
+	executable = func() (string, error) { return filepath.Join("/home/ada/.local/bin", "nsgo"), nil }
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.String("target", "", "")
+	const wantMulti = `test: flags go before the directory: nsgo test -target "web" "." "./cmd/..."`
+	if err := misplacedFlags(fs, []string{".", "./cmd/..."}, []string{"-target", "web"}, nil); err == nil || err.Error() != wantMulti {
+		t.Errorf("multiple patterns: %v, want %q", err, wantMulti)
 	}
 }
 
@@ -134,20 +144,39 @@ func TestTestTakesPackagePatterns(t *testing.T) {
 	}
 }
 
-// testEntry takes an app's directory whole and leaves a module's packages to their patterns.
+// testEntry takes an app's directory, a TSX entry, or another Go module's directory whole, and leaves the current module's packages to their patterns.
 func TestTestEntryTakesAnAppButNotAModule(t *testing.T) {
 	dir := t.TempDir()
-	if testEntry(dir) {
-		t.Error("a directory without nsgo.yaml was taken whole")
-	}
-	if err := os.WriteFile(filepath.Join(dir, "nsgo.yaml"), []byte("name: App\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if !testEntry(dir) {
-		t.Error("an app's directory was not taken whole")
-	}
-	if !testEntry(filepath.Join(dir, "App.tsx")) {
-		t.Error("a TSX entry was not taken whole")
+	outside := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"go.mod":            "module rootmod\n\ngo 1.26\n",
+		"pkg/pkg.go":        "package pkg\n",
+		"app/nsgo.yaml":     "name: App\n",
+		"nested/go.mod":     "module nestedmod\n\ngo 1.26\n",
+		"nested/sub/sub.go": "package sub\n",
+	})
+	writeFiles(t, outside, map[string]string{
+		"go.mod": "module outsidemod\n\ngo 1.26\n",
+	})
+	t.Chdir(dir)
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{".", false},
+		{"./pkg", false},
+		{"./pkg/...", false},
+		{"./missing", false},
+		{"./app", true},
+		{"./app/...", true},
+		{"./app/App.tsx", true},
+		{"./nested", true},
+		{"./nested/sub", true},
+		{outside, true},
+	} {
+		if got := testEntry(tc.path); got != tc.want {
+			t.Errorf("testEntry(%q) = %v, want %v", tc.path, got, tc.want)
+		}
 	}
 }
 

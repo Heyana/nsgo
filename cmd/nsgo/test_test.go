@@ -395,23 +395,25 @@ func TestFixtureTagged(t *testing.T) {}
 	both := []string{root, base, devBase, dev}
 	for _, c := range []struct {
 		name, sub, tags, run string
-		args                 []string
+		patterns, args       []string
 		fail                 bool
 		want                 []string
 	}{
-		{"normal", "", "", "", nil, false, both},
-		{"dev failure", "", "", "", nil, true, both},
+		{"normal", "", "", "", nil, nil, false, both},
+		{"dev failure", "", "", "", nil, nil, true, both},
 		// A failing ordinary run, as go test's failing package, does not keep the dev client's tests from running.
-		{"ordinary failure", "", "", "", []string{"-args", "-tags", "wrong"}, true, both},
-		{"filtered", "", "", "^TestFixtureRoot$", nil, true, []string{root}},
-		{"environment tag", "", "fixture", "", nil, false, append(both, devTagged)},
-		{"command-line tag", "", "", "", []string{"-tags", "fixture"}, false, append(both, devTagged)},
-		{"override dev tag", "", "nsgodev", "", []string{"-tags=fixture"}, false, append(both, devTagged)},
-		{"test binary tags", "", "", "", []string{"-args", "-tags", "literal"}, false, both},
-		{"already dev", "", "nsgodev", "", nil, false, []string{root, base, plainDev}},
-		{"already dev on command line", "", "", "", []string{"--tags=nsgodev"}, false, []string{root, base, plainDev}},
-		{"dev client directory", "internal/dev", "", "", nil, false, []string{base, devBase, dev}},
-		{"dev client directory failure", "internal/dev", "", "", nil, true, []string{base, devBase, dev}},
+		{"ordinary failure", "", "", "", nil, []string{"-args", "-tags", "wrong"}, true, both},
+		{"filtered", "", "", "^TestFixtureRoot$", nil, nil, true, []string{root}},
+		{"root pattern skips dev client", "", "", "", []string{"."}, nil, false, []string{root}},
+		{"internal pattern runs dev client", "", "", "", []string{"./internal/..."}, nil, false, []string{base, devBase, dev}},
+		{"environment tag", "", "fixture", "", nil, nil, false, append(both, devTagged)},
+		{"command-line tag", "", "", "", nil, []string{"-tags", "fixture"}, false, append(both, devTagged)},
+		{"override dev tag", "", "nsgodev", "", nil, []string{"-tags=fixture"}, false, append(both, devTagged)},
+		{"test binary tags", "", "", "", nil, []string{"-args", "-tags", "literal"}, false, both},
+		{"already dev", "", "nsgodev", "", nil, nil, false, []string{root, base, plainDev}},
+		{"already dev on command line", "", "", "", nil, []string{"--tags=nsgodev"}, false, []string{root, base, plainDev}},
+		{"dev client directory", "internal/dev", "", "", nil, nil, false, []string{base, devBase, dev}},
+		{"dev client directory failure", "internal/dev", "", "", nil, nil, true, []string{base, devBase, dev}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			p, err := loadForTest(filepath.Join(dir, filepath.FromSlash(c.sub)), nil)
@@ -423,7 +425,7 @@ func TestFixtureTagged(t *testing.T) {}
 			if slices.Contains(c.args, "-args") {
 				binaryTag = "literal"
 			}
-			err = runTests(t.Context(), p, testOptions{run: c.run, junit: report,
+			err = runTests(t.Context(), p, testOptions{run: c.run, junit: report, patterns: c.patterns,
 				env:  []string{"GOWORK=off", "GOFLAGS=-tags=" + c.tags, "NSGO_FIXTURE_ARG=" + binaryTag, "NSGO_FIXTURE_FAIL=" + map[bool]string{false: "0", true: "1"}[c.fail]},
 				args: append([]string{"-count=1"}, c.args...)})
 			wantFail := c.fail && c.run == ""
@@ -1265,5 +1267,178 @@ func TestJSONWritesTheRawStream(t *testing.T) {
 	}
 	if raw.String() != stream {
 		t.Fatalf("raw stream:\n%s\nwant:\n%s", raw.String(), stream)
+	}
+}
+
+func TestTestCommandPackagePatterns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the test command")
+	}
+	dir := t.TempDir()
+	outside := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"go.mod":                    "module patternstest\n\ngo 1.26\n",
+		"root_test.go":              "package root\n\nimport \"testing\"\n\nfunc TestRoot(t *testing.T) {}\n",
+		"sub/sub_test.go":           "package sub\n\nimport \"testing\"\n\nfunc TestSub(t *testing.T) {}\n",
+		"sub/leaf/leaf_test.go":     "package leaf\n\nimport \"testing\"\n\nfunc TestLeaf(t *testing.T) {}\n",
+		"other/other_test.go":       "package other\n\nimport \"testing\"\n\nfunc TestOther(t *testing.T) {}\n",
+		"nested/go.mod":             "module nestedmod\n\ngo 1.26\n",
+		"nested/pkg/nested_test.go": "package pkg\n\nimport \"testing\"\n\nfunc TestNested(t *testing.T) {}\n",
+		"app/nsgo.yaml":             "name: Sample\n",
+		"app/app_test.go":           "package app\n\nimport \"testing\"\n\nfunc TestApp(t *testing.T) {}\n",
+		"app/child/child_test.go":   "package child\n\nimport \"testing\"\n\nfunc TestAppChild(t *testing.T) {}\n",
+	})
+	writeFiles(t, outside, map[string]string{
+		"go.mod":          "module outsidemod\n\ngo 1.26\n",
+		"ext/ext_test.go": "package ext\n\nimport \"testing\"\n\nfunc TestExt(t *testing.T) {}\n",
+	})
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"root package only", []string{"."}, []string{"TestRoot"}},
+		{"multiple patterns", []string{".", "./sub/..."}, []string{"TestLeaf", "TestRoot", "TestSub"}},
+		{"nested go module", []string{"./nested"}, []string{"TestNested"}},
+		{"app with nsgo.yaml", []string{"./app"}, []string{"TestApp", "TestAppChild"}},
+		{"external module dir", []string{outside}, []string{"TestExt"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report := filepath.Join(t.TempDir(), "tests.xml")
+			cliArgs := append([]string{"-test.run=^TestCLIProcess$", "--", "test", "-junit", report}, tc.args...)
+			cliArgs = append(cliArgs, "--", "-count=1")
+			cmd := exec.CommandContext(t.Context(), exe, cliArgs...)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=", "NSGO_CLI_PROCESS=1")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("nsgo test %q: %v\n%s", tc.args, err, out)
+			}
+			var got []string
+			for _, suite := range readJUnitFixture(t, report).Suites {
+				for _, c := range suite.Cases {
+					got = append(got, c.Name)
+				}
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("ran %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTargetTestsLoadPackageDirectoryWithoutYAML(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the test command")
+	}
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"go.mod":          "module targetdir\n\ngo 1.26\n",
+		"root_test.go":    "package root\n\nimport \"testing\"\n\nfunc TestRootOnly(t *testing.T) {}\n",
+		"pkg/pkg_test.go": "package pkg\n\nimport \"testing\"\n\nfunc TestPkgOnly(t *testing.T) {}\n",
+	})
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCLI := func(args ...string) (string, error) {
+		cmd := exec.CommandContext(t.Context(), exe, append([]string{"-test.run=^TestCLIProcess$", "--"}, args...)...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=", "NSGO_CLI_PROCESS=1")
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	// Selecting a test in ./pkg discovers it in ./pkg (reaching the test host check), instead of silently finding 0 tests in the repo root.
+	out, err := runCLI("test", "-target", "android", "-run", "^TestPkgOnly$", "./pkg")
+	if err == nil || !strings.Contains(out, "runs the tests in NSGo's test host") {
+		t.Fatalf("target test of ./pkg for TestPkgOnly: err=%v, out=%s", err, out)
+	}
+	// Selecting a test that exists only in the root must not match when ./pkg is targeted.
+	out, err = runCLI("test", "-target", "android", "-run", "^TestRootOnly$", "./pkg")
+	if err != nil || !strings.Contains(out, "no tests match") {
+		t.Fatalf("target test of ./pkg for TestRootOnly: err=%v, out=%s", err, out)
+	}
+	// A non-existent directory fails cleanly rather than loading cwd.
+	out, err = runCLI("test", "-target", "android", "./missing")
+	if err == nil || !strings.Contains(out, "no directory ./missing") {
+		t.Fatalf("target test of ./missing: err=%v, out=%s", err, out)
+	}
+
+	// Direct runTests callers passing a single pattern with -target also resolve that directory.
+	p, err := loadForTest(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOFLAGS", "")
+	if err := runTests(t.Context(), p, testOptions{target: "android", run: "^TestPkgOnly$", patterns: []string{"./pkg"}}); err == nil || !strings.Contains(err.Error(), "runs the tests in NSGo's test host") {
+		t.Fatalf("direct runTests(-target android, patterns=./pkg) = %v, want test host error", err)
+	}
+	if err := runTests(t.Context(), p, testOptions{target: "android", patterns: []string{"./missing"}}); err == nil || !strings.Contains(err.Error(), "no directory") {
+		t.Fatalf("direct runTests(-target android, patterns=./missing) = %v, want no directory error", err)
+	}
+}
+
+func TestRunTestsRejectsMultiplePatternsWithTargetAndFuzz(t *testing.T) {
+	if err := runTests(t.Context(), nil, testOptions{target: "web", patterns: []string{"./a", "./b"}}); err == nil || !strings.Contains(err.Error(), "one directory, not several package patterns") {
+		t.Errorf("multi-pattern -target: %v", err)
+	}
+	if err := runTests(t.Context(), nil, testOptions{patterns: []string{"./a", "./b"}, args: []string{"-fuzz", "FuzzX"}}); err == nil || !strings.Contains(err.Error(), "-fuzz runs one package") {
+		t.Errorf("multi-pattern -fuzz: %v", err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"test", "-target", "web", "./a", "./b"}, "one directory, not several package patterns"},
+		{[]string{"test", "./a", "./b", "-fuzz", "FuzzX"}, "-fuzz runs one package"},
+	} {
+		cmd := exec.CommandContext(t.Context(), exe, append([]string{"-test.run=^TestCLIProcess$", "--"}, tc.args...)...)
+		cmd.Dir = t.TempDir()
+		cmd.Env = append(os.Environ(), "NSGO_CLI_PROCESS=1")
+		out, err := cmd.CombinedOutput()
+		if err == nil || !strings.Contains(string(out), tc.want) {
+			t.Errorf("CLI %q: err=%v, out=%s; want %q", tc.args, err, out, tc.want)
+		}
+	}
+}
+
+func TestRunCoversGatesDevClient(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"go.mod":              "module " + nsgoModule + "\n\ngo 1.26\n",
+		"root.go":             "package nsgo\n",
+		"internal/dev/dev.go": "package dev\n",
+		"other/other.go":      "package other\n",
+	})
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOFLAGS", "")
+	dev := nsgoModule + "/internal/dev"
+	for _, tc := range []struct {
+		name     string
+		dir      string
+		patterns []string
+		want     bool
+	}{
+		{"nil patterns", dir, nil, true},
+		{"whole tree", dir, []string{"./..."}, true},
+		{"internal tree", dir, []string{"./internal/..."}, true},
+		{"exact dev package", dir, []string{"./internal/dev"}, true},
+		{"root package only", dir, []string{"."}, false},
+		{"other packages", dir, []string{".", "./other/..."}, false},
+		{"go list error returns false", filepath.Join(dir, "missing"), []string{"./..."}, false},
+	} {
+		if got := runCovers(t.Context(), tc.dir, tc.patterns, dev); got != tc.want {
+			t.Errorf("%s: runCovers(%q) = %v, want %v", tc.name, tc.patterns, got, tc.want)
+		}
 	}
 }

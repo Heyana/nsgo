@@ -38,8 +38,8 @@ type testOptions struct {
 	// phone's tests see no others of this machine's.
 	env  []string
 	args []string
-	// patterns are the go package patterns the run tests, counted from the
-	// module's root; nil tests every package under the project's directory.
+	// patterns are the Go package patterns the run tests, relative to p.Dir;
+	// nil tests every package under p.Dir.
 	patterns   []string
 	jsonOutput bool // write go test's -json stream to stdout, for tools such as benchstat
 }
@@ -188,8 +188,25 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 	if len(patterns) == 0 {
 		patterns = []string{"./..."}
 	}
-	if opts.target != "" && len(patterns) > 1 {
-		return errors.New("test: a target run tests one directory, not several package patterns")
+	if opts.target != "" {
+		if len(patterns) > 1 {
+			return errors.New("test: a target run tests one directory, not several package patterns")
+		}
+		if len(opts.patterns) == 1 {
+			targetDir := treeOf(opts.patterns[0])
+			if !filepath.IsAbs(targetDir) && p != nil && p.Dir != "" {
+				targetDir = filepath.Join(p.Dir, targetDir)
+			}
+			if p == nil || realPath(targetDir) != realPath(p.Dir) {
+				loaded, err := loadForTest(targetDir, nil)
+				if err != nil {
+					return err
+				}
+				p = loaded
+			}
+			opts.patterns = nil
+			patterns = []string{"./..."}
+		}
 	}
 	fuzz := opts.target == "" && testFuzzEnabled(opts.args)
 	if fuzz {
@@ -202,8 +219,8 @@ func runTests(ctx context.Context, p *project, opts testOptions) error {
 		}
 	}
 	p.Build.LDFlags = append(p.Build.LDFlags, opts.ldflags...)
-	// Every package of the project prepares its catalogs, whichever packages the run tests: a pattern is a package's, not the tree its texts come from.
-	if err := p.prepareCatalogs(ctx, "./...", false); err != nil {
+	// Prepare catalogs for the packages this run tests and their dependencies.
+	if err := p.prepareCatalogs(ctx, false, patterns...); err != nil {
 		return err
 	}
 	if opts.fps && !slices.Contains([]string{"macos", "windows", "linux", "ios_simulator", "web", "android"}, opts.target) {
@@ -329,7 +346,7 @@ func runCovers(ctx context.Context, dir string, patterns []string, importPath st
 	out, err := cmd.Output()
 	if err != nil {
 		// go test reports a listing failure itself.
-		return true
+		return false
 	}
 	return slices.Contains(strings.Fields(string(out)), importPath)
 }
@@ -485,13 +502,61 @@ func splitTestArgs(rest []string) (patterns []string, args []string) {
 	return patterns, rest
 }
 
-// testEntry reports whether path names a project a run takes whole: an app's directory, which has its nsgo.yaml, or a TSX entry, whose steps the run reads.
+// testEntry reports whether path names a project a run loads as its own
+// directory rather than as a Go package pattern in the current module: a TSX
+// entry, an app directory holding nsgo.yaml, or an existing directory in a
+// different Go module (or outside the current module, such as ./benchmark).
 func testEntry(path string) bool {
+	return testEntryIn(".", path)
+}
+
+func testEntryIn(cwd, path string) bool {
 	if ext := filepath.Ext(path); ext == ".tsx" || ext == ".ts" {
 		return true
 	}
-	_, err := os.Stat(filepath.Join(treeOf(path), "nsgo.yaml"))
-	return err == nil
+	dir := treeOf(path)
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(cwd, dir)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "nsgo.yaml")); err == nil {
+		return true
+	}
+	fi, err := os.Stat(dir)
+	if err != nil || !fi.IsDir() {
+		return false
+	}
+	cwdMod := moduleRoot(cwd)
+	targetMod := moduleRoot(dir)
+	if cwdMod == "" {
+		return targetMod != "" || realPath(dir) != realPath(cwd)
+	}
+	return targetMod != cwdMod
+}
+
+// moduleRoot returns the directory of the Go module containing dir, or "" when dir is in no module.
+func moduleRoot(dir string) string {
+	abs := realPath(dir)
+	for {
+		if fi, err := os.Stat(filepath.Join(abs, "go.mod")); err == nil && !fi.IsDir() {
+			return abs
+		}
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			return ""
+		}
+		abs = parent
+	}
+}
+
+func realPath(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return dir
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
 }
 
 // loadForTest reads the app's nsgo.yaml; a directory without one still

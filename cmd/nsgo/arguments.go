@@ -13,13 +13,16 @@ func parseCommand(fs *flag.FlagSet, args []string, paths int) error {
 	}
 	if paths < 0 {
 		patterns, rest := splitTestArgs(fs.Args())
-		return misplacedFlags(fs, strings.Join(patterns, " "), rest, goTestOwnFlags)
+		if err := misplacedFlags(fs, patterns, rest, goTestOwnFlags); err != nil {
+			return err
+		}
+		return testPathError(rest)
 	}
 	if fs.NArg() <= paths {
 		return nil
 	}
 	if paths > 0 {
-		if err := misplacedFlags(fs, fs.Arg(0), fs.Args()[paths:], nil); err != nil {
+		if err := misplacedFlags(fs, fs.Args()[:paths], fs.Args()[paths:], nil); err != nil {
 			return err
 		}
 		return fmt.Errorf("%s: takes one path, not %q as well", fs.Name(), fs.Arg(paths))
@@ -38,8 +41,8 @@ func testPathError(args []string) error {
 // goTestOwnFlags are test's flags that go test defines too. After the directory they are go test's: headless runs forward them, and a target run refuses them in parseTargetTestFlags with its own hint.
 var goTestOwnFlags = map[string]bool{"run": true, "timeout": true, "bench": true, "trace": true, "ldflags": true}
 
-// misplacedFlags refuses one of the command's own flags written after its path, unless forwarded names it as an argument the command hands on.
-func misplacedFlags(fs *flag.FlagSet, dir string, args []string, forwarded map[string]bool) error {
+// misplacedFlags refuses one of the command's own flags written after its path or patterns, unless forwarded names it as an argument the command hands on.
+func misplacedFlags(fs *flag.FlagSet, paths, args []string, forwarded map[string]bool) error {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "-args" || a == "--args" || a == "--" {
@@ -59,10 +62,14 @@ func misplacedFlags(fs *flag.FlagSet, dir string, args []string, forwarded map[s
 					option += " " + fmt.Sprintf("%q", args[i+1])
 				}
 			}
-			if dir == "" {
-				dir = "."
+			if len(paths) == 0 {
+				paths = []string{"."}
 			}
-			return fmt.Errorf("%s: flags go before the directory: %s %s %s %q", fs.Name(), nsgoCommand(), fs.Name(), option, dir)
+			quoted := make([]string, len(paths))
+			for j, p := range paths {
+				quoted[j] = fmt.Sprintf("%q", p)
+			}
+			return fmt.Errorf("%s: flags go before the directory: %s %s %s %s", fs.Name(), nsgoCommand(), fs.Name(), option, strings.Join(quoted, " "))
 		}
 		if !hasValue && !goTestBoolFlags[name] && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 			i++

@@ -76,7 +76,7 @@ func buildAll(ctx context.Context, p *project) error {
 	if err := p.checkSigningWindows(buildTargets); err != nil {
 		return err
 	}
-	if err := p.prepareCatalogs(ctx, ".", false); err != nil {
+	if err := p.prepareCatalogs(ctx, false, "."); err != nil {
 		return err
 	}
 	if p.channel() != channelSteam {

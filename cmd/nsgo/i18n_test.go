@@ -337,17 +337,17 @@ func TestSuppliedHours(t *testing.T) {
 	p := &project{Dir: dir}
 	p.I18n.Dir, p.I18n.Source = filepath.Join(dir, "locales"), "en"
 	ctx := context.Background()
-	if err := p.prepareCatalogs(ctx, "./...", false); err != nil {
+	if err := p.prepareCatalogs(ctx, false, "./..."); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.prepareCatalogs(ctx, "./...", true); err != nil {
+	if err := p.prepareCatalogs(ctx, true, "./..."); err != nil {
 		t.Errorf("check after writing: %v", err)
 	}
 	code, _ := os.ReadFile(filepath.Join(dir, "locales", genFile))
 	if err := os.WriteFile(filepath.Join(dir, "locales", genFile), bytes.ReplaceAll(code, []byte("\n"), []byte("\r\n")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.prepareCatalogs(ctx, "./...", true); err != nil {
+	if err := p.prepareCatalogs(ctx, true, "./..."); err != nil {
 		t.Errorf("check after a CRLF checkout: %v", err)
 	}
 	if source, app, ok := generatedCatalog(filepath.Join(dir, "locales")); !ok || !app || source != "en" {
@@ -372,7 +372,7 @@ func TestSuppliedHours(t *testing.T) {
 
 	// A message changed makes the code out of date.
 	writeFiles(t, dir, map[string]string{"locales/en-GB.yaml": `greeting: "Hello there, {name}!"`})
-	if err := p.prepareCatalogs(ctx, "./...", true); err == nil || !strings.Contains(err.Error(), "out of date") {
+	if err := p.prepareCatalogs(ctx, true, "./..."); err == nil || !strings.Contains(err.Error(), "out of date") {
 		t.Errorf("check after a change: %v", err)
 	}
 }

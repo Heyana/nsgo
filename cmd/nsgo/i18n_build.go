@@ -89,20 +89,20 @@ func goPackages(ctx context.Context, dir string, deps bool, tags []string, pkgs 
 	return list, nil
 }
 
-// appPackages is goPackages of pattern in the app's directory, with its dependencies, under the app's tags. When one comes from a module the app's go.mod or go.sum lacks, as after pasting an app that imports ui into a new module, it runs go mod tidy and lists them again, so the build that follows finds them.
-func (p *project) appPackages(ctx context.Context, pattern string) ([]goPackage, error) {
+// appPackages is goPackages of patterns in the app's directory, with their dependencies, under the app's tags. When one comes from a module the app's go.mod or go.sum lacks, as after pasting an app that imports ui into a new module, it runs go mod tidy and lists them again, so the build that follows finds them.
+func (p *project) appPackages(ctx context.Context, patterns ...string) ([]goPackage, error) {
 	tags, err := goTags(ctx, p, nil)
 	if err != nil {
 		return nil, err
 	}
-	pkgs, err := goPackages(ctx, p.Dir, true, tags, pattern)
+	pkgs, err := goPackages(ctx, p.Dir, true, tags, patterns...)
 	if err != nil || !slices.ContainsFunc(pkgs, func(g goPackage) bool { return lacksModule(g.err) }) {
 		return pkgs, err
 	}
 	if err := p.tidy(ctx); err != nil {
 		return nil, err
 	}
-	return goPackages(ctx, p.Dir, true, tags, pattern)
+	return goPackages(ctx, p.Dir, true, tags, patterns...)
 }
 
 // nsgoModule is NSGo's module path.
@@ -329,12 +329,15 @@ func (cs *catalogSet) write(check bool) (wrote bool, err error) {
 	return wrote, nil
 }
 
-// prepareCatalogs checks the catalogs of the packages pattern names and
+// prepareCatalogs checks the catalogs of the packages patterns name and
 // writes the generated code of those in the main module: the app's
 // catalogs (nsgo.yaml's i18n) and every package of catalogs the packages
 // compile. With check it only reports what is out of date.
-func (p *project) prepareCatalogs(ctx context.Context, pattern string, check bool) error {
-	pkgs, err := p.appPackages(ctx, pattern)
+func (p *project) prepareCatalogs(ctx context.Context, check bool, patterns ...string) error {
+	if len(patterns) == 0 {
+		patterns = []string{"./..."}
+	}
+	pkgs, err := p.appPackages(ctx, patterns...)
 	if err != nil {
 		return err
 	}

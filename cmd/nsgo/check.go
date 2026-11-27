@@ -35,7 +35,7 @@ func check(ctx context.Context, p *project, target string, jobs int) error {
 	}
 	defer unlock()
 	s := begin("checking catalogs")
-	if err := p.prepareCatalogs(ctx, "./...", true); err != nil {
+	if err := p.prepareCatalogs(ctx, true, "./..."); err != nil {
 		s.fail()
 		return err
 	}

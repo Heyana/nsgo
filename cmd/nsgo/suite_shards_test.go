@@ -42,15 +42,23 @@ func TestSuiteShardsCoverEveryPackage(t *testing.T) {
 
 	dev := nsgoModule + "/internal/dev"
 	var seen []string
+	shardNames := map[string]bool{}
 	devShards := 0
 	for _, shard := range shards {
 		if shard.Name == "" {
 			t.Errorf("a shard has no name to show as its job's")
+		} else if shardNames[shard.Name] {
+			t.Errorf("duplicate shard name %q", shard.Name)
+		} else {
+			shardNames[shard.Name] = true
 		}
 		list := strings.Fields(shard.Packages)
 		if len(list) == 0 {
 			t.Errorf("the %q shard lists no packages", shard.Name)
 			continue
+		}
+		if len(list) == 1 && testEntryIn("../..", list[0]) {
+			t.Errorf("the %q shard (%q) is a single testEntry path and would not be expanded as a package pattern", shard.Name, list[0])
 		}
 		packages := goList(t, list...)
 		if slices.Contains(packages, dev) {
