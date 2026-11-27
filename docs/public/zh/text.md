@@ -93,7 +93,7 @@ textview.TextView{
 }
 ```
 
-公式（`$…$`、`$$…$$`）默认显示 TeX 源码；应用传入 `base/formula` 的 `RenderMath: formula.RenderMath` 后才会排版，字号和颜色与周围文本一致，读屏时使用应用的语言，复制时得到 TeX。它会让桌面应用增大约 6.5 MB，网页应用增大约 3 MB（gzip 压缩后），其中包括字体。在其他地方显示公式用 `formula.View`，支持 TeX 和 Typst；它的 `OnHit` 回调会把 Untie 的源码部分、最近插入符和重叠诊断传给公式编辑器。watchOS 也使用同一画布路径；链接公式会让可执行文件增大约 6.1 MB，其中包括 1.4 MB 字体。在手表模拟器中测得，加载并解析字体会增加约 3.9 MB 的常驻 Go 堆，包括字体字节的独立副本。模拟器的测量不能确定真实手表的应用内存上限或剩余空间，这些需要在运行应用的手表上测量。配置的字体无法覆盖的文本（`\text{}` 或 Typst 字符串）使用系统字体，包括中日韩文字及其他文字系统；显式设置的 `formula.Fonts.Fallbacks` 优先。
+公式（`$…$`、`$$…$$`）默认显示 TeX 源码；应用传入 `base/formula` 的 `RenderMath: formula.RenderMath` 后才会排版，字号和颜色与周围文本一致，读屏时使用应用的语言，复制时除纯文本 TeX 外，还提供 Presentation MathML（`application/mathml+xml`）和源码格式（`text/x-tex`，Typst 为 `text/x-typst`）；`formula.MathML`、`formula.ClipboardItem` 和 `formula.Copy` 可直接导出或复制相同格式，在不支持多格式剪贴板的平台上自动回退为纯文本。链接 `base/formula` 会让桌面应用增大约 6.5 MB，网页应用增大约 3 MB（gzip 压缩后），其中包括字体。在其他地方显示公式用 `formula.View`，支持 TeX 和 Typst；它的 `OnHit` 回调会把 Untie 的源码部分、最近插入符和重叠诊断传给公式编辑器。watchOS 也使用同一画布路径；链接公式会让可执行文件增大约 6.1 MB，其中包括 1.4 MB 字体。在手表模拟器中测得，加载并解析字体会增加约 3.9 MB 的常驻 Go 堆，包括字体字节的独立副本。模拟器的测量不能确定真实手表的应用内存上限或剩余空间，这些需要在运行应用的手表上测量。配置的字体无法覆盖的文本（`\text{}` 或 Typst 字符串）使用系统字体，包括中日韩文字及其他文字系统；显式设置的 `formula.Fonts.Fallbacks` 优先。
 
 源码分段到达时，为 `formula.View` 设置 `SourceFunc`，并设 `Streaming: true`，或让 `StreamingFunc` 读取应用的接收状态。这会在有效内容继续排版时隐藏可恢复错误和占位符的图形；接收完成后清除标记，显示仍然存在的错误。在 `TextView` 中，通过 `RenderMath` 返回这样的 `formula.View`，传入 `Math.TeX` 和 `Math.Display`，并让 `StreamingFunc` 读取同一接收状态。
 

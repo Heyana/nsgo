@@ -597,12 +597,13 @@ func fontMultiplier(scale float32, noScale bool, maxScale float32) float32 {
 }
 
 type spanNode struct {
-	content string
-	style   Style
-	press   func(PressEvent)
-	long    func(PressEvent)
-	attach  *node        // the view of an attachment
-	cls     *spanClasses // its classes, when it has any
+	content  string
+	copyItem *driver.ClipboardItem
+	style    Style
+	press    func(PressEvent)
+	long     func(PressEvent)
+	attach   *node        // the view of an attachment
+	cls      *spanClasses // its classes, when it has any
 	// made is, for an attachment a SpansFunc mounted, the span its view was made of, which the spans that follow keep the view for when they hold the same; scope owns that view.
 	made  *Span
 	scope *Scope
@@ -1991,7 +1992,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 			t.setClasses(w, sp.Class)
 			t.bindStyle(cx, w, sp.Style, sp.StyleFunc)
 			t.mount(cx, w, sp.Attachment)
-			n.text.spans = append(n.text.spans, spanNode{content: sp.Content, attach: w})
+			n.text.spans = append(n.text.spans, spanNode{content: sp.Content, copyItem: driver.CloneClipboardItem(sp.CopyItem), attach: w})
 			n.text.attachments++
 		} else {
 			style, cls := t.spanStyle(n, sp.Class, sp.Style)
@@ -2084,6 +2085,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 					kept[j] = true
 					old := olds[j]
 					old.content = sp.Content
+					old.copyItem = driver.CloneClipboardItem(sp.CopyItem)
 					n.text.spans = append(n.text.spans, old)
 				} else {
 					s := &Scope{}
@@ -2095,7 +2097,7 @@ func (t *Tree) mountText(cx *Scope, parent *node, v Text) {
 					t.bindStyle(s, w, sp.Style, nil)
 					t.within(s, func() { t.mount(s, w, sp.Attachment) })
 					made := sp
-					n.text.spans = append(n.text.spans, spanNode{content: sp.Content, attach: w, made: &made, scope: s})
+					n.text.spans = append(n.text.spans, spanNode{content: sp.Content, copyItem: driver.CloneClipboardItem(sp.CopyItem), attach: w, made: &made, scope: s})
 				}
 				moved = moved || k >= len(olds) || j != k
 				k++

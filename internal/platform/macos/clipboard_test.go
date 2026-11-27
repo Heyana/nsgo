@@ -73,3 +73,63 @@ func TestNativeClipboardItems(t *testing.T) {
 		}
 	})
 }
+
+func TestNativeFormulaClipboardMIME(t *testing.T) {
+	onMain(func() {
+		loadAppKit()
+		pb := objc.ID(apple.Class("NSPasteboard")).Send(sel("pasteboardWithUniqueName"))
+		if pb == 0 {
+			t.Error("cannot create a named pasteboard")
+			return
+		}
+		defer pb.Send(sel("releaseGlobally"))
+
+		const (
+			plain  = "$E=mc^2$"
+			tex    = "E=mc^2"
+			mathML = `<math xmlns="http://www.w3.org/1998/Math/MathML" display="inline"><mi>E</mi></math>`
+		)
+		items := []driver.ClipboardItem{{Representations: []driver.ClipboardRepresentation{
+			{Type: "text/plain", Data: []byte(plain)},
+			{Type: "application/mathml+xml", Data: []byte(mathML)},
+			{Type: "text/x-tex", Data: []byte(tex)},
+		}}}
+		if err := writeClipboardItems(pb, items); err != nil {
+			t.Errorf("writeClipboardItems(MIME): %v", err)
+			return
+		}
+		if got := apple.GoString(pb.Send(sel("stringForType:"), apple.NSString(pasteboardText))); got != plain {
+			t.Errorf("plain text = %q, want %q", got, plain)
+		}
+		saved, err := readClipboardItems(pb)
+		if err != nil || len(saved) != 1 {
+			t.Errorf("readClipboardItems: %d items, %v", len(saved), err)
+			return
+		}
+		wantTypes := map[string]string{
+			pasteboardText:             plain,
+			"public.mathml":            mathML,
+			"public.mathml.presentation": mathML,
+			"org.tug.tex":              tex,
+		}
+		for _, mime := range []struct{ mime, data string }{
+			{"application/mathml+xml", mathML},
+			{"text/x-tex", tex},
+		} {
+			for _, uti := range apple.PasteboardTypes(mime.mime) {
+				wantTypes[uti] = mime.data
+			}
+		}
+		for uti, want := range wantTypes {
+			if !slices.ContainsFunc(saved[0].Representations, func(r driver.ClipboardRepresentation) bool {
+				return r.Type == uti && string(r.Data) == want
+			}) {
+				t.Errorf("pasteboard lacks %q = %q (got %#v)", uti, want, saved[0].Representations)
+			}
+		}
+		// Snapshot round-trip keeps the written representations intact.
+		if err := writeClipboardItems(pb, saved); err != nil {
+			t.Errorf("restore snapshot: %v", err)
+		}
+	})
+}

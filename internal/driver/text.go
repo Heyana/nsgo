@@ -45,6 +45,8 @@ type TextSpan struct {
 	Background TextBackground
 	// Copy is what a copy takes in place of the attachment the span styles, as a formula copies as its TeX; empty leaves the attachment out. Screen readers read the attachment's label instead (ShownText).
 	Copy string
+	// CopyItem holds extra clipboard representations offered alongside Copy when a selection copies this single attachment, such as a formula's MathML and text/x-tex source.
+	CopyItem *ClipboardItem
 }
 
 // SpanCursor returns the cursor a span names over byte offset i (-1 off the text's glyphs), and false where none does.
@@ -141,6 +143,41 @@ func attachmentCopy(spans []TextSpan, i int) string {
 		}
 	}
 	return ""
+}
+
+// attachmentSpan returns the span styling the attachment at byte offset i.
+func attachmentSpan(spans []TextSpan, i int) (TextSpan, bool) {
+	for _, sp := range spans {
+		if sp.Start == i && sp.End == i+len(string(AttachmentRune)) {
+			return sp, true
+		}
+	}
+	return TextSpan{}, false
+}
+
+// copiedSingleAttachment reports whether the visible bytes of text[from:to] consist solely of one attachment span with CopyItem representations.
+func copiedSingleAttachment(text string, spans []TextSpan, from, to int) (TextSpan, bool) {
+	var found TextSpan
+	hasAttachment := false
+	hasOther := false
+	attachLen := len(string(AttachmentRune))
+	eachShown(text, spans, from, to, func(s string, start int) {
+		if hasOther || s == "" {
+			return
+		}
+		if s == string(AttachmentRune) && !hasAttachment {
+			if sp, ok := attachmentSpan(spans, start); ok && sp.CopyItem != nil && len(sp.CopyItem.Representations) > 0 {
+				found, hasAttachment = sp, true
+				return
+			}
+		}
+		if len(s) != attachLen || s != string(AttachmentRune) {
+			hasOther = true
+			return
+		}
+		hasOther = true
+	})
+	return found, hasAttachment && !hasOther
 }
 
 // VisibleText is text with its hidden spans left out, its attachments'
@@ -277,7 +314,7 @@ func (a *AttributedText) Equal(b *AttributedText) bool {
 		return false
 	}
 	for i := range a.Spans {
-		if a.Spans[i] != b.Spans[i] {
+		if !textSpanEqual(a.Spans[i], b.Spans[i]) {
 			return false
 		}
 	}
@@ -287,6 +324,13 @@ func (a *AttributedText) Equal(b *AttributedText) bool {
 		}
 	}
 	return true
+}
+
+func textSpanEqual(a, b TextSpan) bool {
+	return a.Start == b.Start && a.End == b.End && a.Style == b.Style &&
+		a.Cursor == b.Cursor && a.Link == b.Link && a.Hidden == b.Hidden &&
+		a.Background == b.Background && a.Copy == b.Copy &&
+		ClipboardItemEqual(a.CopyItem, b.CopyItem)
 }
 
 // TextStyle is resolved text style: nothing in it is unset.

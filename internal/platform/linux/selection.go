@@ -180,6 +180,9 @@ func (w *window) selectionEdit(role driver.MenuRole) bool {
 		return false
 	case role == driver.MenuCopy && !sl.Model.IsEmpty():
 		w.listSelection()
+		if item, ok := sl.Model.ClipboardItem(sl); ok && w.setClipboardItem(item) {
+			return true
+		}
 		w.setClipboard(sl.Model.Text(sl))
 	case role == driver.MenuSelectAll:
 		w.listSelection()

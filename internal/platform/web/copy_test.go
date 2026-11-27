@@ -64,4 +64,37 @@ func TestCopyTakesAttachmentsCopyTexts(t *testing.T) {
 		t.Errorf("a text with a formula and a hidden span copies as %q", got)
 	}
 	sel.Call("removeAllRanges")
+
+	// Selecting a single formula attachment also writes MathML and text/x-tex.
+	const mathML = `<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><msup><mi>x</mi><mn>2</mn></msup></math>`
+	only := text(&driver.AttributedText{
+		Text: "￼",
+		Spans: []driver.TextSpan{{
+			Start: 0, End: len("￼"), Copy: "$$\nx^2\n$$",
+			CopyItem: &driver.ClipboardItem{Representations: []driver.ClipboardRepresentation{
+				{Type: "text/plain", Data: []byte("$$\nx^2\n$$")},
+				{Type: "application/mathml+xml", Data: []byte(mathML)},
+				{Type: "text/x-tex", Data: []byte("x^2")},
+			}},
+		}},
+		Attachments: []driver.TextAttachment{{Offset: 0, Size: driver.Size{Width: 10, Height: 10}}},
+	})
+	r.Call("selectNodeContents", only)
+	sel.Call("removeAllRanges")
+	sel.Call("addRange", r)
+	gotMap := map[string]string{}
+	setAll := js.FuncOf(func(this js.Value, args []js.Value) any { gotMap[args[0].String()] = args[1].String(); return nil })
+	defer setAll.Release()
+	none := js.FuncOf(func(js.Value, []js.Value) any { return nil })
+	defer none.Release()
+	e := js.Global().Get("Object").New()
+	clipboard := js.Global().Get("Object").New()
+	clipboard.Set("setData", setAll)
+	e.Set("clipboardData", clipboard)
+	e.Set("preventDefault", none)
+	s.copySelection(e)
+	sel.Call("removeAllRanges")
+	if gotMap["text/plain"] != "$$\nx^2\n$$" || gotMap["application/mathml+xml"] != mathML || gotMap["text/x-tex"] != "x^2" {
+		t.Errorf("single formula copy wrote %#v", gotMap)
+	}
 }

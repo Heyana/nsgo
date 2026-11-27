@@ -407,6 +407,35 @@ func (m *SelectionModel) Text(texts SelectionTexts) string {
 	return out.String()
 }
 
+// ClipboardItem returns the multi-representation clipboard item when the selection copies a single attachment whose span supplies CopyItem representations, preserving its plain Copy text as text/plain.
+func (m *SelectionModel) ClipboardItem(texts SelectionTexts) (ClipboardItem, bool) {
+	spans, ok := texts.(SelectionSpans)
+	if !ok {
+		return ClipboardItem{}, false
+	}
+	var matched TextSpan
+	hasMatched := false
+	for _, r := range m.Ranges(texts) {
+		content := texts.Content(r.Text)
+		from, to := byteOffset(content, r.Start), byteOffset(content, r.End)
+		sp := spans.Spans(r.Text)
+		if single, ok := copiedSingleAttachment(content, sp, from, to); ok {
+			if hasMatched {
+				return ClipboardItem{}, false
+			}
+			matched, hasMatched = single, true
+			continue
+		}
+		if CopiedText(content, sp, from, to) != "" {
+			return ClipboardItem{}, false
+		}
+	}
+	if !hasMatched {
+		return ClipboardItem{}, false
+	}
+	return ClipboardItemWithPlain(matched.CopyItem, matched.Copy), true
+}
+
 // selectUnit puts the anchor at pos and selects the unit of g around it
 // (nothing for characters).
 func (m *SelectionModel) selectUnit(texts SelectionTexts, pos TextPosition, g Granularity) {

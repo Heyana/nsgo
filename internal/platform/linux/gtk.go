@@ -229,9 +229,12 @@ var (
 	gdkFrameClockGetFrameTime  func(clock uintptr) int64
 	gdkDisplayGetDefault       func() uintptr
 	gdkDisplayGetMonitors      func(uintptr) uintptr
-	gdkDisplayGetClipboard     func(uintptr) uintptr
-	gdkClipboardSetText        func(uintptr, *byte)
-	gdkClipboardReadTextAsync  func(uintptr, uintptr, uintptr, uintptr)
+	gdkDisplayGetClipboard         func(uintptr) uintptr
+	gdkClipboardSetText            func(uintptr, *byte)
+	gdkClipboardSetContent         func(uintptr, uintptr) int32
+	gdkContentProviderNewForBytes  func(*byte, uintptr) uintptr
+	gdkContentProviderNewUnion     func(*uintptr, uintptr) uintptr
+	gdkClipboardReadTextAsync      func(uintptr, uintptr, uintptr, uintptr)
 	gdkClipboardReadTextFinish func(uintptr, uintptr, uintptr) uintptr
 	gdkSurfaceGetScale         func(uintptr) float64
 	gdkMonitorGetGeometry      func(uintptr, *gdkMonitorRectangle)
@@ -631,6 +634,9 @@ func bind() {
 	purego.RegisterLibFunc(&gdkMonitorGetRefreshRate, gtkLib, "gdk_monitor_get_refresh_rate")
 	purego.RegisterLibFunc(&gdkDisplayGetClipboard, gtkLib, "gdk_display_get_clipboard")
 	purego.RegisterLibFunc(&gdkClipboardSetText, gtkLib, "gdk_clipboard_set_text")
+	purego.RegisterLibFunc(&gdkClipboardSetContent, gtkLib, "gdk_clipboard_set_content")
+	purego.RegisterLibFunc(&gdkContentProviderNewForBytes, gtkLib, "gdk_content_provider_new_for_bytes")
+	purego.RegisterLibFunc(&gdkContentProviderNewUnion, gtkLib, "gdk_content_provider_new_union")
 	purego.RegisterLibFunc(&gdkClipboardReadTextAsync, gtkLib, "gdk_clipboard_read_text_async")
 	purego.RegisterLibFunc(&gdkClipboardReadTextFinish, gtkLib, "gdk_clipboard_read_text_finish")
 	purego.RegisterLibFunc(&gdkSurfaceGetScale, gtkLib, "gdk_surface_get_scale")

@@ -272,9 +272,10 @@ type App struct {
 	ClipboardItems       []core.ClipboardItem
 	ClipboardChangeCount int64
 	Announced            []string
-	// selectedArea and selectedText remember the active selection area and its plain text set by SelectText or SelectTextRange, for mod+c, mod+a and Escape in headless tests.
+	// selectedArea, selectedText and selectedItem remember the active selection area and its copy payload set by SelectText or SelectTextRange, for mod+c, mod+a and Escape in headless tests.
 	selectedArea driver.NodeID
 	selectedText string
+	selectedItem *driver.ClipboardItem
 	// InputSource is the keyboard input source the app selected, as a
 	// test sees it; inputSourceWas the one that selection replaced.
 	InputSource    string

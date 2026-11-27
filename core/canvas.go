@@ -46,6 +46,9 @@ type Canvas struct {
 	// Sampling is how a canvas drawn below the screen's density (ResolutionScale) is stretched to its box: smoothly by default, or to the nearest pixel for pixel art. SamplingFunc follows what it reads, as ResolutionScaleFunc does.
 	Sampling     ImageSampling
 	SamplingFunc func() ImageSampling
+	// CopyItem supplies extra clipboard representations when a text selection copies this canvas as a single attachment; CopyItemFunc follows what it reads. base/formula provides Presentation MathML and source representations through it.
+	CopyItem     *ClipboardItem
+	CopyItemFunc func() *ClipboardItem
 }
 
 // canvasResolution is the ResolutionScale a canvas sends: r within (0, 1), or 0 for any other value, which draws at the screen's density.
@@ -131,6 +134,8 @@ type canvasNode struct {
 	sampling   ImageSampling
 	// frames are the copies of the pixels the drawing last sent draws, by the app's buffer and version.
 	frames map[pixelKey]*image.RGBA
+	// copyItem is the extra clipboard representations supplied when a text selection copies this canvas as a single attachment.
+	copyItem *driver.ClipboardItem
 }
 
 type pixelKey struct {
@@ -198,8 +203,18 @@ func (t *Tree) mountCanvas(cx *Scope, parent *node, c Canvas) {
 	n.props = driver.ViewProps{Role: RoleImage, Label: c.Label, TestID: c.TestID}
 	t.bindAccessibility(cx, n, a11y{labelFunc: c.LabelFunc})
 	cn := &canvasNode{draw: c.Draw, size: NewSignal(cx, Size{}),
-		resolution: canvasResolution(c.ResolutionScale), sampling: c.Sampling}
+		resolution: canvasResolution(c.ResolutionScale), sampling: c.Sampling,
+		copyItem: driver.CloneClipboardItem(c.CopyItem)}
 	n.canvas = cn
+	if c.CopyItemFunc != nil {
+		cx.renderEffect(func() {
+			next := driver.CloneClipboardItem(c.CopyItemFunc())
+			if !driver.ClipboardItemEqual(next, cn.copyItem) {
+				cn.copyItem = next
+				t.markAttachmentCopyChanged(n)
+			}
+		})
+	}
 	// A new scale or sampling plays the last drawing again.
 	replay := func() {
 		if cn.drawing != nil {

@@ -1152,11 +1152,11 @@ func (a *App) press(key, code string) {
 			return
 		case k == "escape" && a.selectedText != "":
 			if v := a.views[a.selectedArea]; v != nil {
-				a.selectedArea, a.selectedText = 0, ""
+				a.selectedArea, a.selectedText, a.selectedItem = 0, "", nil
 				a.send(v, driver.Event{Kind: driver.EventSelectionChange})
 				return
 			}
-			a.selectedArea, a.selectedText = 0, ""
+			a.selectedArea, a.selectedText, a.selectedItem = 0, "", nil
 		}
 	}
 	if k == "escape" {
@@ -1246,27 +1246,35 @@ func (a *App) editSelectionArea(role driver.MenuRole) bool {
 	}
 	v := a.views[a.selectedArea]
 	if v == nil {
-		a.selectedArea, a.selectedText = 0, ""
+		a.selectedArea, a.selectedText, a.selectedItem = 0, "", nil
 		return false
 	}
 	switch role {
 	case driver.MenuCopy:
-		if a.selectedText == "" {
+		if a.selectedText == "" && a.selectedItem == nil {
 			return false
 		}
-		a.Clipboard, a.ClipboardImage, a.ClipboardFiles = a.selectedText, nil, nil
+		if a.selectedItem != nil {
+			a.applyClipboard(&driver.MountItem{Kind: driver.ItemSetClipboardItems, Data: []driver.ClipboardItem{*a.selectedItem}})
+		} else {
+			a.applyClipboard(&driver.MountItem{Kind: driver.ItemSetClipboard, Value: a.selectedText})
+		}
 		return true
 	case driver.MenuSelectAll:
 		texts := areaTextsOf(v)
 		var m driver.SelectionModel
 		m.SelectAll(texts)
 		text := m.Text(texts)
+		var item *driver.ClipboardItem
+		if ci, ok := m.ClipboardItem(texts); ok {
+			item = &ci
+		}
 		var ranges []driver.SelectedRange
 		for _, r := range m.Ranges(texts) {
 			ranges = append(ranges, driver.SelectedRange{ID: texts[r.Text].v.ID, Start: r.Start, End: r.End})
 		}
 		b := m.Extent(texts)
-		a.selectedText = text
+		a.selectedText, a.selectedItem = text, item
 		a.send(v, driver.Event{Kind: driver.EventSelectionChange, Point: b.Origin, Size: b.Size, Text: text, Ranges: ranges})
 		return true
 	}

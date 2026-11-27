@@ -279,7 +279,7 @@ func (t *Tree) setText(cx *Scope, n *node, v Text) {
 			if sp.ContentFunc != nil {
 				copied = sp.ContentFunc()
 			}
-			tn.spans = append(tn.spans, spanNode{content: copied, attach: w})
+			tn.spans = append(tn.spans, spanNode{content: copied, copyItem: driver.CloneClipboardItem(sp.CopyItem), attach: w})
 			tn.attachments++
 			continue
 		}

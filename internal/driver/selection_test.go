@@ -500,6 +500,62 @@ func TestCopiesTakeAttachmentsCopies(t *testing.T) {
 	wantText(t, &m, texts, "E $E=mc^2$ m\nLast")
 }
 
+func TestSelectionClipboardItem(t *testing.T) {
+	obj := string(AttachmentRune)
+	mathItem := &ClipboardItem{Representations: []ClipboardRepresentation{
+		{Type: "text/plain", Data: []byte("E=mc^2")},
+		{Type: "application/mathml+xml", Data: []byte("<math><mi>E</mi></math>")},
+		{Type: "text/x-tex", Data: []byte("E=mc^2")},
+	}}
+	texts := spannedTexts{
+		newFake("E "+obj+" m", frame{0, 0, 200, 20}, obj+"h", frame{0, 40, 200, 20}),
+		[][]TextSpan{
+			{
+				{Start: 0, End: 2},
+				{Start: 2, End: 2 + len(obj), Copy: "$E=mc^2$", CopyItem: mathItem},
+				{Start: 2 + len(obj), End: 4 + len(obj)},
+			},
+			{
+				{Start: 0, End: len(obj), Copy: "$$\nE=mc^2\n$$", CopyItem: mathItem},
+				{Start: len(obj), End: len(obj) + 1, Hidden: true},
+			},
+		},
+	}
+
+	var m SelectionModel
+	// Selecting only the inline attachment returns its ClipboardItem with the span's Copy text as text/plain.
+	m.Set(texts, TextPosition{0, 2}, TextPosition{0, 3})
+	got, ok := m.ClipboardItem(texts)
+	if !ok {
+		t.Fatal("single inline attachment did not return ClipboardItem")
+	}
+	if len(got.Representations) != 3 ||
+		got.Representations[0].Type != "text/plain" || string(got.Representations[0].Data) != "$E=mc^2$" ||
+		got.Representations[1].Type != "application/mathml+xml" ||
+		got.Representations[2].Type != "text/x-tex" || string(got.Representations[2].Data) != "E=mc^2" {
+		t.Fatalf("inline ClipboardItem = %#v", got)
+	}
+
+	// Selecting the attachment plus a trailing hidden span still returns its ClipboardItem.
+	m.Set(texts, TextPosition{1, 0}, TextPosition{1, 2})
+	got, ok = m.ClipboardItem(texts)
+	if !ok || string(got.Representations[0].Data) != "$$\nE=mc^2\n$$" {
+		t.Fatalf("attachment with hidden span gave (%#v, %v)", got, ok)
+	}
+
+	// Selecting text alongside the attachment returns false.
+	m.Set(texts, TextPosition{0, 0}, TextPosition{0, 3})
+	if _, ok := m.ClipboardItem(texts); ok {
+		t.Error("mixed text and attachment returned ClipboardItem")
+	}
+
+	// Selecting two attachments across lines returns false.
+	m.Set(texts, TextPosition{0, 2}, TextPosition{1, 1})
+	if _, ok := m.ClipboardItem(texts); ok {
+		t.Error("two attachments returned ClipboardItem")
+	}
+}
+
 func TestAttachmentDescent(t *testing.T) {
 	font := FontExtent{Ascent: 15, Descent: 5, XHeight: 8}
 	for _, c := range []struct {

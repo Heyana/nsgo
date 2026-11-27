@@ -72,10 +72,23 @@ func writeClipboardItems(pb objc.ID, items []driver.ClipboardItem) error {
 	list := objc.ID(apple.Class("NSMutableArray")).Send(sel("array"))
 	for _, item := range items {
 		object := objc.ID(apple.Class("NSPasteboardItem")).Send(selAlloc).Send(sel("init"))
+		seen := make(map[string]bool, len(item.Representations))
 		for _, rep := range item.Representations {
-			if !objc.Send[bool](object, sel("setData:forType:"), apple.NSData(rep.Data), apple.NSString(rep.Type)) {
+			types := apple.PasteboardTypes(rep.Type)
+			if len(types) == 0 {
 				object.Send(selRelease)
 				return fmt.Errorf("the pasteboard refused format %q", rep.Type)
+			}
+			data := apple.NSData(rep.Data)
+			for _, t := range types {
+				if seen[t] {
+					continue
+				}
+				seen[t] = true
+				if !objc.Send[bool](object, sel("setData:forType:"), data, apple.NSString(t)) {
+					object.Send(selRelease)
+					return fmt.Errorf("the pasteboard refused format %q", rep.Type)
+				}
 			}
 		}
 		list.Send(sel("addObject:"), object)

@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -65,6 +66,59 @@ func CloneClipboardItems(items []ClipboardItem) []ClipboardItem {
 		out[i].Representations = reps
 	}
 	return out
+}
+
+// CloneClipboardItem returns a deep copy of item, or nil when item is nil.
+func CloneClipboardItem(item *ClipboardItem) *ClipboardItem {
+	if item == nil {
+		return nil
+	}
+	reps := slices.Clone(item.Representations)
+	for i := range reps {
+		reps[i].Data = slices.Clone(reps[i].Data)
+	}
+	return &ClipboardItem{Representations: reps}
+}
+
+// ClipboardItemEqual reports whether a and b hold the same ordered representations and bytes.
+func ClipboardItemEqual(a, b *ClipboardItem) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil || len(a.Representations) != len(b.Representations) {
+		return false
+	}
+	for i := range a.Representations {
+		ra, rb := a.Representations[i], b.Representations[i]
+		if ra.Type != rb.Type || !bytes.Equal(ra.Data, rb.Data) {
+			return false
+		}
+	}
+	return true
+}
+
+// ClipboardItemWithPlain returns a copy of item whose text/plain representation is plain when plain is non-empty.
+func ClipboardItemWithPlain(item *ClipboardItem, plain string) ClipboardItem {
+	cloned := CloneClipboardItem(item)
+	if cloned == nil {
+		if plain == "" {
+			return ClipboardItem{}
+		}
+		return ClipboardItem{Representations: []ClipboardRepresentation{{Type: "text/plain", Data: []byte(plain)}}}
+	}
+	if plain == "" {
+		return *cloned
+	}
+	for i := range cloned.Representations {
+		if cloned.Representations[i].Type == "text/plain" {
+			cloned.Representations[i].Data = []byte(plain)
+			return *cloned
+		}
+	}
+	reps := make([]ClipboardRepresentation, 0, len(cloned.Representations)+1)
+	reps = append(reps, ClipboardRepresentation{Type: "text/plain", Data: []byte(plain)})
+	reps = append(reps, cloned.Representations...)
+	return ClipboardItem{Representations: reps}
 }
 
 func (c *MemoryClipboard) setItems(items []ClipboardItem) {

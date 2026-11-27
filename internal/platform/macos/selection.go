@@ -422,8 +422,12 @@ func surfaceCopy(self objc.ID, _ objc.SEL, _ objc.ID) {
 	}
 	s.selecting.list()
 	pb := objc.ID(apple.Class("NSPasteboard")).Send(sel("generalPasteboard"))
-	pb.Send(sel("clearContents"))
-	pb.Send(sel("setString:forType:"), apple.NSString(s.selecting.model.Text(s.selecting)), apple.NSString(pasteboardText))
+	if item, ok := s.selecting.model.ClipboardItem(s.selecting); ok {
+		if err := writeClipboardItems(pb, []driver.ClipboardItem{item}); err == nil {
+			return
+		}
+	}
+	setClipboardText(pb, s.selecting.model.Text(s.selecting))
 }
 
 // surfaceSelectAll is the surface's selectAll:, which selects the area.

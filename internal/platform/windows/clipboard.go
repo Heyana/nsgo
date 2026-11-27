@@ -3,8 +3,11 @@
 package windows
 
 import (
+	"encoding/binary"
 	"fmt"
+	"strings"
 	"syscall"
+	"unicode/utf16"
 	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -180,33 +183,31 @@ func (w *window) writeClipboardItems(items []driver.ClipboardItem) error {
 
 	// Prepare all formats and buffers before clearing the system clipboard.
 	formats := map[uintptr]bool{}
-	for _, item := range items {
-		for _, rep := range item.Representations {
-			format, err := clipboardFormatID(rep.Type)
-			if err != nil {
-				return err
+	for _, rep := range expandWindowsClipboardReps(items) {
+		format, err := clipboardFormatID(rep.Type)
+		if err != nil {
+			return err
+		}
+		if formats[format] {
+			return fmt.Errorf("Windows clipboard items repeat format %q", rep.Type)
+		}
+		formats[format] = true
+		const gmemZeroInit = 0x0040
+		// GlobalAlloc(0) returns a discarded handle that
+		// SetClipboardData rejects. Presence-only formats use a zero byte.
+		size := max(1, len(rep.Data))
+		h, _, err := globalAlloc.Call(gmemMoveable|gmemZeroInit, uintptr(size))
+		if h == 0 {
+			return fmt.Errorf("allocate clipboard format %q: %w", rep.Type, err)
+		}
+		entries = append(entries, entry{format, h})
+		if len(rep.Data) > 0 {
+			p, _, err := globalLock.Call(h)
+			if p == 0 {
+				return fmt.Errorf("lock clipboard format %q: %w", rep.Type, err)
 			}
-			if formats[format] {
-				return fmt.Errorf("Windows clipboard items repeat format %q", rep.Type)
-			}
-			formats[format] = true
-			const gmemZeroInit = 0x0040
-			// GlobalAlloc(0) returns a discarded handle that
-			// SetClipboardData rejects. Presence-only formats use a zero byte.
-			size := max(1, len(rep.Data))
-			h, _, err := globalAlloc.Call(gmemMoveable|gmemZeroInit, uintptr(size))
-			if h == 0 {
-				return fmt.Errorf("allocate clipboard format %q: %w", rep.Type, err)
-			}
-			entries = append(entries, entry{format, h})
-			if len(rep.Data) > 0 {
-				p, _, err := globalLock.Call(h)
-				if p == 0 {
-					return fmt.Errorf("lock clipboard format %q: %w", rep.Type, err)
-				}
-				rtlMoveMemory.Call(p, uintptr(unsafe.Pointer(&rep.Data[0])), uintptr(len(rep.Data)))
-				globalUnlock.Call(h)
-			}
+			rtlMoveMemory.Call(p, uintptr(unsafe.Pointer(&rep.Data[0])), uintptr(len(rep.Data)))
+			globalUnlock.Call(h)
 		}
 	}
 
@@ -225,4 +226,56 @@ func (w *window) writeClipboardItems(items []driver.ClipboardItem) error {
 		e.handle = 0 // Windows owns the buffer from here.
 	}
 	return nil
+}
+
+// expandWindowsClipboardReps maps portable MIME representations to Windows
+// clipboard formats without duplicating formats already named explicitly in
+// items (such as when restoring a snapshot read back from the clipboard).
+func expandWindowsClipboardReps(items []driver.ClipboardItem) []driver.ClipboardRepresentation {
+	explicit := map[string]bool{}
+	total := 0
+	for _, item := range items {
+		total += len(item.Representations)
+		for _, rep := range item.Representations {
+			explicit[strings.ToLower(rep.Type)] = true
+		}
+	}
+	added := map[string]bool{}
+	out := make([]driver.ClipboardRepresentation, 0, total)
+	addAlias := func(name string, data []byte) {
+		key := strings.ToLower(name)
+		if explicit[key] || added[key] {
+			return
+		}
+		added[key] = true
+		out = append(out, driver.ClipboardRepresentation{Type: name, Data: data})
+	}
+	for _, item := range items {
+		for _, rep := range item.Representations {
+			base := strings.TrimSpace(strings.ToLower(rep.Type))
+			if semi := strings.IndexByte(base, ';'); semi >= 0 {
+				base = strings.TrimSpace(base[:semi])
+			}
+			switch base {
+			case "text/plain":
+				addAlias("CF_UNICODETEXT", encodeWindowsClipboardText(string(rep.Data)))
+			case "application/mathml+xml":
+				addAlias("MathML", rep.Data)
+				addAlias("MathML Presentation", rep.Data)
+				out = append(out, rep)
+			default:
+				out = append(out, rep)
+			}
+		}
+	}
+	return out
+}
+
+func encodeWindowsClipboardText(s string) []byte {
+	units := utf16.Encode([]rune(s))
+	out := make([]byte, (len(units)+1)*2)
+	for i, u := range units {
+		binary.LittleEndian.PutUint16(out[i*2:], u)
+	}
+	return out
 }

@@ -648,9 +648,42 @@ func controllerCopy(self objc.ID, _ objc.SEL, _ objc.ID) {
 		return
 	}
 	sl.list()
-	if pb := generalPasteboard(); pb != 0 {
-		pb.Send(sel("setString:"), apple.NSString(sl.model.Text(sl)))
+	pb := generalPasteboard()
+	if pb == 0 {
+		return
 	}
+	if item, ok := sl.model.ClipboardItem(sl); ok && writePasteboardItem(pb, item) {
+		return
+	}
+	pb.Send(sel("setString:"), apple.NSString(sl.model.Text(sl)))
+}
+
+func writePasteboardItem(pb objc.ID, item driver.ClipboardItem) bool {
+	dict := objc.ID(apple.Class("NSMutableDictionary")).Send(sel("dictionary"))
+	seen := make(map[string]bool, len(item.Representations))
+	wrote := false
+	for _, rep := range item.Representations {
+		for _, t := range apple.PasteboardTypes(rep.Type) {
+			if seen[t] {
+				continue
+			}
+			seen[t] = true
+			var val objc.ID
+			if t == "public.utf8-plain-text" {
+				val = apple.NSString(string(rep.Data))
+			} else {
+				val = apple.NSData(rep.Data)
+			}
+			dict.Send(sel("setObject:forKey:"), val, apple.NSString(t))
+			wrote = true
+		}
+	}
+	if !wrote {
+		return false
+	}
+	list := objc.ID(apple.Class("NSArray")).Send(sel("arrayWithObject:"), dict)
+	pb.Send(sel("setItems:"), list)
+	return true
 }
 
 // controllerSelectAll is the view controller's selectAll:, which selects

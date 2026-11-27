@@ -3,6 +3,7 @@
 package web
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"syscall/js"
@@ -204,6 +205,8 @@ func (s *surface) copySelection(e js.Value) {
 	var parts []string
 	var rows []js.Value
 	copied := false
+	singleItem := ""
+	multiItem := false
 	texts := s.host.Call("querySelectorAll", ".nsgo-text")
 	for i := range texts.Length() {
 		el := texts.Index(i)
@@ -225,6 +228,18 @@ func (s *surface) copySelection(e js.Value) {
 			hidden.Index(j).Call("remove")
 		}
 		placeholders := frag.Call("querySelectorAll", "[data-copy]")
+		itemAttr := ""
+		if placeholders.Length() == 1 {
+			ph := placeholders.Index(0)
+			if v := ph.Call("getAttribute", "data-copy-item"); v.Type() == js.TypeString && v.String() != "" {
+				// Check whether the fragment has any visible text outside this one placeholder.
+				check := frag.Call("cloneNode", true)
+				check.Call("querySelector", "[data-copy]").Call("remove")
+				if strings.ReplaceAll(check.Get("textContent").String(), "￼", "") == "" {
+					itemAttr = v.String()
+				}
+			}
+		}
 		for j := range placeholders.Length() {
 			ph := placeholders.Index(j)
 			ph.Call("replaceWith", ph.Call("getAttribute", "data-copy"))
@@ -234,10 +249,15 @@ func (s *surface) copySelection(e js.Value) {
 		if text == "" {
 			continue
 		}
+		if itemAttr != "" && singleItem == "" && len(parts) == 0 && !multiItem {
+			singleItem = itemAttr
+		} else {
+			singleItem, multiItem = "", true
+		}
 		parts = append(parts, text)
 		rows = append(rows, el.Call("getBoundingClientRect"))
 	}
-	if len(parts) < 2 && !copied {
+	if len(parts) < 2 && !copied && singleItem == "" {
 		return // the browser's copy is right
 	}
 	var out strings.Builder
@@ -252,8 +272,47 @@ func (s *surface) copySelection(e js.Value) {
 		}
 		out.WriteString(p)
 	}
-	e.Get("clipboardData").Call("setData", "text/plain", out.String())
+	cd := e.Get("clipboardData")
+	cd.Call("setData", "text/plain", out.String())
+	if singleItem != "" {
+		for _, rep := range decodeWebCopyItem(singleItem) {
+			if rep.T != "" && rep.T != "text/plain" {
+				cd.Call("setData", rep.T, rep.V)
+			}
+		}
+	}
 	e.Call("preventDefault")
+}
+
+type webCopyRep struct {
+	T string `json:"t"`
+	V string `json:"v"`
+}
+
+func encodeWebCopyItem(item *driver.ClipboardItem) string {
+	var reps []webCopyRep
+	for _, rep := range item.Representations {
+		if rep.Type == "" || rep.Type == "text/plain" {
+			continue
+		}
+		reps = append(reps, webCopyRep{T: rep.Type, V: string(rep.Data)})
+	}
+	if len(reps) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(reps)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func decodeWebCopyItem(raw string) []webCopyRep {
+	var reps []webCopyRep
+	if err := json.Unmarshal([]byte(raw), &reps); err != nil {
+		return nil
+	}
+	return reps
 }
 
 // userSelects reports whether the browser selects text in el: the

@@ -2,6 +2,7 @@
 package formula
 
 import (
+	"bytes"
 	"context"
 
 	"github.com/caelyreth/untie"
@@ -116,6 +117,27 @@ func (v View) Render(cx *core.Scope) core.Node {
 		return r.withSystemText(r.parsed(key, ok), cx.MeasureText, cx.Env().Language())
 	}, func(a, b *layout) bool { return a == b })
 	failed := core.NewMemo(cx, func() bool { return lay.Get().failed })
+	copyItem := core.NewMemoFunc(cx, func() *core.ClipboardItem {
+		src := source()
+		if src == "" {
+			return nil
+		}
+		item := ClipboardItem(src, v.Dialect, v.Display)
+		return &item
+	}, func(a, b *core.ClipboardItem) bool {
+		if a == b {
+			return true
+		}
+		if a == nil || b == nil || len(a.Representations) != len(b.Representations) {
+			return false
+		}
+		for i := range a.Representations {
+			if a.Representations[i].Type != b.Representations[i].Type || !bytes.Equal(a.Representations[i].Data, b.Representations[i].Data) {
+				return false
+			}
+		}
+		return true
+	})
 	msgs := func() locales.Messages { return locales.For(cx) }
 	diagnostics := func() []untie.Diagnostic {
 		if v.DiagnosticsFunc != nil {
@@ -214,6 +236,7 @@ func (v View) Render(cx *core.Scope) core.Node {
 					}
 					return speak(msgs(), lay.Get().description)
 				},
+				CopyItemFunc: copyItem.Get,
 				Draw: func(d *core.Drawing, size core.Size) {
 					l := lay.Get()
 					if current != nil {

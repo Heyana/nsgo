@@ -743,6 +743,8 @@ type richText struct {
 	attachments []driver.TextAttachment
 	// copies are what a copy takes in place of each attachment (driver.TextSpan.Copy).
 	copies []string
+	// copyItems are extra clipboard representations for single-attachment copies (driver.TextSpan.CopyItem).
+	copyItems []*driver.ClipboardItem
 	// drawn is CSS over style for the element that draws the text: a
 	// clipped text is measured as clamped and drawn cut by its box.
 	drawn    map[string]string
@@ -943,18 +945,27 @@ func (s *surface) Prepare(t *driver.AttributedText) driver.PreparedText {
 		at = end
 	}
 	var copies []string
+	var copyItems []*driver.ClipboardItem
 	for i, a := range t.Attachments {
 		for _, sp := range t.Spans {
-			if sp.Start == a.Offset && sp.Copy != "" {
-				if copies == nil {
-					copies = make([]string, len(t.Attachments))
+			if sp.Start == a.Offset {
+				if sp.Copy != "" {
+					if copies == nil {
+						copies = make([]string, len(t.Attachments))
+					}
+					copies[i] = sp.Copy
 				}
-				copies[i] = sp.Copy
+				if sp.CopyItem != nil && len(sp.CopyItem.Representations) > 0 {
+					if copyItems == nil {
+						copyItems = make([]*driver.ClipboardItem, len(t.Attachments))
+					}
+					copyItems[i] = sp.CopyItem
+				}
 			}
 		}
 	}
 	p := &preparedText{s: s, richText: richText{text: t.Text, language: t.Style.Font.Language, style: style, spans: spans,
-		attachments: t.Attachments, copies: copies, drawn: drawn, maxLines: t.MaxLines, para: ps}}
+		attachments: t.Attachments, copies: copies, copyItems: copyItems, drawn: drawn, maxLines: t.MaxLines, para: ps}}
 	if len(spans) == 0 && len(t.Attachments) == 0 && oneLine(t.Text) {
 		p.line = ps.line
 	}
@@ -1149,6 +1160,11 @@ func (r *richText) appendText(doc, el js.Value, start, end int) {
 		ph.Call("setAttribute", "data-attachment", i)
 		if i < len(r.copies) && r.copies[i] != "" {
 			ph.Call("setAttribute", "data-copy", r.copies[i])
+		}
+		if i < len(r.copyItems) && r.copyItems[i] != nil {
+			if encoded := encodeWebCopyItem(r.copyItems[i]); encoded != "" {
+				ph.Call("setAttribute", "data-copy-item", encoded)
+			}
 		}
 		setStyle(ph, map[string]string{
 			"display": "inline-block", "vertical-align": align,

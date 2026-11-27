@@ -500,7 +500,17 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 						b.WriteRune(driver.AttachmentRune)
 						at.Attachments = append(at.Attachments, driver.TextAttachment{Offset: start,
 							Size: w.attach.size, Align: w.attach.align, Descent: w.attach.descent})
-						at.Spans = append(at.Spans, driver.TextSpan{Start: start, End: b.Len(), Style: ts, Cursor: sp.style.Cursor, Copy: sp.content})
+						var copyItem *driver.ClipboardItem
+						if sp.copyItem != nil {
+							item := driver.ClipboardItemWithPlain(sp.copyItem, sp.content)
+							copyItem = &item
+						} else if sp.content != "" {
+							if attached := attachmentCopyItem(w); attached != nil {
+								item := driver.ClipboardItemWithPlain(attached, sp.content)
+								copyItem = &item
+							}
+						}
+						at.Spans = append(at.Spans, driver.TextSpan{Start: start, End: b.Len(), Style: ts, Cursor: sp.style.Cursor, Copy: sp.content, CopyItem: copyItem})
 						continue
 					}
 					own := sp.style.inherit(inherited)
@@ -675,6 +685,35 @@ func (t *Tree) baselineDescent(w *node, align VerticalAlign) Points {
 		return max(h-bottom+c.canvas.em.descentAt(Size{Width: Points(l.Size.Width), Height: Points(l.Size.Height)}), 0)
 	}
 	return c.canvas.em.descentAt(Size{Width: Points(l.Size.Width), Height: h})
+}
+
+// attachmentCopyItem returns the first non-nil clipboard item supplied by a visible canvas in attachment wrapper w's subtree.
+func attachmentCopyItem(w *node) *driver.ClipboardItem {
+	if w == nil || w.style.Display == DisplayNone || w.style.Visibility == VisibilityHidden {
+		return nil
+	}
+	if w.canvas != nil && w.canvas.copyItem != nil {
+		return w.canvas.copyItem
+	}
+	for _, c := range w.flatChildren() {
+		if item := attachmentCopyItem(c); item != nil {
+			return item
+		}
+	}
+	return nil
+}
+
+// markAttachmentCopyChanged marks an attachment's enclosing text stale when its canvas's clipboard item changes.
+func (t *Tree) markAttachmentCopyChanged(n *node) {
+	for p := n; p != nil; p = p.parent {
+		if p.attach != nil {
+			if p.parent != nil && p.parent.text != nil {
+				p.parent.text.stale = true
+				t.markResolve(p.parent)
+			}
+			return
+		}
+	}
 }
 
 // firstTextBaseline returns the first laid-out text baseline in n's subtree, measured from n's top. It lets an inline view containing text participate in its surrounding line's baseline alignment.

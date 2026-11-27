@@ -882,6 +882,7 @@ func (a *App) SelectText(selector string, box driver.Bounds) {
 	a.step("selectText(%s, %v)", selector, box)
 	v := a.pick(selector, "view", func(m *View) (*View, bool) { return m, true })
 	text := ""
+	var item *driver.ClipboardItem
 	var ranges []driver.SelectedRange
 	if box.Size.Width > 0 && box.Size.Height > 0 {
 		var chosen areaTexts
@@ -893,14 +894,17 @@ func (a *App) SelectText(selector string, box driver.Bounds) {
 		var m driver.SelectionModel
 		m.SelectAll(chosen)
 		text = m.Text(chosen)
+		if ci, ok := m.ClipboardItem(chosen); ok {
+			item = &ci
+		}
 		for _, r := range m.Ranges(chosen) {
 			ranges = append(ranges, driver.SelectedRange{ID: chosen[r.Text].v.ID, Start: r.Start, End: r.End})
 		}
 	}
 	if text != "" {
-		a.selectedArea, a.selectedText = v.ID, text
+		a.selectedArea, a.selectedText, a.selectedItem = v.ID, text, item
 	} else if a.selectedArea == v.ID {
-		a.selectedArea, a.selectedText = 0, ""
+		a.selectedArea, a.selectedText, a.selectedItem = 0, "", nil
 	}
 	a.send(v, driver.Event{Kind: driver.EventSelectionChange, Point: box.Origin, Size: box.Size, Text: text, Ranges: ranges})
 	a.done()
@@ -930,19 +934,23 @@ func (a *App) SelectTextRange(selector, from string, start int, to string, end i
 	}
 	var m driver.SelectionModel
 	text := ""
+	var item *driver.ClipboardItem
 	var ranges []driver.SelectedRange
 	if m.Set(texts, driver.TextPosition{Text: at, Offset: start},
 		driver.TextPosition{Text: endAt, Offset: end}) {
 		text = m.Text(texts)
+		if ci, ok := m.ClipboardItem(texts); ok {
+			item = &ci
+		}
 		for _, r := range m.Ranges(texts) {
 			ranges = append(ranges, driver.SelectedRange{ID: texts[r.Text].v.ID, Start: r.Start, End: r.End})
 		}
 	}
 	b := m.Extent(texts)
 	if text != "" {
-		a.selectedArea, a.selectedText = v.ID, text
+		a.selectedArea, a.selectedText, a.selectedItem = v.ID, text, item
 	} else if a.selectedArea == v.ID {
-		a.selectedArea, a.selectedText = 0, ""
+		a.selectedArea, a.selectedText, a.selectedItem = 0, "", nil
 	}
 	a.send(v, driver.Event{Kind: driver.EventSelectionChange, Point: b.Origin, Size: b.Size, Text: text, Ranges: ranges})
 	a.done()
