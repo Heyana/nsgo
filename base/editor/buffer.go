@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -149,27 +150,131 @@ func (b *buffer) record(changes []change, before, after []selection, kind editKi
 	b.open = kind != kindOther
 }
 
+// invert returns the change that undoes c.
+func (c change) invert() change {
+	return change{
+		from:   c.from,
+		oldEnd: c.newEnd,
+		newEnd: c.oldEnd,
+		old:    c.text,
+		text:   c.old,
+	}
+}
+
+// changeAt builds a change at from replacing old with text, deriving
+// oldEnd and newEnd from their contents so spans cannot drift across
+// rebases.
+func changeAt(from pos, old, text string) change {
+	return change{
+		from:   from,
+		oldEnd: advance(from, old),
+		newEnd: advance(from, text),
+		old:    old,
+		text:   text,
+	}
+}
+
+// invertChanges returns the reverse sequence of inverse changes.
+func invertChanges(changes []change) []change {
+	out := make([]change, len(changes))
+	for i, c := range changes {
+		out[len(changes)-1-i] = c.invert()
+	}
+	return out
+}
+
+// transformChange commutes two changes a and b starting from the same
+// document: aNext applies after b, bNext applies after a, and both
+// paths reach the same document. It returns ok=false when a and b
+// overlap.
+func transformChange(a, b change) (aNext, bNext change, ok bool) {
+	switch {
+	case b.oldEnd.less(a.from) || b.oldEnd == a.from && (b.from.less(b.oldEnd) || a.from.less(a.oldEnd)):
+		// b ends at or before a starts (and they are not both pure
+		// insertions at the same position): b is before a.
+		return changeAt(b.mapPos(a.from, false), a.old, a.text), b, true
+	case a.oldEnd.less(b.from) || a.oldEnd == b.from:
+		// a ends at or before b starts (including two pure insertions at
+		// the same position, where a goes first): a is before b.
+		return a, changeAt(a.mapPos(b.from, false), b.old, b.text), true
+	default:
+		return change{}, change{}, false
+	}
+}
+
+// transformChanges commutes two sequential change lists a and b
+// starting from the same document: aNext applies after b, bNext applies
+// after a, and both paths reach the same document. It returns ok=false
+// when any pair of changes overlaps.
+func transformChanges(a, b []change) (aNext, bNext []change, ok bool) {
+	aNext = make([]change, len(a))
+	bNext = slices.Clone(b)
+	for i, ca := range a {
+		for j := range bNext {
+			var nextA, nextB change
+			nextA, nextB, ok = transformChange(ca, bNext[j])
+			if !ok {
+				return nil, nil, false
+			}
+			ca = nextA
+			bNext[j] = nextB
+		}
+		aNext[i] = ca
+	}
+	return aNext, bNext, true
+}
+
 // rebase carries the undo and redo history through changes no step
 // records, such as a merge from a sync server, so undo still takes back
 // the edits around them and restores selections where the user left
-// them. A change that overlaps a step's leaves that step's range at the
-// change's edge, the place the text it replaces was.
+// them. Each stack is walked from the step adjacent to the current
+// document; a step that overlaps the carried changes drops itself and
+// every deeper step whose coordinates depend on it.
 func (b *buffer) rebase(changes []change) {
 	if len(changes) == 0 {
 		return
 	}
-	for _, steps := range [][]undoStep{b.undo, b.redo} {
-		for i := range steps {
-			step := &steps[i]
-			for j := range step.changes {
-				c := &step.changes[j]
-				c.from, c.oldEnd, c.newEnd = mapThrough(changes, c.from, true), mapThrough(changes, c.oldEnd, false), mapThrough(changes, c.newEnd, false)
+	b.undo = rebaseSteps(b.undo, changes, true)
+	b.redo = rebaseSteps(b.redo, changes, false)
+	b.open = false
+}
+
+// rebaseSteps transforms an undo or redo stack step by step from top
+// (adjacent to the current document) to bottom, carrying changes across
+// each step's coordinate space.
+func rebaseSteps(steps []undoStep, changes []change, undo bool) []undoStep {
+	carried := changes
+	keep := 0
+	for i := len(steps) - 1; i >= 0; i-- {
+		step := &steps[i]
+		if undo {
+			invNext, prevCarried, ok := transformChanges(invertChanges(step.changes), carried)
+			if !ok {
+				keep = i + 1
+				break
 			}
-			step.before = rebaseSels(changes, step.before)
-			step.after = rebaseSels(changes, step.after)
+			step.changes = invertChanges(invNext)
+			step.after = rebaseSels(carried, step.after)
+			step.before = rebaseSels(prevCarried, step.before)
+			carried = prevCarried
+		} else {
+			nextChanges, nextCarried, ok := transformChanges(step.changes, carried)
+			if !ok {
+				keep = i + 1
+				break
+			}
+			step.changes = nextChanges
+			step.before = rebaseSels(carried, step.before)
+			step.after = rebaseSels(nextCarried, step.after)
+			carried = nextCarried
 		}
 	}
-	b.open = false
+	if keep > 0 {
+		n := copy(steps, steps[keep:])
+		clear(steps[n:])
+		steps = steps[:n]
+	}
+	return steps
 }
 
 // rebaseSels carries selections through changes.

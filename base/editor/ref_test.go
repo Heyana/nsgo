@@ -194,3 +194,45 @@ func TestSetValueOutsideHistory(t *testing.T) {
 		t.Errorf("redo left %q", value)
 	}
 }
+
+// TestSetValueOutsideHistoryEdgeCases exercises deletion-point merges,
+// overlapping full replacements, and Value updates via Ref.
+func TestSetValueOutsideHistoryEdgeCases(t *testing.T) {
+	ref := &Ref{}
+	var value string
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		return Editor{Ref: ref, DefaultValue: "hello", OnChange: func(s string) { value = s },
+			Style: core.Style{Width: core.Pt(400), Height: core.Pt(300)}}
+	})
+	app.Settle()
+
+	// Delete "llo", merge "12345" right at the deletion point.
+	ref.SetSelections([]Selection{{Anchor: Position{0, 2}, Head: Position{0, 5}}})
+	ref.Insert("")
+	app.Settle()
+	if value != "he" {
+		t.Fatalf("after delete: %q", value)
+	}
+	ref.SetValueOutsideHistory("he12345")
+	app.Settle()
+	ref.Run(Undo)
+	app.Settle()
+	if value != "hello12345" {
+		t.Fatalf("undo at deletion point left %q, want %q", value, "hello12345")
+	}
+	ref.Run(Redo)
+	app.Settle()
+	if value != "he12345" {
+		t.Fatalf("redo at deletion point left %q, want %q", value, "he12345")
+	}
+
+	// Overlapping full replacement clears conflicting history without panicking.
+	ref.SetValueOutsideHistory("completely replaced")
+	app.Settle()
+	ref.Run(Undo)
+	ref.Run(Redo)
+	app.Settle()
+	if ref.Value() != "completely replaced" {
+		t.Fatalf("after full replacement undo/redo: %q", ref.Value())
+	}
+}
