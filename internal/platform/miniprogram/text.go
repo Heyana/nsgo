@@ -96,8 +96,17 @@ func fontCSS(f driver.Font) string {
 	if f.Italic {
 		italic = "italic"
 	}
-	return "font-style:" + italic + ";font-weight:" + strconv.Itoa(int(f.Weight)) +
+	css := "font-style:" + italic + ";font-weight:" + strconv.Itoa(int(f.Weight)) +
 		";font-size:" + webstyle.Px(f.Size) + ";font-family:" + family(f.Family, f.Language) + ";"
+	if v := driver.FontCSSVariationSettings(f); v != "" {
+		css += "font-variation-settings:" + v + ";"
+	}
+	if len(f.Features) > 0 {
+		if feat := driver.FontCSSFeatureSettings(f); feat != "" {
+			css += "font-feature-settings:" + feat + ";"
+		}
+	}
+	return css
 }
 
 // canvasFont is a font as the canvas's font shorthand.

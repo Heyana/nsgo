@@ -46,7 +46,7 @@ type Drawing struct {
 
 	text     TextEngine // measures text; nil approximates it
 	measured map[textKey]TextMetrics
-	marks    map[Font]float32 // widthMark's width, by font
+	marks    map[FontKey]float32 // widthMark's width, by font
 	track    *drawTrack
 	// pathAside is set while the current path is only the track's,
 	// after a FillPath, StrokePath or ClipPath (restorePath).
@@ -1055,13 +1055,23 @@ func drawFont(font Font) Font {
 		font.Weight = FontWeightNormal
 	}
 	font.Variant &^= FontVariantNormal
+	if len(font.Axes) > 0 {
+		font.Axes = maps.Clone(font.Axes)
+	} else {
+		font.Axes = nil
+	}
+	if len(font.Features) > 0 {
+		font.Features = maps.Clone(font.Features)
+	} else {
+		font.Features = nil
+	}
 	return font
 }
 
 // textKey is a text measured in a font.
 type textKey struct {
 	text string
-	font Font
+	font FontKey
 }
 
 // MeasureText returns the advance width of text in font, its trailing
@@ -1076,7 +1086,7 @@ func (d *Drawing) MeasureText(text string, font Font) float32 {
 // 0.2 of it.
 func (d *Drawing) TextMetrics(text string, font Font) TextMetrics {
 	font = drawFont(font)
-	key := textKey{text, font}
+	key := textKey{text, FontKeyOf(font)}
 	if m, ok := d.measured[key]; ok {
 		return m
 	}
@@ -1125,14 +1135,15 @@ func (d *Drawing) advanceLine(text string, font Font, line TextLine) float32 {
 // space needs it, and it does not change while the drawing lives, so it is
 // measured once per font rather than once per such text.
 func (d *Drawing) markWidth(font Font) float32 {
-	if w, ok := d.marks[font]; ok {
+	fk := FontKeyOf(font)
+	if w, ok := d.marks[fk]; ok {
 		return w
 	}
 	w := float32(d.firstLine(widthMark, font).Bounds.Size.Width)
 	if d.marks == nil {
-		d.marks = map[Font]float32{}
+		d.marks = map[FontKey]float32{}
 	}
-	d.marks[font] = w
+	d.marks[fk] = w
 	return w
 }
 

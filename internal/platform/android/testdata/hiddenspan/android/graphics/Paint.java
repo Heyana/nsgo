@@ -26,6 +26,7 @@ public class Paint {
     private Typeface typeface = Typeface.DEFAULT;
     private float letterSpacing;
     private String fontFeatureSettings;
+    private String fontVariationSettings;
     private Locale locale = Locale.ROOT;
     private float shadowRadius, shadowDx, shadowDy;
     private int shadowColor;
@@ -41,6 +42,7 @@ public class Paint {
         this.typeface = p.typeface;
         this.letterSpacing = p.letterSpacing;
         this.fontFeatureSettings = p.fontFeatureSettings;
+        this.fontVariationSettings = p.fontVariationSettings;
         this.locale = p.locale;
         this.shadowRadius = p.shadowRadius;
         this.shadowDx = p.shadowDx;
@@ -59,6 +61,9 @@ public class Paint {
     public int getFlags() { return flags; }
     public void setLetterSpacing(float ls) { letterSpacing = ls; }
     public void setFontFeatureSettings(String f) { fontFeatureSettings = f; }
+    public String getFontFeatureSettings() { return fontFeatureSettings; }
+    public boolean setFontVariationSettings(String v) { fontVariationSettings = v; return true; }
+    public String getFontVariationSettings() { return fontVariationSettings; }
     public void setTextLocale(Locale l) { locale = l; }
     public void setShadowLayer(float r, float dx, float dy, int c) { shadowRadius = r; shadowDx = dx; shadowDy = dy; shadowColor = c; }
     public void clearShadowLayer() { shadowRadius = 0; shadowDx = 0; shadowDy = 0; shadowColor = 0; }

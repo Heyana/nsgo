@@ -190,7 +190,7 @@ func textRunStyle(tc *driver.TextContent, r run) (font, color string) {
 	st := tc.Style
 	if r.style > 0 && r.style-1 < len(tc.Spans) {
 		sp := tc.Spans[r.style-1].Style
-		if sp.Font != (driver.Font{}) {
+		if !sp.Font.IsZero() {
 			st.Font = sp.Font
 		}
 		if sp.Color != 0 {

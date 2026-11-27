@@ -172,39 +172,70 @@ func fontFallback(list string) *comObject {
 	return fallback
 }
 
+const maxTypographies = 256
+
 var (
 	typographiesMu sync.Mutex
-	// typographies holds an IDWriteTypography per font variant, which
-	// texts share and keep for the process.
-	typographies = map[driver.FontVariant]*comObject{}
+	// typographies holds an IDWriteTypography per resolved feature set, which
+	// texts share and AddRef when borrowing.
+	typographies = map[string]*comObject{}
 )
 
-// typography returns the IDWriteTypography that turns on v's features,
-// or nil when it has none.
-func typography(v driver.FontVariant) *comObject {
-	tags := v.Tags()
-	if len(tags) == 0 {
+// typography returns an AddRef'd IDWriteTypography that applies f's OpenType
+// features (merged from Variant and Features), or nil when it has none. The
+// caller releases it.
+func typography(f driver.Font) *comObject {
+	feats := driver.ResolvedFontFeatures(f)
+	if len(feats) == 0 {
 		return nil
 	}
+	key := driver.FontFeaturesKey(f)
 	typographiesMu.Lock()
 	defer typographiesMu.Unlock()
-	if t, ok := typographies[v]; ok {
+	if t, ok := typographies[key]; ok {
+		if t != nil {
+			t.addRef()
+		}
 		return t
 	}
 	var t *comObject
-	if f := dwriteFactory(); f == nil || failed(f.call(dwCreateTypography, uintptr(unsafe.Pointer(&t)))) {
+	if factory := dwriteFactory(); factory == nil || failed(factory.call(dwCreateTypography, uintptr(unsafe.Pointer(&t)))) {
 		t = nil
 	}
-	for _, tag := range tags {
+	for _, feat := range feats {
 		// A DWRITE_FONT_FEATURE is a tag and a parameter, passed by value
 		// as a text range's start and length are.
-		name := uint32(tag[0]) | uint32(tag[1])<<8 | uint32(tag[2])<<16 | uint32(tag[3])<<24
+		name := driver.FontTagLE(feat.Tag)
+		param := uint32(max(feat.Value, 0))
 		if t != nil {
-			t.callRange(typographyAddFontFeature, 0, name, 1)
+			t.callRange(typographyAddFontFeature, 0, name, param)
 		}
 	}
-	typographies[v] = t
+	if len(typographies) >= maxTypographies {
+		for k, old := range typographies {
+			old.release()
+			delete(typographies, k)
+		}
+	}
+	if t != nil {
+		t.addRef()
+	}
+	typographies[key] = t
 	return t
+}
+
+// axisValues converts f's resolved variable font axes into DirectWrite's
+// DWRITE_FONT_AXIS_VALUE array.
+func axisValues(f driver.Font) []fontAxisValue {
+	axes := driver.ResolvedFontAxes(f)
+	if len(axes) == 0 {
+		return nil
+	}
+	out := make([]fontAxisValue, len(axes))
+	for i, a := range axes {
+		out[i] = fontAxisValue{axisTag: driver.FontTagLE(a.Tag), value: a.Value}
+	}
+	return out
 }
 
 // fontName returns the family DirectWrite is asked for.
@@ -350,7 +381,7 @@ func clearTextFormats() {
 }
 
 // cachedTextFormat returns an AddRef'd configured IDWriteTextFormat for key, or nil.
-func cachedTextFormat(key formatKey) *comObject {
+func cachedTextFormat(key formatKey, axes map[string]float32) *comObject {
 	textFormatsMu.Lock()
 	if f := textFormats[key]; f != nil {
 		f.addRef()
@@ -365,6 +396,7 @@ func cachedTextFormat(key formatKey) *comObject {
 		Weight:   key.weight,
 		Italic:   key.italic,
 		Size:     driver.Points(key.size),
+		Axes:     axes,
 	}
 	format := textFormat(font)
 	if format == nil {
@@ -441,6 +473,12 @@ func textFormat(font driver.Font) *comObject {
 			format1.release()
 		}
 		fallback.release()
+	}
+	if vals := axisValues(font); len(vals) > 0 {
+		if format3 := format.query(&iidDWriteTextFormat3); format3 != nil {
+			format3.call(formatSetFontAxisValues, uintptr(unsafe.Pointer(&vals[0])), uintptr(len(vals)))
+			format3.release()
+		}
 	}
 	return format
 }
@@ -676,12 +714,15 @@ func (pt *preparedText) build() *comObject {
 		// Keep Korean words whole between spaces while breaking a single word that overflows the line.
 		wrap = dwEmergencyBreak
 	}
+	base := pt.style.Font
+	baseAxesKey := driver.FontAxesKey(base)
 	key := formatKey{
-		family:   pt.style.Font.Family,
-		language: pt.style.Font.Language,
-		weight:   pt.style.Font.Weight,
-		italic:   pt.style.Font.Italic,
-		size:     max(float32(pt.style.Font.Size), 0.1),
+		family:   base.Family,
+		language: base.Language,
+		weight:   base.Weight,
+		italic:   base.Italic,
+		axes:     baseAxesKey,
+		size:     max(float32(base.Size), 0.1),
 		align:    pt.style.Align,
 		rtl:      pt.style.RTL,
 		wrap:     wrap,
@@ -689,7 +730,7 @@ func (pt *preparedText) build() *comObject {
 		baseline: pt.baseline,
 		trim:     pt.maxLines > 0 && pt.ellipsize != driver.EllipsizeClip,
 	}
-	format := cachedTextFormat(key)
+	format := cachedTextFormat(key, base.Axes)
 	if format == nil {
 		return nil
 	}
@@ -703,8 +744,7 @@ func (pt *preparedText) build() *comObject {
 		format.ptr(), f32(unbounded), f32(unboundedHeight), uintptr(unsafe.Pointer(&layout)))) {
 		return nil
 	}
-	var spacing *comObject
-	base := pt.style.Font
+	var spacing, layout4 *comObject
 	baseSize := max(float32(base.Size), 0.1)
 	for _, r := range pt.runs {
 		n := r.end - r.start
@@ -727,6 +767,19 @@ func (pt *preparedText) build() *comObject {
 			locale := wide(f.Language)
 			layout.callRange(layoutSetLocaleName, 0, r.start, n, uintptr(unsafe.Pointer(locale)))
 		}
+		if driver.FontAxesKey(f) != baseAxesKey {
+			if layout4 == nil {
+				layout4 = layout.query(&iidDWriteTextLayout4)
+			}
+			if layout4 != nil {
+				vals := axisValues(f)
+				var ptr uintptr
+				if len(vals) > 0 {
+					ptr = uintptr(unsafe.Pointer(&vals[0]))
+				}
+				layout4.callRange(layoutSetFontAxisValues, 0, r.start, n, ptr, uintptr(len(vals)))
+			}
+		}
 		if ls := float32(r.style.LetterSpacing); ls != 0 {
 			if spacing == nil {
 				spacing = layout.query(&iidDWriteTextLayout1)
@@ -735,11 +788,13 @@ func (pt *preparedText) build() *comObject {
 				spacing.callRange(layoutSetCharacterSpacing, 0b111, r.start, n, f32(0), f32(ls), f32(0))
 			}
 		}
-		if t := typography(f.Variant); t != nil {
+		if t := typography(f); t != nil {
 			layout.callRange(layoutSetTypography, 0, r.start, n, t.ptr())
+			t.release()
 		}
 	}
 	spacing.release()
+	layout4.release()
 	for i, a := range pt.attachments {
 		layout.callRange(layoutSetInlineObject, 0, a.pos, 1, pt.inlines[i].ptr())
 	}

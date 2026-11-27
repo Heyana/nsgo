@@ -51,7 +51,9 @@ core.Text{Style: core.Style{FontSize: 17, LineHeight: 24}, Spans: []core.Span{
 
 ## 字体
 
-`FontFamily` 指定一个字体系列或 CSS 列表（`Inter, "Noto Sans SC", sans-serif`），前面的字体缺少的字符由后面的字体补上。列表中的每个字体都采用指定的字重和样式。在 macOS 和 iOS 上，一行的行高和基线取自该行字符实际使用的字体，因此整行都由后面的字体绘制时采用该字体的度量，而浏览器会以第一个字体的度量作为下限。`FontWeight`、`FontStyle`、`FontVariant`、`LineHeight`、`LineHeightMultiple`、`LetterSpacing` 和 `LetterSpacingEm` 设置字形和间距，`core.FontMonospace` 是平台等宽字体。
+`FontFamily` 指定一个字体系列或 CSS 列表（`Inter, "Noto Sans SC", sans-serif`），前面的字体缺少的字符由后面的字体补上。列表中的每个字体都采用指定的字重和样式。在 macOS 和 iOS 上，一行的行高和基线取自该行字符实际使用的字体，因此整行都由后面的字体绘制时采用该字体的度量，而浏览器会以第一个字体的度量作为下限。`FontWeight`、`FontStyle`、`FontVariant`、`FontAxes`、`FontFeatures`、`LineHeight`、`LineHeightMultiple`、`LetterSpacing` 和 `LetterSpacingEm` 设置字形和间距，`core.FontMonospace` 是平台等宽字体。
+
+在 `core.Style` 上设置 `FontAxes`（或在 `core.Font` 上设置 `Axes`），按四字符 OpenType 标签（如 `"wdth"`、`"opsz"`、`"slnt"` 或自定义轴）指定可变字体轴坐标；设置 `FontFeatures`（或在 `core.Font` 上设置 `Features`）以开启、关闭（`0`）或选择任意 OpenType 特性标签（如 `"ss01"`、`"zero"`、`"liga"`、`"cv01"`、`"frac"`）。`FontVariant` 继续作为小型大写字母与数字形态的简写；同标签的显式 `Features` 条目会覆盖它，非 `nil` 空 map 可清除继承的轴或特性。
 
 `Language` 是文本的 BCP 47 语言标签，和上面的字段一样会在文本、`Span` 与输入框上继承。汉字按它的字形绘制，所以设为 `ja` 的 `直` 即使在偏好中文的系统上也显示日文字形；韩语（`ko`）按词边界换行，与 CSS 的 `word-break: keep-all` 一致。没有设置的文本和输入框采用应用显示的语言，并在语言切换时跟着变化。在视图上设置作用于整个子树，在 `Span` 上设置只作用于这一段：
 

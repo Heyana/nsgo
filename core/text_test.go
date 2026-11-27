@@ -233,7 +233,7 @@ func TestCutToFit(t *testing.T) {
 	if got.Text != "ab…ij" {
 		t.Errorf("middle = %q, want ab…ij", got.Text)
 	}
-	if len(got.Spans) != 2 || got.Spans[0] != (driver.TextSpan{Start: 0, End: 5}) || got.Spans[1].Start != 5 || got.Spans[1].End != 7 {
+	if len(got.Spans) != 2 || !got.Spans[0].Equal(driver.TextSpan{Start: 0, End: 5}) || got.Spans[1].Start != 5 || got.Spans[1].End != 7 {
 		t.Errorf("spans = %+v, want the ellipsis in the first", got.Spans)
 	}
 	text.Ellipsize = EllipsizeHead

@@ -389,8 +389,15 @@ func (p *Player) tintedImage(img js.Value, w, h int, tint driver.Color) (canvas 
 // font-variant-numeric, so tabular figures are drawn one by one, each
 // centered in the widest figure's advance, which is the width a font's
 // tabular figures share.
+func hasTabularNums(f driver.Font) bool {
+	if v, ok := f.Features["tnum"]; ok {
+		return v != 0
+	}
+	return f.Variant&driver.FontTabularNums != 0
+}
+
 func drawText(ctx js.Value, method string, op *driver.DrawOp, x, y float64) {
-	if op.Font.Variant&driver.FontTabularNums == 0 || !strings.ContainsAny(op.Text, "0123456789") {
+	if !hasTabularNums(op.Font) || !strings.ContainsAny(op.Text, "0123456789") {
 		ctx.Call(method, op.Text, x, y)
 		return
 	}

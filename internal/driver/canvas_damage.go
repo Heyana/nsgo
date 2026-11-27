@@ -28,7 +28,7 @@ func CanvasDamage(drawing *Drawing, before, after []DrawOp) (Bounds, bool) {
 	d.drawing = drawing
 	d.reset()
 	for i := range after {
-		if !d.step(&before[i], &after[i], before[i] != after[i]) {
+		if !d.step(&before[i], &after[i], !before[i].Equal(after[i])) {
 			return Bounds{}, false
 		}
 	}
@@ -40,6 +40,20 @@ func CanvasDamage(drawing *Drawing, before, after []DrawOp) (Bounds, bool) {
 	}
 	return Bounds{Origin: Point{X: Points(d.box.x0), Y: Points(d.box.y0)},
 		Size: Size{Width: Points(d.box.x1 - d.box.x0), Height: Points(d.box.y1 - d.box.y0)}}, true
+}
+
+// Equal reports whether a and b carry identical DrawOp fields.
+func (a DrawOp) Equal(b DrawOp) bool {
+	return a.Kind == b.Kind &&
+		a.X == b.X && a.Y == b.Y && a.X1 == b.X1 && a.Y1 == b.Y1 && a.X2 == b.X2 && a.Y2 == b.Y2 &&
+		a.W == b.W && a.H == b.H && a.R == b.R && a.A == b.A && a.A0 == b.A0 && a.A1 == b.A1 && a.RY == b.RY &&
+		a.CCW == b.CCW && a.Color == b.Color && a.Cap == b.Cap && a.Join == b.Join &&
+		a.Text == b.Text && a.Font.Equal(b.Font) &&
+		a.EvenOdd == b.EvenOdd && a.Gradient == b.Gradient && a.Composite == b.Composite &&
+		a.Dash == b.Dash && a.ImageIndex == b.ImageIndex && a.Sampling == b.Sampling &&
+		a.Mesh == b.Mesh && a.SpriteStart == b.SpriteStart && a.SpriteLen == b.SpriteLen &&
+		a.Tinted == b.Tinted && a.Shader == b.Shader &&
+		a.TextAlign == b.TextAlign && a.TextBaseline == b.TextBaseline
 }
 
 func finite(v float64) bool { return !math.IsInf(v, 0) && !math.IsNaN(v) }

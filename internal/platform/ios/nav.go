@@ -1364,7 +1364,7 @@ func (s *surface) barAnimation() int {
 
 // headerTitleAttributes preserves UIKit's own font unless the app overrides it.
 func headerTitleAttributes(color driver.Color, font driver.Font, large bool) objc.ID {
-	if color == 0 && font == (driver.Font{}) {
+	if color == 0 && font.IsZero() {
 		return 0
 	}
 	attrs := objc.ID(apple.Class("NSMutableDictionary")).Send(selNew)
@@ -1372,7 +1372,7 @@ func headerTitleAttributes(color driver.Color, font driver.Font, large bool) obj
 	if color != 0 {
 		attrs.Send(sel("setObject:forKey:"), uiColor(color), apple.Global(uikitPath, "NSForegroundColorAttributeName"))
 	}
-	if font != (driver.Font{}) {
+	if !font.IsZero() {
 		style, size, weight := "UIFontTextStyleHeadline", float64(17), driver.FontWeightSemibold
 		if large {
 			style, size, weight = "UIFontTextStyleLargeTitle", 34, driver.FontWeightBold

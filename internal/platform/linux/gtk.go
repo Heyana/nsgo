@@ -346,9 +346,11 @@ var (
 	pangoFontDescriptionGetFamily     func(uintptr) uintptr
 	pangoFontDescriptionSetWeight     func(uintptr, int32)
 	pangoFontDescriptionSetStyle      func(uintptr, int32)
+	pangoFontDescriptionSetVariations func(uintptr, *byte)
 	pangoAttrListNew                  func() uintptr
 	pangoAttrListInsert               func(uintptr, uintptr)
 	pangoAttrListUnref                func(uintptr)
+	pangoAttrFontDescNew              func(uintptr) uintptr
 	pangoAttrFamilyNew                func(*byte) uintptr
 	pangoLanguageFromString           func(*byte) uintptr
 	pangoAttrLanguageNew              func(uintptr) uintptr
@@ -781,9 +783,11 @@ func bindCanvasLibs() {
 	purego.RegisterLibFunc(&pangoFontDescriptionSetAbsoluteSize, pangoLib, "pango_font_description_set_absolute_size")
 	bindSyscall(&pangoFontDescriptionSetWeight, pangoLib, "pango_font_description_set_weight")
 	bindSyscall(&pangoFontDescriptionSetStyle, pangoLib, "pango_font_description_set_style")
+	purego.RegisterLibFunc(&pangoFontDescriptionSetVariations, pangoLib, "pango_font_description_set_variations")
 	bindSyscall(&pangoAttrListNew, pangoLib, "pango_attr_list_new")
 	bindSyscall(&pangoAttrListInsert, pangoLib, "pango_attr_list_insert")
 	bindSyscall(&pangoAttrListUnref, pangoLib, "pango_attr_list_unref")
+	bindSyscall(&pangoAttrFontDescNew, pangoLib, "pango_attr_font_desc_new")
 	bindSyscall(&pangoAttrFamilyNew, pangoLib, "pango_attr_family_new")
 	bindSyscall(&pangoLanguageFromString, pangoLib, "pango_language_from_string")
 	bindSyscall(&pangoAttrLanguageNew, pangoLib, "pango_attr_language_new")

@@ -54,6 +54,22 @@ type ScreenConfig struct {
 	TitleFills bool
 }
 
+// Equal reports whether a and b describe the same mounted screen configuration.
+func (a ScreenConfig) Equal(b ScreenConfig) bool {
+	return a.Title == b.Title && a.HeaderHidden == b.HeaderHidden &&
+		a.HeaderTransparent == b.HeaderTransparent && a.LargeTitle == b.LargeTitle &&
+		a.CanGoBack == b.CanGoBack && a.BackHidden == b.BackHidden &&
+		a.BackTitle == b.BackTitle && a.OwnBackTitle == b.OwnBackTitle &&
+		a.NoPopOnSwipe == b.NoPopOnSwipe && a.NoPopOnBack == b.NoPopOnBack &&
+		a.Background == b.Background && a.TitleColor == b.TitleColor &&
+		a.TintColor == b.TintColor && a.Left == b.Left && a.Right == b.Right &&
+		a.TitleView == b.TitleView && a.Header == b.Header &&
+		a.RightSystemItem == b.RightSystemItem && a.RightSymbols == b.RightSymbols &&
+		a.HeaderHeight == b.HeaderHeight && a.Animation == b.Animation &&
+		a.TitleFont.Equal(b.TitleFont) && a.LargeTitleFont.Equal(b.LargeTitleFont) &&
+		a.RightWithLargeTitle == b.RightWithLargeTitle && a.TitleFills == b.TitleFills
+}
+
 func screenConfig(c driver.ScreenConfig) ScreenConfig {
 	return ScreenConfig{
 		Title:               c.Title,

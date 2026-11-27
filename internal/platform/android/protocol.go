@@ -368,10 +368,19 @@ func writeStyle(w *writer, t *driver.TextStyle, prepareSurface bool) {
 	w.points(t.LineHeight)
 	w.points(t.LetterSpacing)
 	w.byte(byte(t.Align))
+	variations := driver.FontAndroidVariationSettings(t.Font)
+	hasAxes := variations != ""
+	hasFeatures := len(t.Font.Features) > 0
 	w.flags(t.Font.Italic,
 		t.Decoration&driver.TextDecorationUnderline != 0,
-		t.Decoration&driver.TextDecorationLineThrough != 0, t.RTL, prepareSurface)
+		t.Decoration&driver.TextDecorationLineThrough != 0, t.RTL, prepareSurface, hasAxes, hasFeatures)
 	w.byte(byte(t.Font.Variant))
+	if hasAxes {
+		w.str(variations)
+	}
+	if hasFeatures {
+		w.str(driver.FontAndroidFeatureSettings(t.Font))
+	}
 }
 
 // writeViewProps writes a view's props as NsgoView.props reads it.

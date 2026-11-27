@@ -52,12 +52,20 @@ final class Text {
         final Typeface typeface;
         /** An android.graphics.fonts.Font on API 29+, or null on API 28. */
         final Object font;
+        /** Optional asset/file source for variable font variation settings. */
+        final AssetManager assets;
+        final String assetPath;
+        final File file;
 
-        Face(int weight, boolean italic, Typeface typeface, Object font) {
+        Face(int weight, boolean italic, Typeface typeface, Object font,
+                AssetManager assets, String assetPath, File file) {
             this.weight = weight;
             this.italic = italic;
             this.typeface = typeface;
             this.font = font;
+            this.assets = assets;
+            this.assetPath = assetPath;
+            this.file = file;
         }
     }
 
@@ -65,42 +73,56 @@ final class Text {
     private static final Map<String, List<Face>> fonts = new ConcurrentHashMap<>();
     /** Cached FontFamily objects built for registered app families on API 29+. */
     private static final Map<String, Object> appFamilies = new ConcurrentHashMap<>();
-    /** Bounded cache of resolved Typefaces keyed by family list, weight and slant. */
+    /** Bounded cache of resolved Typefaces keyed by family list, weight, slant and variations. */
     private static final Map<String, Typeface> typefaceCache = new ConcurrentHashMap<>();
     private static final int MAX_TYPEFACE_CACHE = 256;
 
     /** Adds a face of the app's fonts under its family. */
     static void register(String family, int weight, boolean italic, Typeface typeface) {
-        register(family, weight, italic, typeface, null);
+        register(family, weight, italic, typeface, null, null, null, null);
     }
 
     /** Adds a face of the app's fonts under its family, with an optional API 29+ Font for fallback chains. */
     static void register(String family, int weight, boolean italic, Typeface typeface, Object font) {
+        register(family, weight, italic, typeface, font, null, null, null);
+    }
+
+    /** Adds a face of the app's fonts under its family, keeping its asset or file source for variable font axes. */
+    static void register(String family, int weight, boolean italic, Typeface typeface, Object font,
+            AssetManager assets, String assetPath, File file) {
         if (family == null || family.isEmpty()) return;
         String key = family.toLowerCase(Locale.ROOT);
         fonts.computeIfAbsent(key, k -> new CopyOnWriteArrayList<>())
-                .add(new Face(weight, italic, typeface, font));
+                .add(new Face(weight, italic, typeface, font, assets, assetPath, file));
         appFamilies.remove(key);
         typefaceCache.clear();
     }
 
     /** Builds an API 29+ Font from an asset for fallback chains, or null on API 28 or failure. */
     static Object assetFont(AssetManager assets, String path, int weight, boolean italic) {
-        return Build.VERSION.SDK_INT >= 29 ? Api29.fontFromAsset(assets, path, weight, italic) : null;
+        return Build.VERSION.SDK_INT >= 29 ? Api29.fontFromAsset(assets, path, weight, italic, null) : null;
     }
 
     /** Builds an API 29+ Font from a file for fallback chains, or null on API 28 or failure. */
     static Object fileFont(File file, int weight, boolean italic) {
-        return Build.VERSION.SDK_INT >= 29 ? Api29.fontFromFile(file, weight, italic) : null;
+        return Build.VERSION.SDK_INT >= 29 ? Api29.fontFromFile(file, weight, italic, null) : null;
     }
 
     /**
-     * Resolves a CSS fontFamily list at weight and slant. On API 29+, builds a Typeface.CustomFallbackBuilder chain so glyphs missing from earlier families fall back through the remaining families in order; on API 28, selects the first available family in the list.
+     * Resolves a CSS fontFamily list at weight and slant.
      */
     static Typeface typeface(String familyList, int weight, boolean italic) {
+        return typeface(familyList, weight, italic, null);
+    }
+
+    /**
+     * Resolves a CSS fontFamily list at weight, slant and optional OpenType variation settings. On API 29+, builds a Typeface.CustomFallbackBuilder chain so glyphs missing from earlier families fall back through the remaining families in order; on API 28, selects the first available family in the list.
+     */
+    static Typeface typeface(String familyList, int weight, boolean italic, String variations) {
         weight = Math.max(1, Math.min(weight, 1000));
         String raw = familyList == null ? "" : familyList;
-        String cacheKey = raw + '\0' + weight + '\0' + (italic ? '1' : '0');
+        String vars = (variations == null || variations.isEmpty()) ? null : variations;
+        String cacheKey = raw + '\0' + weight + '\0' + (italic ? '1' : '0') + '\0' + (vars == null ? "" : vars);
         Typeface cached = typefaceCache.get(cacheKey);
         if (cached != null) return cached;
 
@@ -111,9 +133,9 @@ final class Text {
         } else if (entries.size() == 1 && entries.get(0).generic) {
             resolved = Typeface.create(genericBase(entries.get(0).name), weight, italic);
         } else if (Build.VERSION.SDK_INT >= 29) {
-            resolved = Api29.resolve(entries, weight, italic);
+            resolved = Api29.resolve(entries, weight, italic, vars);
         } else {
-            resolved = resolveLegacy(entries, weight, italic);
+            resolved = resolveLegacy(entries, weight, italic, vars);
         }
         if (typefaceCache.size() >= MAX_TYPEFACE_CACHE) typefaceCache.clear();
         typefaceCache.put(cacheKey, resolved);
@@ -127,7 +149,7 @@ final class Text {
         return Typeface.create(name, Typeface.NORMAL);
     }
 
-    private static Typeface legacyAppFace(String name, int weight, boolean italic) {
+    private static Typeface legacyAppFace(String name, int weight, boolean italic, String variations) {
         List<Face> faces = fonts.get(name.toLowerCase(Locale.ROOT));
         if (faces == null || faces.isEmpty()) return null;
         Face best = null;
@@ -143,6 +165,10 @@ final class Text {
                 best = f;
             }
         }
+        if (variations != null && Build.VERSION.SDK_INT >= 26) {
+            Typeface varied = Api26.withVariations(best, variations);
+            if (varied != null) return varied;
+        }
         if (best.weight == weight && best.italic == italic) return best.typeface;
         return Typeface.create(best.typeface, weight, italic);
     }
@@ -154,12 +180,12 @@ final class Text {
     }
 
     /** API 28 fallback: picks the first registered, generic or installed family in preference order. */
-    private static Typeface resolveLegacy(List<FontFallback.Entry> entries, int weight, boolean italic) {
+    private static Typeface resolveLegacy(List<FontFallback.Entry> entries, int weight, boolean italic, String variations) {
         for (FontFallback.Entry e : entries) {
             if (e.generic) {
                 return Typeface.create(genericBase(e.name), weight, italic);
             }
-            Typeface app = legacyAppFace(e.name, weight, italic);
+            Typeface app = legacyAppFace(e.name, weight, italic, variations);
             if (app != null) return app;
             if (isSystemAlias(e.name)) {
                 return Typeface.create(Typeface.create(e.name, Typeface.NORMAL), weight, italic);
@@ -168,27 +194,49 @@ final class Text {
         return Typeface.create(Typeface.DEFAULT, weight, italic);
     }
 
+    /** Isolated API 26+ Typeface.Builder helper for variable font variation settings. */
+    private static final class Api26 {
+        static Typeface withVariations(Face face, String variations) {
+            try {
+                Typeface.Builder builder;
+                if (face.assets != null && face.assetPath != null) {
+                    builder = new Typeface.Builder(face.assets, face.assetPath);
+                } else if (face.file != null) {
+                    builder = new Typeface.Builder(face.file);
+                } else {
+                    return null;
+                }
+                builder.setFontVariationSettings(variations);
+                return builder.build();
+            } catch (RuntimeException e) {
+                return null;
+            }
+        }
+    }
+
     /** Isolated API 29+ CustomFallbackBuilder and SystemFonts integration so API 28 never verifies these classes. */
     private static final class Api29 {
         private static volatile Map<String, FontFamily> systemIndex;
 
-        static Object fontFromAsset(AssetManager assets, String path, int weight, boolean italic) {
+        static Object fontFromAsset(AssetManager assets, String path, int weight, boolean italic, String variations) {
             try {
-                return new Font.Builder(assets, path)
+                Font.Builder b = new Font.Builder(assets, path)
                         .setWeight(clampWeight(weight))
-                        .setSlant(italic ? FontStyle.FONT_SLANT_ITALIC : FontStyle.FONT_SLANT_UPRIGHT)
-                        .build();
+                        .setSlant(italic ? FontStyle.FONT_SLANT_ITALIC : FontStyle.FONT_SLANT_UPRIGHT);
+                if (variations != null) b.setFontVariationSettings(variations);
+                return b.build();
             } catch (IOException | RuntimeException e) {
                 return null;
             }
         }
 
-        static Object fontFromFile(File file, int weight, boolean italic) {
+        static Object fontFromFile(File file, int weight, boolean italic, String variations) {
             try {
-                return new Font.Builder(file)
+                Font.Builder b = new Font.Builder(file)
                         .setWeight(clampWeight(weight))
-                        .setSlant(italic ? FontStyle.FONT_SLANT_ITALIC : FontStyle.FONT_SLANT_UPRIGHT)
-                        .build();
+                        .setSlant(italic ? FontStyle.FONT_SLANT_ITALIC : FontStyle.FONT_SLANT_UPRIGHT);
+                if (variations != null) b.setFontVariationSettings(variations);
+                return b.build();
             } catch (IOException | RuntimeException e) {
                 return null;
             }
@@ -198,11 +246,11 @@ final class Text {
             return Math.max(FontStyle.FONT_WEIGHT_MIN, Math.min(weight, FontStyle.FONT_WEIGHT_MAX));
         }
 
-        static Typeface resolve(List<FontFallback.Entry> entries, int weight, boolean italic) {
+        static Typeface resolve(List<FontFallback.Entry> entries, int weight, boolean italic, String variations) {
             FontFallback.Lookup<FontFamily> lookup = new FontFallback.Lookup<FontFamily>() {
                 @Override
                 public FontFamily appFamily(String name) {
-                    return Api29.appFamily(name);
+                    return Api29.appFamily(name, variations);
                 }
 
                 @Override
@@ -231,7 +279,7 @@ final class Text {
                 // Handle registered app fonts that lacked an API 29 Font object, or single generic/alias families.
                 for (FontFallback.Entry e : entries) {
                     if (e.generic) break;
-                    Typeface app = legacyAppFace(e.name, weight, italic);
+                    Typeface app = legacyAppFace(e.name, weight, italic, variations);
                     if (app != null) return app;
                 }
                 return Typeface.create(genericBase(plan.systemFallback), weight, italic);
@@ -246,23 +294,35 @@ final class Text {
             return builder.build();
         }
 
-        private static FontFamily appFamily(String name) {
+        private static FontFamily appFamily(String name, String variations) {
             String key = name.toLowerCase(Locale.ROOT);
-            Object cached = appFamilies.get(key);
-            if (cached instanceof FontFamily) return (FontFamily) cached;
+            if (variations == null) {
+                Object cached = appFamilies.get(key);
+                if (cached instanceof FontFamily) return (FontFamily) cached;
+            }
             List<Face> faces = fonts.get(key);
             if (faces == null || faces.isEmpty()) return null;
             Map<Long, Font> unique = new LinkedHashMap<>();
             for (Face f : faces) {
-                if (!(f.font instanceof Font)) continue;
-                Font font = (Font) f.font;
+                Object raw = f.font;
+                if (variations != null) {
+                    Object varied = null;
+                    if (f.assets != null && f.assetPath != null) {
+                        varied = fontFromAsset(f.assets, f.assetPath, f.weight, f.italic, variations);
+                    } else if (f.file != null) {
+                        varied = fontFromFile(f.file, f.weight, f.italic, variations);
+                    }
+                    if (varied != null) raw = varied;
+                }
+                if (!(raw instanceof Font)) continue;
+                Font font = (Font) raw;
                 FontStyle st = font.getStyle();
                 long styleKey = (((long) st.getWeight()) << 32) | (st.getSlant() & 0xffffffffL);
                 unique.put(styleKey, font);
             }
             if (unique.isEmpty()) return null;
             FontFamily built = buildFamily(new ArrayList<>(unique.values()));
-            if (built != null) appFamilies.put(key, built);
+            if (variations == null && built != null) appFamilies.put(key, built);
             return built;
         }
 
@@ -410,8 +470,10 @@ final class Text {
         final boolean italic, underline, lineThrough;
         /** The paragraphs' base direction is right to left. */
         final boolean rtl;
-        /** The OpenType features of core.FontVariant's bits, as Paint takes them, or null. */
+        /** The OpenType features of Font.Variant and Font.Features, as Paint takes them, or null. */
         final String features;
+        /** The OpenType variable font axes of Font.Axes, as Paint and Typeface.Builder take them, or null. */
+        final String variations;
         /** How the decoration's lines are drawn and their ARGB color, 0 for the text's; read after the rest. */
         int decorationStyle, decorationColor;
         /** The lines' thickness in pixels, 0 for the font's, and an underline's top below the baseline, NaN for the font's. */
@@ -433,7 +495,17 @@ final class Text {
             underline = Protocol.flag(flags, 1);
             lineThrough = Protocol.flag(flags, 2);
             rtl = Protocol.flag(flags, 3);
-            features = features(in.readUnsignedByte());
+            boolean hasAxes = Protocol.flag(flags, 5);
+            boolean hasFeatures = Protocol.flag(flags, 6);
+            int variant = in.readUnsignedByte();
+            String v = hasAxes ? Protocol.readString(in) : null;
+            variations = (v == null || v.isEmpty()) ? null : v;
+            if (hasFeatures) {
+                String f = Protocol.readString(in);
+                features = (f == null || f.isEmpty()) ? null : f;
+            } else {
+                features = features(variant);
+            }
         }
 
         /** Reads how the decoration is drawn, which PREPARE sends after the text's parts. */
@@ -455,7 +527,7 @@ final class Text {
         }
 
         Typeface typeface() {
-            return Text.typeface(family, weight, italic);
+            return Text.typeface(family, weight, italic, variations);
         }
 
         /** The letter spacing in ems, as Paint takes it. */
@@ -477,6 +549,7 @@ final class Text {
             paint.setTypeface(typeface);
             paint.setLetterSpacing(letterSpacingEm());
             paint.setFontFeatureSettings(features);
+            if (Build.VERSION.SDK_INT >= 26) paint.setFontVariationSettings(variations);
             if (locale != null) paint.setTextLocale(locale);
         }
 

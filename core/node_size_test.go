@@ -343,6 +343,18 @@ func setNonZero(t *testing.T, v reflect.Value) {
 		s := reflect.MakeSlice(v.Type(), 1, 1)
 		setNonZero(t, s.Index(0))
 		v.Set(s)
+	case reflect.Map:
+		m := reflect.MakeMapWithSize(v.Type(), 1)
+		k := reflect.New(v.Type().Key()).Elem()
+		if k.Kind() == reflect.String {
+			k.SetString("wdth")
+		} else {
+			setNonZero(t, k)
+		}
+		elem := reflect.New(v.Type().Elem()).Elem()
+		setNonZero(t, elem)
+		m.SetMapIndex(k, elem)
+		v.Set(m)
 	case reflect.Ptr:
 		elem := reflect.New(v.Type().Elem())
 		if v.Type().Elem() != reflect.TypeOf(AnimatedStyle{}) && elem.Elem().Kind() == reflect.Struct && elem.Elem().NumField() > 0 {

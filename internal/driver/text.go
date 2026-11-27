@@ -308,13 +308,13 @@ func (t *AttributedText) CutToFit(fits func(*AttributedText) bool) AttributedTex
 
 // Equal reports whether a and b lay out and draw the same.
 func (a *AttributedText) Equal(b *AttributedText) bool {
-	if a.Text != b.Text || a.Style != b.Style || a.MaxLines != b.MaxLines ||
+	if a.Text != b.Text || !a.Style.Equal(b.Style) || a.MaxLines != b.MaxLines ||
 		a.Ellipsize != b.Ellipsize || a.Shadow != b.Shadow ||
 		len(a.Spans) != len(b.Spans) || len(a.Attachments) != len(b.Attachments) {
 		return false
 	}
 	for i := range a.Spans {
-		if !textSpanEqual(a.Spans[i], b.Spans[i]) {
+		if !a.Spans[i].Equal(b.Spans[i]) {
 			return false
 		}
 	}
@@ -326,8 +326,9 @@ func (a *AttributedText) Equal(b *AttributedText) bool {
 	return true
 }
 
-func textSpanEqual(a, b TextSpan) bool {
-	return a.Start == b.Start && a.End == b.End && a.Style == b.Style &&
+// Equal reports whether a and b describe the same styled text span.
+func (a TextSpan) Equal(b TextSpan) bool {
+	return a.Start == b.Start && a.End == b.End && a.Style.Equal(b.Style) &&
 		a.Cursor == b.Cursor && a.Link == b.Link && a.Hidden == b.Hidden &&
 		a.Background == b.Background && a.Copy == b.Copy &&
 		ClipboardItemEqual(a.CopyItem, b.CopyItem)
@@ -533,6 +534,14 @@ type Font struct {
 	// Variant turns on OpenType features: small capitals and the forms
 	// and widths of figures.
 	Variant FontVariant
+	// Axes sets variable font axis coordinates by four-character OpenType
+	// tag (for example "wdth", "opsz", "slnt" or a custom axis). Explicit
+	// "wght" or "slnt" entries override Weight or Italic where supported.
+	Axes map[string]float32
+	// Features sets OpenType feature tags to integer values (1 to enable,
+	// 0 to disable, or an alternate index). Explicit entries override
+	// shorthand flags from Variant for the same tag.
+	Features map[string]int
 }
 
 // FontVariant is a set of OpenType features, as CSS's font-variant-caps

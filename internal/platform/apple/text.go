@@ -75,6 +75,7 @@ var (
 	attrFont, attrColor, attrKern, attrUnderline, attrParagraph uintptr
 	attrTraits, attrWeight, attrSymbolic, attrUnderlineColor    uintptr
 	attrFeatureSettings, attrFeatureTag, attrFeatureValue       uintptr
+	attrVariation                                               uintptr
 	attrCascadeList, attrFamilyName, attrWidth, attrLanguage    uintptr
 	attrHidden, hiddenAttrVal                                   uintptr
 
@@ -154,6 +155,7 @@ func loadText(cf, cg uintptr) {
 	attrSymbolic = constant(ct, "kCTFontSymbolicTrait")
 	attrUnderlineColor = constant(ct, "kCTUnderlineColorAttributeName")
 	attrFeatureSettings = constant(ct, "kCTFontFeatureSettingsAttribute")
+	attrVariation = constant(ct, "kCTFontVariationAttribute")
 	attrCascadeList = constant(ct, "kCTFontCascadeListAttribute")
 	attrFamilyName = constant(ct, "kCTFontFamilyNameAttribute")
 	attrWidth = constant(ct, "kCTFontWidthTrait")
@@ -171,7 +173,7 @@ func loadText(cf, cg uintptr) {
 // CoreText weights of CSS's 100 to 900, from UIFontWeight.
 var weights = [...]float64{-0.8, -0.6, -0.4, 0, 0.23, 0.3, 0.4, 0.56, 0.62}
 
-// fontKey identifies a font by the four things that choose one. A table
+// fontKey identifies a font by everything that chooses one. A table
 // of numbers has two or three of these for the whole screen, and asks for
 // them once per changed cell per frame.
 type fontKey struct {
@@ -181,6 +183,8 @@ type fontKey struct {
 	weight   driver.FontWeight
 	italic   bool
 	variant  driver.FontVariant
+	axes     string
+	features string
 }
 
 // fontCacheLimit bounds the cache. A screen uses a handful of fonts; an
@@ -196,7 +200,16 @@ var fontCache = newRefCache[fontKey](fontCacheLimit)
 // again by reference. Building one is seven CoreText calls through purego;
 // a frame of a table asks for the same font forty times.
 func Font(f driver.Font) uintptr {
-	k := fontKey{family: f.Family, language: f.Language, size: float64(f.Size), weight: f.Weight, italic: f.Italic, variant: f.Variant}
+	k := fontKey{
+		family:   f.Family,
+		language: f.Language,
+		size:     float64(f.Size),
+		weight:   f.Weight,
+		italic:   f.Italic,
+		variant:  f.Variant,
+		axes:     driver.FontAxesKey(f),
+		features: driver.FontFeaturesKey(f),
+	}
 	if ref := fontCache.get(k); ref != 0 {
 		return ref
 	}
@@ -210,28 +223,51 @@ func Font(f driver.Font) uintptr {
 // buildFont returns a new CTFont for f. The caller releases it.
 func buildFont(f driver.Font) uintptr {
 	font := buildFace(f)
-	if tags := f.Variant.Tags(); len(tags) > 0 && font != 0 {
-		font = withFeatures(font, tags)
+	if font == 0 {
+		return 0
+	}
+	axes := driver.ResolvedFontAxes(f)
+	features := driver.ResolvedFontFeatures(f)
+	if len(axes) > 0 || len(features) > 0 {
+		font = withVariationsAndFeatures(font, axes, features)
 	}
 	return font
 }
 
-// withFeatures returns a copy of font with the OpenType features tags
-// turned on, releasing font.
-func withFeatures(font uintptr, tags []string) uintptr {
-	one := int32Number(1)
-	owned := []uintptr{one}
-	features := make([]uintptr, len(tags))
-	for i, tag := range tags {
-		t := CFString(tag)
-		features[i] = dictionary([]uintptr{attrFeatureTag, attrFeatureValue}, []uintptr{t, one})
-		owned = append(owned, t, features[i])
+// withVariationsAndFeatures returns a copy of font with the given OpenType
+// variation axes and feature settings applied, releasing font.
+func withVariationsAndFeatures(font uintptr, axes []driver.FontAxis, features []driver.FontFeature) uintptr {
+	var keys, values, owned []uintptr
+	if len(axes) > 0 {
+		axisKeys := make([]uintptr, len(axes))
+		axisVals := make([]uintptr, len(axes))
+		for i, a := range axes {
+			axisKeys[i] = int32Number(int32(driver.FontTagBE(a.Tag)))
+			axisVals[i] = float64Number(float64(a.Value))
+			owned = append(owned, axisKeys[i], axisVals[i])
+		}
+		varDict := dictionary(axisKeys, axisVals)
+		keys = append(keys, attrVariation)
+		values = append(values, varDict)
+		owned = append(owned, varDict)
 	}
-	list := cfArray(features)
-	attrs := dictionary([]uintptr{attrFeatureSettings}, []uintptr{list})
+	if len(features) > 0 {
+		items := make([]uintptr, len(features))
+		for i, feat := range features {
+			t := CFString(feat.Tag)
+			v := int32Number(int32(feat.Value))
+			items[i] = dictionary([]uintptr{attrFeatureTag, attrFeatureValue}, []uintptr{t, v})
+			owned = append(owned, t, v, items[i])
+		}
+		list := cfArray(items)
+		keys = append(keys, attrFeatureSettings)
+		values = append(values, list)
+		owned = append(owned, list)
+	}
+	attrs := dictionary(keys, values)
 	desc := ctFontDescriptorCreateWithAttrs(attrs)
 	out := ctFontCreateCopyWithAttrs(font, 0, 0, desc)
-	for _, ref := range append(owned, list, attrs, desc, font) {
+	for _, ref := range append(owned, attrs, desc, font) {
 		Release(ref)
 	}
 	return out
@@ -516,7 +552,7 @@ func utf16Offsets(text string) (toUTF16, toUTF8 []int) {
 // height), and whether it is a whole text, which alone takes the
 // paragraph style. All are small and fixed, so all belong in the key.
 type attrsKey struct {
-	st              driver.TextStyle
+	st              driver.TextStyleKey
 	withAttachments bool
 	paragraph       bool
 	hidden          bool
@@ -539,7 +575,7 @@ var attrsCache = newRefCache[attrsKey](attrsCacheLimit)
 // font, a colour, four CFNumbers, a paragraph style and the dictionary,
 // all through purego.
 func textAttributes(st driver.TextStyle, withAttachments bool) uintptr {
-	return attributes(attrsKey{st: st, withAttachments: withAttachments, paragraph: true})
+	return attributes(attrsKey{st: driver.TextStyleKeyOf(st), withAttachments: withAttachments, paragraph: true}, st)
 }
 
 // spanAttributes returns a new CFDictionary of what a span sets per
@@ -547,15 +583,15 @@ func textAttributes(st driver.TextStyle, withAttachments bool) uintptr {
 // it, so a span's own alignment or line height changes nothing. The
 // caller releases it.
 func spanAttributes(st driver.TextStyle) uintptr {
-	return attributes(attrsKey{st: st})
+	return attributes(attrsKey{st: driver.TextStyleKeyOf(st)}, st)
 }
 
 // attributes returns the cached dictionary for k, building it on a miss.
-func attributes(k attrsKey) uintptr {
+func attributes(k attrsKey, st driver.TextStyle) uintptr {
 	if d := attrsCache.get(k); d != 0 {
 		return d
 	}
-	d := buildAttributes(k)
+	d := buildAttributes(k, st)
 	if d == 0 {
 		return 0
 	}
@@ -566,17 +602,17 @@ func attributes(k attrsKey) uintptr {
 // colour, letter spacing and underline from runAttributes, plus, for a
 // whole text, the paragraph style its alignment and line height ask for.
 // The caller releases it.
-func buildAttributes(k attrsKey) uintptr {
+func buildAttributes(k attrsKey, st driver.TextStyle) uintptr {
 	var keys, values, owned []uintptr
 	if k.paragraph {
 		// Start and end follow the base direction.
 		start, end := uint8(alignLeft), uint8(alignRight)
 		direction := int8(0)
-		if k.st.RTL {
+		if st.RTL {
 			start, end, direction = alignRight, alignLeft, 1
 		}
 		align := start
-		switch k.st.Align {
+		switch st.Align {
 		case driver.TextAlignCenter:
 			align = alignCenter
 		case driver.TextAlignEnd:
@@ -584,7 +620,7 @@ func buildAttributes(k attrsKey) uintptr {
 		case driver.TextAlignJustify:
 			align = alignJustified
 		}
-		lineHeight := float64(k.st.LineHeight)
+		lineHeight := float64(st.LineHeight)
 		settings := []paragraphSetting{{spec: specAlignment, size: 1, value: unsafe.Pointer(&align)},
 			{spec: specBaseWritingDirection, size: 1, value: unsafe.Pointer(&direction)}}
 		if lineHeight > 0 {
@@ -600,7 +636,7 @@ func buildAttributes(k attrsKey) uintptr {
 	if k.hidden {
 		keys, values = append(keys, attrHidden), append(values, hiddenAttrVal)
 	}
-	attrs := runAttributes(k.st, keys, values, k.noUnderline || k.hidden)
+	attrs := runAttributes(st, keys, values, k.noUnderline || k.hidden)
 	for _, ref := range owned {
 		Release(ref)
 	}
@@ -611,7 +647,7 @@ func buildAttributes(k attrsKey) uintptr {
 // its style. The caller releases it.
 func attributed(t *driver.AttributedText, toUTF16 []int, fonts []driver.FontExtent) uintptr {
 	hasHidden := t.HasHidden()
-	attrs := attributes(attrsKey{st: t.Style, withAttachments: len(t.Attachments) > 0, paragraph: true, noUnderline: hasHidden})
+	attrs := attributes(attrsKey{st: driver.TextStyleKeyOf(t.Style), withAttachments: len(t.Attachments) > 0, paragraph: true, noUnderline: hasHidden}, t.Style)
 	str := CFString(t.Text)
 	out := cfAttributedStringCreate(0, str, attrs)
 	Release(str)
@@ -626,7 +662,7 @@ func attributed(t *driver.AttributedText, toUTF16 []int, fonts []driver.FontExte
 		if end <= start {
 			continue
 		}
-		a := attributes(attrsKey{st: sp.Style, hidden: sp.Hidden, noUnderline: hasHidden})
+		a := attributes(attrsKey{st: driver.TextStyleKeyOf(sp.Style), hidden: sp.Hidden, noUnderline: hasHidden}, sp.Style)
 		r := cfRange{Location: toUTF16[start], Length: toUTF16[end] - toUTF16[start]}
 		cfAttributedStringSetAttrs(m, r.Location, r.Length, a, false)
 		Release(a)
@@ -1007,7 +1043,7 @@ func ellipsisToken(str uintptr, base driver.TextStyle, noUnderline bool) uintptr
 	defer Release(text)
 	attrs := cfAttributedStringAttrsAt(str, 0, nil)
 	if cfDictionaryGetValue(attrs, attrHidden) != 0 {
-		a := attributes(attrsKey{st: base, noUnderline: noUnderline})
+		a := attributes(attrsKey{st: driver.TextStyleKeyOf(base), noUnderline: noUnderline}, base)
 		defer Release(a)
 		attrs = a
 	}

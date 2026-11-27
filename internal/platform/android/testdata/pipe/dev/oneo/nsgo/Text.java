@@ -14,7 +14,11 @@ final class Text {
             Protocol.readString(in); // family
             Protocol.readString(in); // language
             size = in.readFloat() * density;
-            in.skipNBytes(17); // weight, color, height, spacing, align, flags, variant after size
+            in.skipNBytes(15); // weight, color, height, spacing, align
+            int flags = in.readUnsignedByte();
+            in.readUnsignedByte(); // variant
+            if (Protocol.flag(flags, 5)) Protocol.readString(in); // variations
+            if (Protocol.flag(flags, 6)) Protocol.readString(in); // features
         }
 
         void readDecoration(DataInputStream in, float density) throws IOException {

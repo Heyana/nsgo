@@ -139,8 +139,17 @@ func writeDrawing(w *writer, d *driver.Drawing) {
 			w.str(op.Font.Family)
 			w.points(op.Font.Size)
 			w.u16(uint16(op.Font.Weight))
-			w.flags(op.Font.Italic)
+			variations := driver.FontAndroidVariationSettings(op.Font)
+			hasAxes := variations != ""
+			hasFeatures := len(op.Font.Features) > 0
+			w.flags(op.Font.Italic, hasAxes, hasFeatures)
 			w.byte(byte(op.Font.Variant))
+			if hasAxes {
+				w.str(variations)
+			}
+			if hasFeatures {
+				w.str(driver.FontAndroidFeatureSettings(op.Font))
+			}
 		case driver.DrawAtlas:
 			writeAtlas(w, d, op)
 		case driver.DrawImage:

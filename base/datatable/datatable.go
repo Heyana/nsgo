@@ -852,7 +852,7 @@ func (t *dataTable) leadWidth() float32 {
 	}
 	digits := len(strconv.Itoa(max(t.rowCount(), 1)))
 	font := t.font()
-	if t.st.digit == 0 || t.st.digitFont != font {
+	if t.st.digit == 0 || !t.st.digitFont.Equal(font) {
 		t.st.digitFont, t.st.digit = font, t.cx.MeasureText("0000000000", font).Width/10
 	}
 	return max(t.st.digit*float32(digits), 40)

@@ -420,8 +420,9 @@ func (in *textInput) makeLayout(units []uint16, align uintptr) *comObject {
 		baseline := (lineHeight-(m.ascent+m.descent)*size)/2 + m.ascent*size
 		layout.callF(formatSetLineSpacing, 0b110, dwLineSpacingUniform, f32(lineHeight), f32(baseline))
 	}
-	if t := typography(s.Font.Variant); t != nil && n > 0 {
+	if t := typography(s.Font); t != nil && n > 0 {
 		layout.callRange(layoutSetTypography, 0, 0, uint32(n), t.ptr())
+		t.release()
 	}
 	if ls := float32(s.LetterSpacing); ls != 0 && n > 0 {
 		if l1 := layout.query(&iidDWriteTextLayout1); l1 != nil {
@@ -1670,10 +1671,10 @@ func (in *textInput) caretColor() driver.Color {
 // configure applies an input's look and behavior.
 func (in *textInput) configure(c *driver.InputConfig) {
 	old := in.config
-	if old.Style.Font != c.Style.Font {
+	if !old.Style.Font.Equal(c.Style.Font) {
 		releaseAll(&in.format)
 	}
-	if old.Style != c.Style || old.Masked != c.Masked || old.Multiline != c.Multiline {
+	if !old.Style.Equal(c.Style) || old.Masked != c.Masked || old.Multiline != c.Multiline {
 		in.relayout()
 		in.scroll = 0
 		if old.Multiline != c.Multiline {

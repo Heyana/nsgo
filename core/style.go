@@ -212,6 +212,15 @@ type Style struct {
 	// figures; FontVariantNormal undoes an inherited one. A node's
 	// variant replaces its parent's.
 	FontVariant FontVariant
+	// FontAxes sets variable font axis coordinates by four-character OpenType
+	// tag (for example "wdth", "opsz", "slnt" or a custom axis). Inherited;
+	// a non-nil empty map clears inherited axes.
+	FontAxes map[string]float32
+	// FontFeatures sets OpenType feature tags to integer values (1 to enable,
+	// 0 to disable, or an alternate index). Inherited; a non-nil empty map
+	// clears inherited features. Explicit entries override FontVariant for
+	// the same tag.
+	FontFeatures map[string]int
 	// LineHeight is the height of each line. LineHeightMultiple is one in
 	// multiples of the font size, which descendants inherit as a multiple
 	// of theirs; LineHeightEm is one too, resolved where it is set and
@@ -910,6 +919,8 @@ func (s *Style) mergeText(o Style) {
 	set(&s.TextDecorationThickness, o.TextDecorationThickness)
 	set(&s.TextUnderlineOffset, o.TextUnderlineOffset)
 	set(&s.FontVariant, o.FontVariant)
+	setMap(&s.FontAxes, o.FontAxes)
+	setMap(&s.FontFeatures, o.FontFeatures)
 	set(&s.TextTransform, o.TextTransform)
 	set(&s.TextShadowColor, o.TextShadowColor)
 	set(&s.TextShadowOffset, o.TextShadowOffset)
@@ -943,26 +954,38 @@ func setSlice[T any](dst *[]T, v []T) {
 	}
 }
 
+// setMap sets dst to v unless v is nil: an empty map that is not nil
+// clears what dst had.
+func setMap[K comparable, V any](dst *map[K]V, v map[K]V) {
+	if v != nil {
+		*dst = v
+	}
+}
+
 // textFields are a style's text fields, which views pass the views inside
 // them: comparable, and small enough to copy down the tree.
 type textFields struct {
 	Color Color
 	// paletteColor distinguishes the default ink from an explicit inherited color.
-	paletteColor                     bool
-	FontFamily                       string
-	Language                         string
-	FontSize                         Points
-	FontWeight                       FontWeight
-	FontStyle                        FontStyle
-	LineHeight, LetterSpacing        Points
-	TextAlign                        TextAlign
-	TextDecoration                   TextDecoration
-	SelectionColor                   Color
-	TextDecorationStyle              TextDecorationStyle
-	TextDecorationColor              Color
-	TextDecorationThickness          Length
-	TextUnderlineOffset              Length
-	FontVariant                      FontVariant
+	paletteColor              bool
+	FontFamily                string
+	Language                  string
+	FontSize                  Points
+	FontWeight                FontWeight
+	FontStyle                 FontStyle
+	LineHeight, LetterSpacing Points
+	TextAlign                 TextAlign
+	TextDecoration            TextDecoration
+	SelectionColor            Color
+	TextDecorationStyle       TextDecorationStyle
+	TextDecorationColor       Color
+	TextDecorationThickness   Length
+	TextUnderlineOffset       Length
+	FontVariant               FontVariant
+	// FontAxes and FontFeatures hold encoded axis/feature settings, so
+	// textFields stays comparable; empty is unset.
+	FontAxes                         string
+	FontFeatures                     string
 	TextTransform                    TextTransform
 	TextShadowColor                  Color
 	TextShadowOffset                 Point
@@ -1007,6 +1030,12 @@ func (s *Style) inherit(parent textFields) textFields {
 	set(&t.TextDecorationThickness, s.TextDecorationThickness)
 	set(&t.TextUnderlineOffset, s.TextUnderlineOffset)
 	set(&t.FontVariant, s.FontVariant)
+	if s.FontAxes != nil {
+		t.FontAxes = driver.EncodeFontAxes(s.FontAxes)
+	}
+	if s.FontFeatures != nil {
+		t.FontFeatures = driver.EncodeFontFeatures(s.FontFeatures)
+	}
 	set(&t.TextTransform, s.TextTransform)
 	set(&t.TextShadowColor, s.TextShadowColor)
 	set(&t.TextShadowOffset, s.TextShadowOffset)
@@ -1086,7 +1115,9 @@ func (s *textFields) textStyle() driver.TextStyle {
 			Weight:   s.FontWeight,
 			Italic:   s.FontStyle == FontStyleItalic,
 			// The normal bit only marks a variant as set.
-			Variant: s.FontVariant &^ FontVariantNormal,
+			Variant:  s.FontVariant &^ FontVariantNormal,
+			Axes:     driver.DecodeFontAxes(s.FontAxes),
+			Features: driver.DecodeFontFeatures(s.FontFeatures),
 		},
 		Color:         s.Color,
 		LineHeight:    s.LineHeight,

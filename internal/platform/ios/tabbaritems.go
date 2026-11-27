@@ -93,7 +93,7 @@ func drawOpsEqual(a, b driver.DrawOp) bool {
 	da, db := a.Dash, b.Dash
 	a.Gradient, b.Gradient = nil, nil
 	a.Dash, b.Dash = nil, nil
-	if a != b {
+	if !a.Equal(b) {
 		return false
 	}
 	return gradientsEqual(ga, gb) && dashesEqual(da, db)

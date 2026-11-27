@@ -153,7 +153,7 @@ func TestSVGDrawFitsCentersAndColors(t *testing.T) {
 		t.Fatalf("ops = %+v", d.Ops)
 	}
 	for i := range want {
-		if d.Ops[i] != want[i] {
+		if !d.Ops[i].Equal(want[i]) {
 			t.Errorf("op %d = %+v, want %+v", i, d.Ops[i], want[i])
 		}
 	}

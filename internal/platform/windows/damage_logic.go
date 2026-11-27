@@ -197,6 +197,7 @@ type formatKey struct {
 	language string
 	weight   driver.FontWeight
 	italic   bool
+	axes     string
 	size     float32
 	align    driver.TextAlign
 	rtl      bool

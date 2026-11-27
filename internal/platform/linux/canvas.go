@@ -8,7 +8,6 @@ import (
 	"log"
 	"math"
 	"slices"
-	"strings"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -623,7 +622,7 @@ func (p *canvasPlayer) textLayout(text string, font driver.Font) uintptr {
 	defer pangoFontDescriptionFree(desc)
 	pangoLayoutSetFontDescription(l, desc)
 	// A description has no OpenType features; an attribute carries them.
-	if f := fontFeatures(font.Variant); f != "" {
+	if f := driver.FontPangoFeatures(font); f != "" {
 		attrs := pangoAttrListNew()
 		pangoAttrListInsert(attrs, pangoAttrFontFeaturesNew(cstr(f)))
 		pangoLayoutSetAttributes(l, attrs)
@@ -644,20 +643,10 @@ func fontDescription(font driver.Font, ui string) uintptr {
 	if font.Italic {
 		pangoFontDescriptionSetStyle(desc, pangoStyleItalic)
 	}
-	return desc
-}
-
-// fontFeatures is v's OpenType features as Pango's font-features
-// attribute takes them, "smcp 1, tnum 1"; empty when it has none.
-func fontFeatures(v driver.FontVariant) string {
-	var b strings.Builder
-	for i, tag := range v.Tags() {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		b.WriteString(tag + " 1")
+	if vars := driver.FontPangoVariations(font); vars != "" {
+		pangoFontDescriptionSetVariations(desc, cstr(vars))
 	}
-	return b.String()
+	return desc
 }
 
 // canvasImages are the images a window's canvases draw, by

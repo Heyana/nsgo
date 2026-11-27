@@ -23,6 +23,13 @@ public final class Typeface {
         return new Typeface(base == null ? "default" : base.family, weight, italic);
     }
 
+    public static final class Builder {
+        public Builder(android.content.res.AssetManager assets, String path) {}
+        public Builder(java.io.File file) {}
+        public Builder setFontVariationSettings(String variationSettings) { return this; }
+        public Typeface build() { return DEFAULT; }
+    }
+
     public static final class CustomFallbackBuilder {
         public CustomFallbackBuilder(android.graphics.fonts.FontFamily family) {}
         public static int getMaxCustomFallbackCount() { return 64; }

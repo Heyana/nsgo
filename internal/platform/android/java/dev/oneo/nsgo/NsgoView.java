@@ -2213,7 +2213,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             try {
                 android.graphics.Typeface typeface = android.graphics.Typeface.createFromAsset(getContext().getAssets(), path);
                 Object font = Text.assetFont(getContext().getAssets(), path, weight, italic);
-                Text.register(family, weight, italic, typeface, font);
+                Text.register(family, weight, italic, typeface, font, getContext().getAssets(), path, null);
             } catch (RuntimeException e) {
                 Log.w(TAG, "font " + path + ": " + e);
             }
@@ -2242,7 +2242,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
             }
             android.graphics.Typeface typeface = android.graphics.Typeface.createFromFile(file);
             Object font = Text.fileFont(file, weight, italic);
-            Text.register(family, weight, italic, typeface, font);
+            Text.register(family, weight, italic, typeface, font, null, null, file);
         } catch (IOException | RuntimeException e) {
             Log.w(TAG, "font " + family + ": " + e);
         }
@@ -6564,6 +6564,7 @@ public class NsgoView extends FrameLayout implements NsgoEngine.Listener {
         field.setTextColor(style.color);
         field.setLetterSpacing(style.letterSpacingEm());
         field.setFontFeatureSettings(style.features);
+        if (Build.VERSION.SDK_INT >= 26) field.setFontVariationSettings(style.variations);
         field.setPaintFlags(style.paintFlags(field.getPaintFlags()));
         field.setTextLocale(style.locale != null ? style.locale : Locale.getDefault());
         if (Build.VERSION.SDK_INT >= 33) {

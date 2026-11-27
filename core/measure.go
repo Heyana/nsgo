@@ -110,6 +110,7 @@ func (c *measureCache) hash(at *driver.AttributedText) uint64 {
 
 // writeStyle writes what of s lays text out: all of it but its colors.
 func writeStyle(h *maphash.Hash, s driver.TextStyle) {
-	s.Color, s.DecorationColor = 0, 0
-	maphash.WriteComparable(h, s)
+	k := driver.TextStyleKeyOf(s)
+	k.Color, k.DecorationColor = 0, 0
+	maphash.WriteComparable(h, k)
 }

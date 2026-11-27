@@ -1053,8 +1053,15 @@ class CanvasNode extends View {
             String family = string(b);
             float size = b.getFloat();
             int weight = b.getShort() & 0xffff;
-            boolean italic = b.get() != 0;
-            String features = Text.features(b.get() & 0xff);
+            int flags = b.get() & 0xff;
+            boolean italic = (flags & 1) != 0;
+            boolean hasAxes = (flags & 2) != 0;
+            boolean hasFeatures = (flags & 4) != 0;
+            int variant = b.get() & 0xff;
+            String variations = hasAxes ? string(b) : null;
+            if (variations != null && variations.isEmpty()) variations = null;
+            String features = hasFeatures ? string(b) : Text.features(variant);
+            if (features != null && features.isEmpty()) features = null;
             if (unseen(stroke ? state.stroke : state.fill, stroke ? state.strokeGradient : state.fillGradient)) {
                 return;
             }
@@ -1065,10 +1072,11 @@ class CanvasNode extends View {
                 if (!paintWith(state.fill, state.fillGradient, new Matrix())) return;
                 paint.setStyle(Paint.Style.FILL);
             }
-            paint.setTypeface(Text.typeface(family, weight, italic));
+            paint.setTypeface(Text.typeface(family, weight, italic, variations));
             paint.setTextSize(size);
             paint.setFlags(paint.getFlags() | Paint.LINEAR_TEXT_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
             paint.setFontFeatureSettings(features);
+            if (Build.VERSION.SDK_INT >= 26) paint.setFontVariationSettings(variations);
             canvas.save();
             canvas.concat(state.ctm);
             draw(() -> canvas.drawText(text, x, y, paint), true);

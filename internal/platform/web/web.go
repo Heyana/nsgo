@@ -713,14 +713,25 @@ func fontStyle(t driver.TextStyle) map[string]string {
 	if driver.KeepAllWords(t.Font.Language) {
 		wordBreak = "keep-all"
 	}
+	variations := "normal"
+	if v := driver.FontCSSVariationSettings(t.Font); v != "" {
+		variations = v
+	}
+	features := "normal"
+	if len(t.Font.Features) > 0 {
+		if f := driver.FontCSSFeatureSettings(t.Font); f != "" {
+			features = f
+		}
+	}
 	return map[string]string{
 		"font-family": family, "font-size": webstyle.Px(t.Font.Size), "font-weight": fmt.Sprint(t.Font.Weight),
 		"font-style": italic, "line-height": lineHeight, "letter-spacing": webstyle.Px(t.LetterSpacing),
 		"color": webstyle.Color(t.Color), "text-align": align, "text-decoration-line": decoration,
 		"text-decoration-style": webstyle.DecorationStyles[t.DecorationStyle], "text-decoration-color": decorationColor,
 		"text-decoration-thickness": thickness, "text-underline-offset": offset,
-		"font-variant-caps": caps, "font-variant-numeric": numeric, "direction": direction,
-		"word-break": wordBreak,
+		"font-variant-caps": caps, "font-variant-numeric": numeric,
+		"font-variation-settings": variations, "font-feature-settings": features,
+		"direction": direction, "word-break": wordBreak,
 	}
 }
 
@@ -1035,14 +1046,14 @@ type paragraphStyle struct {
 }
 
 type paragraphKey struct {
-	style     driver.TextStyle
+	style     driver.TextStyleKey
 	shadow    driver.TextShadow
 	maxLines  int
 	ellipsize driver.EllipsizeMode
 }
 
 func (s *surface) paragraphStyle(t *driver.AttributedText) *paragraphStyle {
-	key := paragraphKey{t.Style, t.Shadow, t.MaxLines, t.Ellipsize}
+	key := paragraphKey{driver.TextStyleKeyOf(t.Style), t.Shadow, t.MaxLines, t.Ellipsize}
 	if ps, ok := s.paragraphs[key]; ok {
 		return ps
 	}

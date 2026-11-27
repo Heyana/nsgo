@@ -825,12 +825,12 @@ func TestTouchBrakingClaimsGlideAndSnap(t *testing.T) {
 func TestFontMetricsStayBounded(t *testing.T) {
 	var m map[fontKey]driver.Points
 	for i := range maxFontMetrics * 3 {
-		remember(&m, fontKey{font: driver.Font{Size: driver.Points(i)}}, driver.Points(i))
+		remember(&m, fontKey{font: driver.FontKeyOf(driver.Font{Size: driver.Points(i)})}, driver.Points(i))
 		if len(m) > maxFontMetrics {
 			t.Fatalf("%d metrics cached, want at most %d", len(m), maxFontMetrics)
 		}
 	}
-	last := fontKey{font: driver.Font{Size: maxFontMetrics*3 - 1}}
+	last := fontKey{font: driver.FontKeyOf(driver.Font{Size: maxFontMetrics*3 - 1})}
 	if m[last] != maxFontMetrics*3-1 {
 		t.Error("the latest metric is not cached")
 	}

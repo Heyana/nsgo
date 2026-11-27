@@ -2,6 +2,7 @@ package core
 
 import (
 	"hash/maphash"
+	"maps"
 	"slices"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -114,6 +115,12 @@ func (c *styleIntern) cloneImmutable(s *Style) *Style {
 	}
 	if cp.StrokeDash != nil {
 		cp.StrokeDash = slices.Clone(cp.StrokeDash)
+	}
+	if cp.FontAxes != nil {
+		cp.FontAxes = maps.Clone(cp.FontAxes)
+	}
+	if cp.FontFeatures != nil {
+		cp.FontFeatures = maps.Clone(cp.FontFeatures)
 	}
 	if cp.GroupStyle != nil {
 		g := *cp.GroupStyle
@@ -245,7 +252,9 @@ func sameStyle(a, b *Style) bool {
 		(a.Filters == nil) != (b.Filters == nil) || !slices.Equal(a.Filters, b.Filters) ||
 		(a.BackdropFilters == nil) != (b.BackdropFilters == nil) || !slices.Equal(a.BackdropFilters, b.BackdropFilters) ||
 		(a.Transforms == nil) != (b.Transforms == nil) || !slices.Equal(a.Transforms, b.Transforms) ||
-		(a.StrokeDash == nil) != (b.StrokeDash == nil) || !slices.Equal(a.StrokeDash, b.StrokeDash) {
+		(a.StrokeDash == nil) != (b.StrokeDash == nil) || !slices.Equal(a.StrokeDash, b.StrokeDash) ||
+		(a.FontAxes == nil) != (b.FontAxes == nil) || !maps.Equal(a.FontAxes, b.FontAxes) ||
+		(a.FontFeatures == nil) != (b.FontFeatures == nil) || !maps.Equal(a.FontFeatures, b.FontFeatures) {
 		return false
 	}
 	if a.Mask != b.Mask {
@@ -475,6 +484,14 @@ func writeStyleHash(h *maphash.Hash, s *Style) {
 		for _, d := range s.StrokeDash {
 			maphash.WriteComparable(h, d)
 		}
+	}
+	if s.FontAxes != nil {
+		h.WriteByte(4)
+		h.WriteString(driver.EncodeFontAxes(s.FontAxes))
+	}
+	if s.FontFeatures != nil {
+		h.WriteByte(5)
+		h.WriteString(driver.EncodeFontFeatures(s.FontFeatures))
 	}
 	if s.GroupStyle != nil {
 		h.WriteByte(3)

@@ -310,7 +310,7 @@ func (h *richEditHost) configure(old, cur driver.InputConfig) {
 	h.suppressNotify++
 	defer func() { h.suppressNotify-- }()
 
-	if old.Style != cur.Style || old.Multiline != cur.Multiline || old.Masked != cur.Masked ||
+	if !old.Style.Equal(cur.Style) || old.Multiline != cur.Multiline || old.Masked != cur.Masked ||
 		old.Readonly != cur.Readonly || old.Disabled != cur.Disabled ||
 		old.MaxLength != cur.MaxLength || old.NoAutoCorrect != cur.NoAutoCorrect {
 		h.applyAllConfig()

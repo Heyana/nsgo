@@ -51,7 +51,7 @@ func TestInputConfigCarriesProps(t *testing.T) {
 		PlaceholderColor: RGB(0xff0000), SelectionColor: RGB(0x00ff00), AccentColor: DefaultTheme().Light.Accent}
 	got := *c
 	got.Style, got.Content = driver.InputConfig{}.Style, Bounds{}
-	if got != want {
+	if !got.Equal(want) {
 		t.Fatalf("config = %+v\nwant %+v", got, want)
 	}
 	if AutoCompleteNewPassword.String() != "new-password" || AutoCompleteBirthdate.String() != "bday" {

@@ -105,7 +105,7 @@ type ed struct {
 	blockH      map[*Decoration]float32
 	blockPosH   map[blockPosKey]float32
 	lineMetrics map[int]lineMetric
-	fontWidths  map[core.Font]float32
+	fontWidths  []fontWidthEntry
 	tops        []float32
 	uniform     bool
 	comp        completion

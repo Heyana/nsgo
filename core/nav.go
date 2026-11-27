@@ -1,6 +1,7 @@
 package core
 
 import (
+	"maps"
 	"strings"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -510,7 +511,7 @@ func (t *Tree) screenConfig(n *node) driver.ScreenConfig {
 // emitScreen sends screen n's header config when it changed.
 func (t *Tree) emitScreen(n *node) {
 	sn, c := n.screen, t.screenConfig(n)
-	if sn.sentOK && c == sn.sent {
+	if sn.sentOK && c.Equal(sn.sent) {
 		return
 	}
 	sn.sent, sn.sentOK = c, true
@@ -606,7 +607,7 @@ func (t *Tree) markScreens(n *node) {
 		if sn == nil || !sn.native || c.deleted {
 			continue
 		}
-		if !sn.sentOK || t.screenConfig(c) != sn.sent {
+		if !sn.sentOK || !t.screenConfig(c).Equal(sn.sent) {
 			t.mark(c)
 		}
 	}
@@ -722,5 +723,13 @@ func (t *Tree) innerStack(host *node) *node {
 
 // headerFont leaves defaults unresolved so each native bar keeps its own font.
 func headerFont(s Style) driver.Font {
-	return driver.Font{Family: s.FontFamily, Size: s.FontSize, Weight: s.FontWeight, Italic: s.FontStyle == FontStyleItalic}
+	return driver.Font{
+		Family:   s.FontFamily,
+		Size:     s.FontSize,
+		Weight:   s.FontWeight,
+		Italic:   s.FontStyle == FontStyleItalic,
+		Variant:  s.FontVariant &^ FontVariantNormal,
+		Axes:     maps.Clone(s.FontAxes),
+		Features: maps.Clone(s.FontFeatures),
+	}
 }

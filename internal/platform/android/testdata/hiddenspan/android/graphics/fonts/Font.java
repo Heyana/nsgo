@@ -13,6 +13,7 @@ public final class Font {
         public Builder(File file) throws IOException { throw new IOException("no fonts on the JVM"); }
         public Builder setWeight(int weight) { return this; }
         public Builder setSlant(int slant) { return this; }
+        public Builder setFontVariationSettings(String variationSettings) { return this; }
         public Font build() throws IOException { throw new IOException("no fonts on the JVM"); }
     }
 

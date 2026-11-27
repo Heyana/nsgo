@@ -313,7 +313,7 @@ func TestSVGTextWhitespaceAndFontShorthand(t *testing.T) {
 	if texts[0].Text != "Hello world" {
 		t.Errorf("collapsed = %q, want %q", texts[0].Text, "Hello world")
 	}
-	if texts[0].Font != (Font{Family: "Georgia", Size: 18, Weight: FontWeightSemibold, Italic: true, Variant: FontSmallCaps}) {
+	if !texts[0].Font.Equal(Font{Family: "Georgia", Size: 18, Weight: FontWeightSemibold, Italic: true, Variant: FontSmallCaps}) {
 		t.Errorf("shorthand font = %+v", texts[0].Font)
 	}
 	if texts[1].Text != "  A  B  " {

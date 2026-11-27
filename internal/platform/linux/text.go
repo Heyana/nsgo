@@ -315,7 +315,7 @@ func textDirection(rtl bool) int32 {
 // fontExtent returns the vertical metrics of f, from a line of "x" in
 // it: its ascent and descent, and the top of the x's ink, its system families in the UI font ui. The engine thread calls it; it caches what it measured.
 func (w *window) fontExtent(f driver.Font, ui string) driver.FontExtent {
-	key := fontKey{f, ui}
+	key := fontKey{driver.FontKeyOf(f), ui}
 	if e, ok := w.extents[key]; ok {
 		return e
 	}
@@ -508,7 +508,13 @@ func addStyle(list uintptr, text string, start, end int, s driver.TextStyle, ui 
 	if f.Italic {
 		add(pangoAttrStyleNew(pangoStyleItalic))
 	}
-	if features := fontFeatures(f.Variant); features != "" {
+	if vars := driver.FontPangoVariations(f); vars != "" {
+		desc := pangoFontDescriptionNew()
+		pangoFontDescriptionSetVariations(desc, cstr(vars))
+		add(pangoAttrFontDescNew(desc))
+		pangoFontDescriptionFree(desc)
+	}
+	if features := driver.FontPangoFeatures(f); features != "" {
 		add(pangoAttrFontFeaturesNew(cstr(features)))
 	}
 	add(pangoAttrForegroundNew(rgb16(s.Color)))
@@ -892,7 +898,7 @@ func (l *textLayout) TextLines() []driver.TextLine { return l.lines }
 
 // capHeight returns the height of f's capitals, from the ink of an "H", its system families in the UI font ui. The engine thread calls it; it caches what it measured.
 func (w *window) capHeight(f driver.Font, ui string) driver.Points {
-	key := fontKey{f, ui}
+	key := fontKey{driver.FontKeyOf(f), ui}
 	if h, ok := w.capHeights[key]; ok {
 		return h
 	}
@@ -981,7 +987,7 @@ type lineMetrics struct {
 
 // fontLines returns f's decoration lines, its system families in the UI font ui. The engine thread calls it; it caches what it read.
 func (w *window) fontLines(f driver.Font, ui string) lineMetrics {
-	key := fontKey{f, ui}
+	key := fontKey{driver.FontKeyOf(f), ui}
 	if m, ok := w.lineMetrics[key]; ok {
 		return m
 	}
@@ -1592,7 +1598,7 @@ func (l *textLayout) Release() {
 
 // fontKey is what the engine thread's font metrics are cached by: a font, and the UI font its system families took.
 type fontKey struct {
-	font driver.Font
+	font driver.FontKey
 	ui   string
 }
 

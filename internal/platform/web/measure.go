@@ -35,7 +35,7 @@ type lineFont struct {
 // canvasFont is the style's font as a canvas takes it, and false when the
 // canvas would not measure the text as the element draws it.
 func canvasFont(t driver.TextStyle) (lineFont, bool) {
-	if t.LetterSpacing != 0 || t.Font.Variant != 0 {
+	if t.LetterSpacing != 0 || t.Font.Variant != 0 || len(t.Font.Axes) > 0 || len(t.Font.Features) > 0 {
 		return lineFont{}, false
 	}
 	style := "normal"

@@ -74,7 +74,7 @@ func TestScreenSystemHeader(t *testing.T) {
 	want := driver.ScreenConfig{Title: "Detail", CanGoBack: true, BackTitle: "Back to Home",
 		Background: RGB(0x0a141e), TitleColor: RGB(0xffffff), TintColor: RGB(0x0000ff),
 		Right: action.parent.id, HeaderHeight: 84, Header: h.find("drawn-Detail").parent.id}
-	if !ok || c != want {
+	if !ok || !c.Equal(want) {
 		t.Errorf("detail's header = %+v, want %+v", c, want)
 	}
 	if home := screenItems(b)[h.find("Home").id]; home.CanGoBack || home.HeaderHeight != 84 {
@@ -526,8 +526,8 @@ func TestScreenHeaderFontsFollowStyles(t *testing.T) {
 		if !c.LargeTitle || c.TitleView == 0 || !c.RightWithLargeTitle {
 			t.Fatalf("custom title removed the large title or placement: %+v", c)
 		}
-		if c.TitleFont != (driver.Font{Family: "serif", Size: size, Weight: FontWeightMedium}) ||
-			c.LargeTitleFont != (driver.Font{Family: "monospace", Size: size + 8, Weight: FontWeightSemibold}) {
+		if !c.TitleFont.Equal(driver.Font{Family: "serif", Size: size, Weight: FontWeightMedium}) ||
+			!c.LargeTitleFont.Equal(driver.Font{Family: "monospace", Size: size + 8, Weight: FontWeightSemibold}) {
 			t.Fatalf("title fonts: compact %+v, large %+v", c.TitleFont, c.LargeTitleFont)
 		}
 	}

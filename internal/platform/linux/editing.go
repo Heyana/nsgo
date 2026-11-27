@@ -220,8 +220,11 @@ func entryStyle(v *view) string {
 	if in.Multiline && in.Style.LineHeight > 0 {
 		fmt.Fprintf(&b, "%s { line-height: %.3fpx; }\n", all, float64(in.Style.LineHeight))
 	}
-	if tags := f.Variant.Tags(); len(tags) > 0 {
-		fmt.Fprintf(&b, "%s { font-feature-settings: \"%s\" 1; }\n", all, strings.Join(tags, "\" 1, \""))
+	if features := driver.FontCSSFeatureSettings(f); features != "" {
+		fmt.Fprintf(&b, "%s { font-feature-settings: %s; }\n", all, features)
+	}
+	if variations := driver.FontCSSVariationSettings(f); variations != "" {
+		fmt.Fprintf(&b, "%s { font-variation-settings: %s; }\n", all, variations)
 	}
 	if c := in.Highlight(); c != 0 {
 		fmt.Fprintf(&b, "%s selection { background-color: %s; color: %s; }\n", name, cssColor(c), cssColor(in.Style.Color))

@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -34,6 +35,12 @@ type lineMetric struct {
 	charW     float32
 	font      core.Font
 	textStyle core.Style
+}
+
+// fontWidthEntry caches the single-column width measured for a custom font.
+type fontWidthEntry struct {
+	font  core.Font
+	width float32
 }
 
 // blockPlacement is a visible Block decoration rendered in blockLayer.
@@ -190,8 +197,14 @@ func (e *ed) collectLineMetrics() map[int]lineMetric {
 		if st.FontStyle == core.FontStyleItalic {
 			font.Italic = true
 		}
+		if len(st.FontAxes) > 0 {
+			font.Axes = maps.Clone(st.FontAxes)
+		}
+		if len(st.FontFeatures) > 0 {
+			font.Features = maps.Clone(st.FontFeatures)
+		}
 		cw := e.charW
-		if font != e.font {
+		if !font.Equal(e.font) {
 			cw = e.measureFontCharW(font)
 		}
 		h := e.lh
@@ -209,14 +222,13 @@ func (e *ed) collectLineMetrics() map[int]lineMetric {
 
 // measureFontCharW caches the single-column width for a custom line font.
 func (e *ed) measureFontCharW(font core.Font) float32 {
-	if e.fontWidths == nil {
-		e.fontWidths = map[core.Font]float32{}
-	}
-	if w, ok := e.fontWidths[font]; ok {
-		return w
+	for _, entry := range e.fontWidths {
+		if entry.font.Equal(font) {
+			return entry.width
+		}
 	}
 	w := max(e.cx.MeasureText("0000000000", font).Width/10, 1)
-	e.fontWidths[font] = w
+	e.fontWidths = append(e.fontWidths, fontWidthEntry{font: font, width: w})
 	return w
 }
 
@@ -339,7 +351,7 @@ func mapsEqualLineMetric(a, b map[int]lineMetric) bool {
 	}
 	for k, va := range a {
 		vb, ok := b[k]
-		if !ok || va.height != vb.height || va.charW != vb.charW || va.font != vb.font ||
+		if !ok || va.height != vb.height || va.charW != vb.charW || !va.font.Equal(vb.font) ||
 			va.textStyle.Color != vb.textStyle.Color || va.textStyle.FontStyle != vb.textStyle.FontStyle {
 			return false
 		}

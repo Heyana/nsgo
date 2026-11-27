@@ -27,7 +27,7 @@ func (s *surface) caretMoved(v *view) {
 		style["white-space"], style["overflow-wrap"] = "pre-wrap", "break-word"
 	}
 	for _, p := range []string{"font-family", "font-size", "font-weight", "font-style", "font-stretch",
-		"font-variant", "font-feature-settings", "font-kerning", "letter-spacing", "line-height", "padding-top", "padding-right", "padding-bottom",
+		"font-variant", "font-feature-settings", "font-variation-settings", "font-kerning", "letter-spacing", "line-height", "padding-top", "padding-right", "padding-bottom",
 		"padding-left", "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
 		"text-indent", "text-transform", "word-spacing", "word-break", "tab-size", "direction", "text-align"} {
 		style[p] = cs.Call("getPropertyValue", p).String()

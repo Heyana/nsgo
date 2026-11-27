@@ -502,7 +502,7 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 		ts.Align = sidedAlign(ts.Align, ts.RTL)
 		sized := tn.attachments > 0 && t.sizeAttachments(n, inherited, scale, kids)
 		shadow := inherited.textShadow()
-		if tn.stale || sized || tn.prepared == nil || ts != tn.style || shadow != tn.text.Shadow {
+		if tn.stale || sized || tn.prepared == nil || !ts.Equal(tn.style) || shadow != tn.text.Shadow {
 			lines, ellipsize := n.textLimits()
 			at := driver.AttributedText{Text: inherited.TextTransform.Apply(tn.content), Style: ts, MaxLines: lines,
 				Ellipsize: ellipsize, Shadow: shadow}
@@ -592,7 +592,7 @@ func (t *Tree) resolve(n *node, inherited textFields, force bool) {
 		ts := scaleText(inherited.textStyle(), fontMultiplier(t.fontScale, in.noScale, in.maxScale))
 		ts.RTL = n.textRTL(inherited, in.value)
 		ts.Align = sidedAlign(ts.Align, ts.RTL)
-		if ts != in.config.Style || in.lineH == 0 {
+		if !ts.Equal(in.config.Style) || in.lineH == 0 {
 			in.config.Style = ts
 			p := t.text.Prepare(&driver.AttributedText{Text: "Ag", Style: ts})
 			in.lineH = p.Measure(Auto).Height
@@ -1011,7 +1011,7 @@ func (t *Tree) emitParts(n *node) bool {
 	case n.input != nil:
 		in := n.input
 		in.config.Accessory, in.config.AccessoryID = t.accessoryFor(in.accessory), in.accessory
-		if first || in.config != in.sent {
+		if first || !in.config.Equal(in.sent) {
 			c := in.config
 			in.sent = c
 			add(driver.MountItem{Kind: driver.ItemInput, ID: n.id, Input: &c})

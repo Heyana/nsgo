@@ -30,7 +30,9 @@ var (
 	iidDWriteFactory      = parseGUID("b859ee5a-d838-4b5b-a2e8-1adc7d93db48")
 	iidDWriteFactory2     = parseGUID("0439fc60-ca44-4994-8dee-3a9af7b732ec")
 	iidDWriteTextFormat1  = parseGUID("5f174b49-0d8b-4cfb-8bca-f1cce9d06c67")
+	iidDWriteTextFormat3  = parseGUID("6d3b5641-e550-430d-a85b-b7bf48a93427")
 	iidDWriteTextLayout1  = parseGUID("9064d822-80a7-465c-a986-df65f78b8feb")
+	iidDWriteTextLayout4  = parseGUID("05a9bf42-223f-4441-b5fb-8263685f55e9")
 	iidDWriteInline       = parseGUID("8339fde3-106f-47ab-8373-1c6295eb10b3")
 	clsidGaussianBlur     = parseGUID("1feb6d69-2fe6-4ac9-8c58-1d7f93e7a6a5")
 	clsidShadow           = parseGUID("c67ea361-1863-4e69-89db-695d3e9a5b6b")
@@ -151,8 +153,9 @@ const (
 	fallbackAddMappings        = 4
 	fallbackCreateFontFallback = 5
 
-	// IDWriteTextFormat1
-	formatSetFontFallback = 34
+	// IDWriteTextFormat1, IDWriteTextFormat3
+	formatSetFontFallback   = 34
+	formatSetFontAxisValues = 38
 
 	// IDWriteFontCollection, IDWriteFontFamily, IDWriteFont
 	collectionGetFontFamily    = 4
@@ -185,7 +188,16 @@ const (
 	layoutHitTestTextPosition = 65
 	layoutHitTestTextRange    = 66
 	layoutSetCharacterSpacing = 69
+	// IDWriteTextLayout4 (after IDWriteTextLayout1..3)
+	layoutSetFontAxisValues = 84
 )
+
+// fontAxisValue is a DWRITE_FONT_AXIS_VALUE: a little-endian OpenType axis tag
+// and its coordinate value.
+type fontAxisValue struct {
+	axisTag uint32
+	value   float32
+}
 
 // Enumerations and flags.
 const (

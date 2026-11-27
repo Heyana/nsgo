@@ -135,7 +135,7 @@ func UprightEmoji(t *AttributedText) {
 			out = append(out, part)
 		}
 	}
-	if len(t.Spans) > 0 || len(out) > 1 || out[0].Style != t.Style {
+	if len(t.Spans) > 0 || len(out) > 1 || !out[0].Style.Equal(t.Style) {
 		t.Spans = out
 	}
 }
