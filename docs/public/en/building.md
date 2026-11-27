@@ -264,6 +264,39 @@ nsgo add -list @acme charts          # filter one registry by words across name,
 
 A registry file is a single strict YAML document of at most 4 MiB with `version: 1` and an `items` list (`name`, `module`, optional `component`, optional tagged `version`, single-line `description`, SPDX `license`, optional `https` `homepage`, and optional lowercase `tags`), without anchors, aliases, merge keys, control characters or Unicode format characters. Remote registries follow up to 10 redirects (refusing redirects to plain HTTP or non-loopback HTTP), use a 30-second connect timeout and 5-minute total timeout, and cache their copy and ETag at `<user cache dir>/nsgo/registries/<sha256>.yaml`. Offline, `nsgo add` reuses the cached copy and shows its age on the plan's first line alongside the registry and URL; with no cached copy, the error names the URL. Private registries use a file in the repository or an intranet server, and private Go modules keep `GOPRIVATE` and `GOAUTH`.
 
+## Removing libraries
+
+Once no package in the module imports a library, drop it with `nsgo remove`, which takes a bare name from NSGo's built-in index, a `@registry/name` from `nsgo.yaml`'s `registries`, or a Go module path, and previews `go mod tidy` on copies of `go.mod` and `go.sum` before writing:
+
+```sh
+nsgo remove media                           # resolve a bare name in NSGo's built-in index
+nsgo remove @acme/chart                     # resolve a name in a configured custom registry
+nsgo remove github.com/acme/chart           # show what go mod tidy drops and ask before writing
+nsgo remove -dry-run github.com/acme/chart  # print the plan and write nothing
+nsgo remove -y github.com/acme/chart        # apply without asking
+```
+
+```text
+github.com/acme/chart
+  module     remove github.com/acme/chart v1.3.0
+
+example.com/hello
+  go.mod     - require github.com/acme/chart v1.3.0
+             - require example.com/units v1.0.0
+             - require example.com/stray v0.1.0, also tidied
+  go.sum     - 6 lines
+Apply these changes? [y/N]
+```
+
+Before running `go mod tidy`, `remove` checks imports with `go mod why -m`, which counts every build tag (`_ios.go` and test files included), and refuses while any package of the module still imports the library directly, naming that package. A name that resolves to a copied component is also refused before anything is planned. Custom registries print their `registry @<name> (<source>)` line at the top of the plan, as `add` does.
+
+`remove` runs `go mod tidy` in `add`'s environment (`GOTOOLCHAIN=local`, `GOWORK=off` and proxy-only `GOPROXY`) and never lowers another module's version; versions raised when the library was added stay, matching what `go mod tidy` writes. In the plan:
+
+- lines unrelated to the removed library or its dropped dependencies are marked `also tidied`;
+- a library that stays because another dependency needs it or because `go.mod` declares one of its tools says why;
+- any `replace` of the library in `go.mod` is mentioned as left in place.
+
+Confirmation, `-dry-run`, `-y`, running without a terminal, interrupts, atomic writes and `go mod vendor` follow the same rules as `add`. `remove` is likewise new after NSGo 0.3.4.
 ## Libraries from Go packages
 
 Desktop app builds and target tests compile app code with `CGO_ENABLED=0`, as they do NSGo itself. If an app package contains cgo files, the build stops and names them instead of silently dropping them. Use purego and `nsgo-natives.yaml` for native libraries.

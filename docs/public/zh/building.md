@@ -232,6 +232,39 @@ nsgo add -list @acme charts          # 按注册表前缀和关键词（名称�
 
 注册表文件是单个不超过 4 MiB 的严格 YAML 文档，包含 `version: 1` 和 `items` 列表（`name`、`module`、可选 `component`、可选标签 `version`、单行 `description`、SPDX `license`、可选 `https` `homepage` 以及可选小写 `tags`），禁止锚点、别名、合并键、控制字符和 Unicode 格式字符。远程注册表最多跟随 10 次重定向（拒绝重定向到明文 HTTP 或非回环 HTTP），连接超时 30 秒、总超时 5 分钟，并带 ETag 原子缓存到 `<用户缓存目录>/nsgo/registries/<sha256>.yaml`。离线时 `nsgo add` 会复用缓存副本，并在计划第一行与注册表和 URL 一起显示缓存时长；没有缓存副本时，错误信息会指明 URL。私有注册表可使用仓库内的文件或内网服务器，私有 Go 模块继续沿用 `GOPRIVATE` 和 `GOAUTH`。
 
+## 移除库
+
+当模块中不再有任何包导入某个库时，用 `nsgo remove` 移除它。它接受 NSGo 内置索引中的短名、`nsgo.yaml` 的 `registries` 中的 `@注册表/名称` 或 Go 模块路径，写入前会在 `go.mod` 和 `go.sum` 的副本上预览 `go mod tidy`：
+
+```sh
+nsgo remove media                           # 从 NSGo 内置索引解析短名
+nsgo remove @acme/chart                     # 通过已配置的自定义注册表解析名称
+nsgo remove github.com/acme/chart           # 展示 go mod tidy 将移除的内容，询问后再写入
+nsgo remove -dry-run github.com/acme/chart  # 只打印计划，什么也不写
+nsgo remove -y github.com/acme/chart        # 不经询问直接应用计划
+```
+
+```text
+github.com/acme/chart
+  module     remove github.com/acme/chart v1.3.0
+
+example.com/hello
+  go.mod     - require github.com/acme/chart v1.3.0
+             - require example.com/units v1.0.0
+             - require example.com/stray v0.1.0, also tidied
+  go.sum     - 6 lines
+Apply these changes? [y/N]
+```
+
+在运行 `go mod tidy` 之前，`remove` 用 `go mod why -m`（覆盖所有构建标签，包括 `_ios.go` 和测试文件）检查导入；只要模块中还有包直接导入该库，就拒绝并指出该包。解析为已复制组件的名字也会在规划前被拒绝。使用自定义注册表时，计划第一行会与 `add` 一样显示 `registry @<名称> (<来源>)`。
+
+`remove` 在与 `add` 相同的环境（`GOTOOLCHAIN=local`、`GOWORK=off` 和仅经由代理的 `GOPROXY`）中运行 `go mod tidy`，绝不降低其他模块的版本；添加该库时被提高的版本会保留，最终结果与 `go mod tidy` 写出的一致。计划中会标明：
+
+- 与所移除库及其连带移除的依赖无关的行标为 `also tidied`；
+- 因其他依赖仍需要或 `go.mod` 声明了其 `tool` 而保留的库会说明原因；
+- `go.mod` 中针对该库的 `replace` 会注明原样保留。
+
+确认提示、`-dry-run`、`-y`、无终端运行、中断恢复、原子写入以及 `go mod vendor` 提示均与 `add` 相同。`remove` 同样是 NSGo 0.3.4 之后新增的。
 ## 来自 Go 包的库
 
 桌面应用构建和目标测试对应用代码使用 `CGO_ENABLED=0`，NSGo 自身也遵循这一规则。应用包若含有 cgo 文件，构建会列出这些文件并停止，不会静默丢弃它们。原生库请使用 purego 和 `nsgo-natives.yaml`。

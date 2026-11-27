@@ -459,6 +459,11 @@ func addModulesWithIndex(ctx context.Context, o addOptions, args []string, idx *
 
 // askToApply asks on stderr whether to apply the plan and reads the answer, y or yes, from standard input, a terminal.
 func askToApply(ctx context.Context) (bool, error) {
+	return askToApplyFor(ctx, "add")
+}
+
+// askToApplyFor asks on stderr whether to apply cmdName's plan and reads the answer, y or yes, from standard input, a terminal.
+func askToApplyFor(ctx context.Context, cmdName string) (bool, error) {
 	fmt.Fprint(os.Stderr, "Apply these changes? [y/N] ")
 	answer := make(chan string, 1)
 	in := os.Stdin
@@ -469,14 +474,14 @@ func askToApply(ctx context.Context) (bool, error) {
 	select {
 	case <-ctx.Done():
 		fmt.Fprintln(os.Stderr)
-		return false, fmt.Errorf("add: interrupted, so the plan was not applied: %w", ctx.Err())
+		return false, fmt.Errorf("%s: interrupted, so the plan was not applied: %w", cmdName, ctx.Err())
 	case line := <-answer:
 		a := strings.ToLower(strings.TrimSpace(line))
 		return a == "y" || a == "yes", nil
 	}
 }
 
-// addModule is the module nsgo add plans in, and how its go commands run.
+// addModule is the module nsgo add and nsgo remove plan in, and how their go commands run.
 type addModule struct {
 	dir string // the module's root, which holds go.mod
 	cwd string // the working directory where nsgo add was invoked
@@ -496,17 +501,22 @@ type addModule struct {
 
 // findAddModule finds the module holding the working directory, its toolchain's go command, and the settings planning keeps.
 func findAddModule(ctx context.Context) (*addModule, error) {
+	return findModule(ctx, "add")
+}
+
+// findModule finds the module holding the working directory, its toolchain's go command, and the settings planning keeps, prefixing errors with cmdName.
+func findModule(ctx context.Context, cmdName string) (*addModule, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("add: %w", err)
+		return nil, fmt.Errorf("%s: %w", cmdName, err)
 	}
 	// The one go command without GOWORK=off, which reports where the module and its workspace are and, with the local toolchain, switches to none a go.work names.
 	found, err := goEnvValues(ctx, "go", ".", append(os.Environ(), "GOTOOLCHAIN=local"), "GOMOD", "GOWORK")
 	if err != nil {
-		return nil, fmt.Errorf("add: %w", err)
+		return nil, fmt.Errorf("%s: %w", cmdName, err)
 	}
 	if found["GOMOD"] == "" || found["GOMOD"] == os.DevNull {
-		return nil, fmt.Errorf("add: not in a module: run %s add in the module that takes the library", nsgoCommand())
+		return nil, fmt.Errorf("%s: not in a module: run %s %s in the module that takes the library", cmdName, nsgoCommand(), cmdName)
 	}
 	m := &addModule{dir: filepath.Dir(found["GOMOD"]), cwd: cwd}
 	if w := found["GOWORK"]; w != "off" {
@@ -516,14 +526,14 @@ func findAddModule(ctx context.Context) (*addModule, error) {
 	// The go found on PATH reports the GOROOT of the toolchain the module selects, switching to it as any command in the module would.
 	vars, err := goEnvValues(ctx, "go", m.dir, alone, "GOROOT", "GOPROXY", "GOSUMDB", "GONOSUMDB", "GONOPROXY", "GOFLAGS")
 	if err != nil {
-		return nil, fmt.Errorf("add: %w", err)
+		return nil, fmt.Errorf("%s: %w", cmdName, err)
 	}
 	m.goCmd = filepath.Join(vars["GOROOT"], "bin", "go")
 	if runtime.GOOS == "windows" {
 		m.goCmd += ".exe"
 	}
 	if _, err := os.Stat(m.goCmd); err != nil {
-		return nil, fmt.Errorf("add: the module's toolchain has no go command: %w", err)
+		return nil, fmt.Errorf("%s: the module's toolchain has no go command: %w", cmdName, err)
 	}
 	// GOROOT is the toolchain's own, as the go command sets it for a toolchain it switches to: a GOROOT the user exported, such as another toolchain's, would have this go command read that tree's standard library.
 	common := []string{"GOTOOLCHAIN=local", "GOROOT=" + vars["GOROOT"], "GOPROXY=" + initModuleProxy(vars["GOPROXY"])}
@@ -1192,7 +1202,12 @@ func requirements(f *modfile.File) map[string]requirement {
 
 // goSumChange counts the lines the plan adds to go.sum and removes from it.
 func (p *addPlan) goSumChange() string {
-	added, removed := goSumDiff(p.oldSum, p.newSum)
+	return formatGoSumChange(p.oldSum, p.newSum)
+}
+
+// formatGoSumChange counts the lines added to go.sum and removed from it.
+func formatGoSumChange(oldSum, newSum []byte) string {
+	added, removed := goSumDiff(oldSum, newSum)
 	var parts []string
 	if len(added) > 0 {
 		parts = append(parts, "+ "+lineCount(len(added)))
@@ -1240,13 +1255,18 @@ func goSumDiff(old, new []byte) (added, removed []string) {
 
 // toolChanges says, for each tool line whose module the plan moves, which version go tool then runs.
 func (p *addPlan) toolChanges() []string {
+	return modToolChanges(p.before, p.after)
+}
+
+// modToolChanges says, for each tool line in after whose module moved between before and after, which version go tool then runs.
+func modToolChanges(before, after *modfile.File) []string {
 	var lines []string
-	for _, t := range p.after.Tool {
-		mod := providingModule(t.Path, p.after)
+	for _, t := range after.Tool {
+		mod := providingModule(t.Path, after)
 		if mod == "" {
 			continue
 		}
-		old, new := toolVersionOf(p.before, mod), toolVersionOf(p.after, mod)
+		old, new := toolVersionOf(before, mod), toolVersionOf(after, mod)
 		if old == new {
 			continue
 		}
@@ -1272,7 +1292,12 @@ func toolVersionOf(f *modfile.File, mod string) string {
 
 // fetched are the modules whose hashes the plan adds to go.sum, the ones planning fetched.
 func (p *addPlan) fetched() []string {
-	added, _ := goSumDiff(p.oldSum, p.newSum)
+	return fetchedModules(p.oldSum, p.newSum)
+}
+
+// fetchedModules are the module paths whose hashes newSum adds over oldSum.
+func fetchedModules(oldSum, newSum []byte) []string {
+	added, _ := goSumDiff(oldSum, newSum)
 	var paths []string
 	for _, l := range added {
 		if path, _, _ := strings.Cut(l, " "); !slices.Contains(paths, path) {
@@ -1284,9 +1309,13 @@ func (p *addPlan) fetched() []string {
 
 // private names the fetched modules that came from their own hosts rather than a module proxy, as GONOPROXY, or GOPRIVATE, marks them.
 func (p *addPlan) private() string {
+	return privateModules(p.m.noProxy, p.fetched())
+}
+
+func privateModules(noProxy string, fetched []string) string {
 	var paths []string
-	for _, path := range p.fetched() {
-		if module.MatchPrefixPatterns(p.m.noProxy, path) {
+	for _, path := range fetched {
+		if module.MatchPrefixPatterns(noProxy, path) {
 			paths = append(paths, path)
 		}
 	}
@@ -1298,16 +1327,19 @@ func (p *addPlan) private() string {
 
 // checksums names the fetched modules whose hashes go.sum takes without the checksum database checking them.
 func (p *addPlan) checksums() string {
-	fetched := p.fetched()
+	return checksumNotice(p.m.sumDB, p.m.noSumDB, p.fetched())
+}
+
+func checksumNotice(sumDB, noSumDB string, fetched []string) string {
 	if len(fetched) == 0 {
 		return ""
 	}
-	if p.m.sumDB == "off" {
+	if sumDB == "off" {
 		return "GOSUMDB=off: go.sum takes the new hashes unchecked by the checksum database"
 	}
 	var paths []string
 	for _, path := range fetched {
-		if module.MatchPrefixPatterns(p.m.noSumDB, path) {
+		if module.MatchPrefixPatterns(noSumDB, path) {
 			paths = append(paths, path)
 		}
 	}
@@ -1321,23 +1353,28 @@ func (p *addPlan) checksums() string {
 var addRename = os.Rename
 
 // apply writes the planned go.mod and go.sum once both are as the plan found them, each through a temporary file renamed over it, and puts back what it replaced on any error or an interrupt before both are written.
-func (p *addPlan) apply(ctx context.Context) (err error) {
+func (p *addPlan) apply(ctx context.Context) error {
+	return applyModFiles(ctx, "add", p.m.dir, p.oldMod, p.newMod, p.oldSum, p.newSum, p.hadSum, p.hasSum)
+}
+
+// applyModFiles writes the planned go.mod and go.sum in dir once both are as planning found them, renaming a temporary file over each (or removing go.sum when the plan dropped it), and restoring both on any error or an interrupt before both are written.
+func applyModFiles(ctx context.Context, cmdName, dir string, oldMod, newMod, oldSum, newSum []byte, hadSum, hasSum bool) (err error) {
 	type file struct {
 		name               string
 		old, new           []byte
 		existed, nowExists bool
 	}
 	files := []file{
-		{"go.mod", p.oldMod, p.newMod, true, true},
-		{"go.sum", p.oldSum, p.newSum, p.hadSum, p.hasSum},
+		{"go.mod", oldMod, newMod, true, true},
+		{"go.sum", oldSum, newSum, hadSum, hasSum},
 	}
 	for _, f := range files {
-		data, err := os.ReadFile(filepath.Join(p.m.dir, f.name))
+		data, err := os.ReadFile(filepath.Join(dir, f.name))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("add: %w", err)
+			return fmt.Errorf("%s: %w", cmdName, err)
 		}
 		if (err == nil) != f.existed || !bytes.Equal(data, f.old) {
-			return fmt.Errorf("add: %s changed since the plan was made, so nothing was written: run %s add again", f.name, nsgoCommand())
+			return fmt.Errorf("%s: %s changed since the plan was made, so nothing was written: run %s %s again", cmdName, f.name, nsgoCommand(), cmdName)
 		}
 	}
 	var written []file
@@ -1347,7 +1384,7 @@ func (p *addPlan) apply(ctx context.Context) (err error) {
 		}
 		for i := len(written) - 1; i >= 0; i-- {
 			f := written[i]
-			path := filepath.Join(p.m.dir, f.name)
+			path := filepath.Join(dir, f.name)
 			if f.existed {
 				err = errors.Join(err, replaceFile(path, f.old))
 			} else {
@@ -1360,11 +1397,16 @@ func (p *addPlan) apply(ctx context.Context) (err error) {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("add: interrupted, so go.mod and go.sum are as they were: %w", err)
+			return fmt.Errorf("%s: interrupted, so go.mod and go.sum are as they were: %w", cmdName, err)
 		}
-		// replaceFile renames last, so a file it fails to write is as it was.
-		if err := replaceFile(filepath.Join(p.m.dir, f.name), f.new); err != nil {
-			return fmt.Errorf("add: writing %s failed, so go.mod and go.sum are as they were: %w", f.name, err)
+		path := filepath.Join(dir, f.name)
+		if !f.nowExists {
+			if err := os.Remove(path); err != nil {
+				return fmt.Errorf("%s: removing %s failed, so go.mod and go.sum are as they were: %w", cmdName, f.name, err)
+			}
+		} else if err := replaceFile(path, f.new); err != nil {
+			// replaceFile renames last, so a file it fails to write is as it was.
+			return fmt.Errorf("%s: writing %s failed, so go.mod and go.sum are as they were: %w", cmdName, f.name, err)
 		}
 		written = append(written, f)
 	}
