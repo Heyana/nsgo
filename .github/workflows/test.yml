@@ -927,6 +927,8 @@ jobs:
         run: go tool nsgo test -target windows -timeout 1m ./testdata/devtools-geometry
       - name: Test native canvas image tint
         run: go tool nsgo test -run '^TestCanvasImageTint$' ./internal/platform/windows
+      - name: Test native canvas compositing inside clips
+        run: go tool nsgo test -run '^TestCanvasCompositeInClip$' ./internal/platform/windows
       - name: Test native window visibility
         run: go tool nsgo test -target windows -run TestWindowStateReadsNativeVisibility ./internal/testhost/testdata/windowstate
       - name: Compare Direct2D atlas pixels in direct and cached drawing

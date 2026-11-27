@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"testing"
 	"unsafe"
@@ -358,4 +359,99 @@ func TestStyleTransformAndScrollZoomAreSharp(t *testing.T) {
 			checkSharpLine(t, img, 3)
 		})
 	}
+}
+
+// TestCanvasCompositeInClip verifies that non-SourceOver compositing inside an
+// active Clip preserves earlier pixels inside and outside the clip, both in an
+// OffscreenCanvas (at 1x and 2x) and in a direct offscreen-backed Canvas, and
+// includes prior SourceOver draws made inside the same clip layer (#2391).
+func TestCanvasCompositeInClip(t *testing.T) {
+	g, err := devices()
+	if err != nil {
+		t.Skip(err)
+	}
+	const panel = 160
+	record := func(priorInClip bool, op driver.CompositeOp) *driver.Drawing {
+		d := driver.NewDrawing(nil)
+		d.SetFillColor(driver.RGB(0x2e7d32)).FillRect(0, 0, panel, panel)
+		d.Save()
+		d.BeginPath().Rect(20, 20, panel-40, panel-40)
+		d.Clip()
+		if priorInClip {
+			d.SetFillColor(driver.RGB(0x102080)).FillRect(20, 20, 40, 40)
+		}
+		d.SetComposite(op)
+		d.SetFillColor(driver.RGBA(0xff4040, 0.6))
+		d.BeginPath().MoveTo(panel/2+50, panel/2).Arc(panel/2, panel/2, 50, 0, 2*math.Pi, false).ClosePath().Fill()
+		d.Restore()
+		return d
+	}
+	checkLighter := func(t *testing.T, img *image.RGBA, scale int) {
+		t.Helper()
+		at := func(x, y int) color.RGBA { return img.RGBAAt(x*scale, y*scale) }
+		// Outside the clip: green background stays intact (0x2e, 0x7d, 0x32).
+		if c := at(10, 10); c.R > 60 || c.G < 110 || c.G > 140 || c.B > 65 {
+			t.Errorf("outside clip = %v, want green background", c)
+		}
+		// Inside the clip, outside the disc: green background is preserved, not erased.
+		if c := at(25, 130); c.R > 60 || c.G < 110 || c.G > 140 || c.B > 65 {
+			t.Errorf("inside clip outside disc = %v, want preserved green background", c)
+		}
+		// Inside the clip and inside the disc: green + 0.6*red = high R (~200) and high G (~163).
+		if c := at(80, 80); c.R < 170 || c.G < 140 || c.B < 65 {
+			t.Errorf("inside clip inside disc = %v, want additive blend of green and red", c)
+		}
+	}
+	for _, scale := range []float32{1, 2} {
+		t.Run("offscreen-lighter", func(t *testing.T) {
+			w := &window{scale: canvastest.Scale, animator: driver.NewAnimator(nil)}
+			defer w.closeOffscreen()
+			off := &driver.OffscreenCanvas{
+				ID:      1,
+				Version: 1,
+				Size:    driver.Size{Width: panel, Height: panel},
+				Scale:   scale,
+				Drawing: record(false, driver.CompositeLighter),
+			}
+			d := driver.NewDrawing(nil).DrawImage(driver.ImageSource{Offscreen: off}, 0, 0)
+			img := drawImage(t, g, panel, panel, func(p *painter) {
+				p.canvas(&view{drawing: d}, panel, panel)
+			}, w)
+			checkLighter(t, img, canvastest.Scale)
+		})
+	}
+	t.Run("direct-canvas-lighter-after-clipped-draw", func(t *testing.T) {
+		w := &window{scale: canvastest.Scale, animator: driver.NewAnimator(nil)}
+		d := record(true, driver.CompositeLighter)
+		img := drawImage(t, g, panel, panel, func(p *painter) {
+			p.canvas(&view{drawing: d}, panel, panel)
+		}, w)
+		checkLighter(t, img, canvastest.Scale)
+		// The prior SourceOver blue rect drawn inside the clip before Lighter must survive too.
+		if c := img.RGBAAt(30*canvastest.Scale, 30*canvastest.Scale); c.R > 35 || c.G > 50 || c.B < 110 {
+			t.Errorf("prior SourceOver draw inside clip = %v, want blue rect", c)
+		}
+	})
+	t.Run("offscreen-copy-respects-clip", func(t *testing.T) {
+		w := &window{scale: canvastest.Scale, animator: driver.NewAnimator(nil)}
+		defer w.closeOffscreen()
+		off := &driver.OffscreenCanvas{
+			ID:      2,
+			Version: 1,
+			Size:    driver.Size{Width: panel, Height: panel},
+			Scale:   1,
+			Drawing: record(false, driver.CompositeCopy),
+		}
+		d := driver.NewDrawing(nil).DrawImage(driver.ImageSource{Offscreen: off}, 0, 0)
+		img := drawImage(t, g, panel, panel, func(p *painter) {
+			p.canvas(&view{drawing: d}, panel, panel)
+		}, w)
+		// Outside clip stays green; inside clip outside disc is cleared to transparent (white over drawImage's white backdrop).
+		if c := img.RGBAAt(10*canvastest.Scale, 10*canvastest.Scale); c.R > 60 || c.G < 110 || c.B > 65 {
+			t.Errorf("Copy outside clip = %v, want green", c)
+		}
+		if c := img.RGBAAt(25*canvastest.Scale, 130*canvastest.Scale); c.R < 240 || c.G < 240 || c.B < 240 {
+			t.Errorf("Copy inside clip outside disc = %v, want cleared to white backdrop", c)
+		}
+	})
 }
