@@ -37,36 +37,51 @@ type linuxAudio struct {
 	timer    uint32
 	// latencyReads wait for the mixer to reach PLAYING, which configures its latency.
 	latencyReads []latencyRead
-	// retired holds closed players' streams that were seeking: GtkMediaFile frees its GStreamer pipeline at once, while a streaming thread may still hold the pipeline's locks for the seek's flush, which aborts the process, so a seeking stream goes once its seek ends.
+	// retired holds closed players' pipelines that were seeking: tearing down a flushing seek at once can block or contend with GStreamer's streaming thread, so a seeking pipeline goes once its seek finishes or times out.
 	retired []retiredStream
 }
 
 type retiredStream struct {
 	stream uintptr
+	bus    uintptr
 	until  time.Time
 }
 
 // retiredStreamWait bounds how long a closed player's seek may hold its stream.
 const retiredStreamWait = 2 * time.Second
 
-// closePlayer closes p, keeping its stream until a seek under way ends.
+// closePlayer closes p, keeping its pipeline until a seek under way ends.
 func (a *linuxAudio) closePlayer(p *linuxPlayer) {
-	if p.stream != 0 && gtkMediaStreamIsSeeking(p.stream) != 0 {
-		gtkMediaStreamSetPlaying(p.stream, 0)
-		a.retired = append(a.retired, retiredStream{p.stream, time.Now().Add(retiredStreamWait)})
-		p.stream = 0
+	if p.stream != 0 && p.seeking {
+		gstElementSetState(p.stream, gstStatePaused)
+		a.retired = append(a.retired, retiredStream{p.stream, p.bus, time.Now().Add(retiredStreamWait)})
+		p.stream, p.bus, p.seeking, p.streamPlaying = 0, 0, false, false
 		a.ensureTick()
 	}
 	p.close()
 }
 
-// releaseRetired frees the retired streams whose seek ended or whose wait ran out, reporting whether any remain.
+// releaseRetired frees the retired pipelines whose seek ended or whose wait ran out, reporting whether any remain.
 func (a *linuxAudio) releaseRetired(now time.Time) bool {
 	a.retired = slices.DeleteFunc(a.retired, func(r retiredStream) bool {
-		if gtkMediaStreamIsSeeking(r.stream) != 0 && now.Before(r.until) {
+		done := !now.Before(r.until)
+		if !done && r.bus != 0 {
+			for {
+				msg := gstBusPopFiltered(r.bus, gstMessageAny)
+				if msg == 0 {
+					break
+				}
+				kind := (*gstMessageHeader)(cPointer(msg)).kind
+				gstMiniObjectUnref(msg)
+				if kind == gstMessageAsyncDone || kind == gstMessageError || kind == gstMessageEOS {
+					done = true
+				}
+			}
+		}
+		if !done {
 			return false
 		}
-		freeMediaStream(r.stream)
+		freePlayerPipeline(r.stream, r.bus)
 		return true
 	})
 	return len(a.retired) > 0
@@ -390,7 +405,7 @@ func (w *window) closeAudio() {
 			time.Sleep(time.Millisecond)
 		}
 		for _, r := range a.retired {
-			freeMediaStream(r.stream)
+			freePlayerPipeline(r.stream, r.bus)
 		}
 		a.retired = nil
 		if a.timer != 0 {

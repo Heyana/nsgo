@@ -1,3 +1,3 @@
 ### Fixed
 
-- Avoid GStreamer 1.28 `decodebin3` aborts in Linux audio playback by keeping `GstPlay` on classic `playbin` unless `GST_PLAY_USE_PLAYBIN3` is set (#2489 by @houko).
+- Play Linux `core.AudioPlayer` streams through classic GStreamer `playbin` (`decodebin2`) instead of `GtkMediaFile` (`playbin3`/`decodebin3`), avoiding the GStreamer 1.28 `decodebin3` process abort (#2489).

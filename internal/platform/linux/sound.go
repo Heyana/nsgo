@@ -18,14 +18,16 @@ import (
 )
 
 const (
-	soundRate       = 48000
-	soundFrameBytes = 2 * 4
-	soundCaps       = "audio/x-raw,format=F32LE,layout=interleaved,channels=2,rate=48000"
-	gstStateNull    = 1
-	gstStatePlaying = 4
-	gstMessageError = 1 << 1
-	gstClockLost    = 1 << 10
-	gstLatency      = 1 << 19
+	soundRate           = 48000
+	soundFrameBytes     = 2 * 4
+	soundCaps           = "audio/x-raw,format=F32LE,layout=interleaved,channels=2,rate=48000"
+	gstStateNull        = 1
+	gstStatePaused      = 3
+	gstStatePlaying     = 4
+	gstMessageError     = 1 << 1
+	gstClockLost        = 1 << 10
+	gstLatency          = 1 << 19
+	gstMessageAsyncDone = 1 << 20
 )
 
 var (
@@ -64,6 +66,9 @@ var (
 	gstQueryNewLatency       func() uintptr
 	gstElementQuery          func(uintptr, uintptr) int32
 	gstQueryParseLatency     func(uintptr, *int32, *uint64, *uint64)
+	gstElementQueryPosition  func(uintptr, int32, *int64) int32
+	gstQueryNewSeeking       func(int32) uintptr
+	gstQueryParseSeeking     func(uintptr, *int32, *int32, *int64, *int64)
 )
 
 // loadSound initializes GStreamer once, without starting any output.
@@ -111,6 +116,9 @@ var loadSound = sync.OnceValue(func() bool {
 	bind(&gstQueryParseLatency, "gst_query_parse_latency")
 	bind(&gstElementSeekSimple, "gst_element_seek_simple")
 	bind(&gstElementQueryDuration, "gst_element_query_duration")
+	bind(&gstElementQueryPosition, "gst_element_query_position")
+	bind(&gstQueryNewSeeking, "gst_query_new_seeking")
+	bind(&gstQueryParseSeeking, "gst_query_parse_seeking")
 	purego.RegisterLibFunc(&gstAppSrcPushBuffer, app, "gst_app_src_push_buffer")
 	purego.RegisterLibFunc(&gstAppSrcEndOfStream, app, "gst_app_src_end_of_stream")
 	purego.RegisterLibFunc(&gstAppSinkTryPullSample, app, "gst_app_sink_try_pull_sample")

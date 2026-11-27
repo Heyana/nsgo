@@ -505,16 +505,16 @@ func TestLinuxAudioPlayer(t *testing.T) {
 	}
 	cx.Post(func() { p.SetMuted(true) })
 	w.engine.Sync()
-	var stream uintptr
-	var before int64
+	var player *linuxPlayer
+	var before time.Duration
 	w.onLoop(t, func() {
-		for _, player := range w.audio.players {
-			stream = player.stream
+		for _, pl := range w.audio.players {
+			player = pl
 		}
 		var volume float64
-		gObjectGet(stream, uintptr(unsafe.Pointer(cstr("volume"))), uintptr(unsafe.Pointer(&volume)), 0)
-		before = gtkMediaStreamGetTimestamp(stream)
-		if volume != 0 || gtkMediaStreamGetPlaying(stream) == 0 {
+		gObjectGet(player.stream, uintptr(unsafe.Pointer(cstr("volume"))), uintptr(unsafe.Pointer(&volume)), 0)
+		before = player.timestamp()
+		if volume != 0 || !player.streamPlaying {
 			t.Error("muting the player did not preserve silent playback")
 		}
 	})
@@ -522,8 +522,8 @@ func TestLinuxAudioPlayer(t *testing.T) {
 	for {
 		var advanced bool
 		w.onLoop(t, func() {
-			advanced = gtkMediaStreamGetTimestamp(stream) != before
-			if gtkMediaStreamGetPlaying(stream) == 0 {
+			advanced = player.timestamp() != before
+			if !player.streamPlaying {
 				t.Error("the muted player paused")
 			}
 		})
@@ -539,8 +539,8 @@ func TestLinuxAudioPlayer(t *testing.T) {
 	w.engine.Sync()
 	w.onLoop(t, func() {
 		var volume float64
-		gObjectGet(stream, uintptr(unsafe.Pointer(cstr("volume"))), uintptr(unsafe.Pointer(&volume)), 0)
-		if math.Abs(volume-0.4) > 1e-6 || gtkMediaStreamGetPlaying(stream) == 0 {
+		gObjectGet(player.stream, uintptr(unsafe.Pointer(cstr("volume"))), uintptr(unsafe.Pointer(&volume)), 0)
+		if math.Abs(volume-0.4) > 1e-6 || !player.streamPlaying {
 			t.Error("unmuting did not restore the playing volume")
 		}
 	})

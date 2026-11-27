@@ -9,21 +9,30 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/imageload"
 )
 
-// linuxPlayer plays one source through GtkMediaFile on the GTK thread, or a looping one's decoded track through the sound mixer (audiotrack.go).
+// linuxPlayer plays one source through GStreamer's classic playbin (decodebin2,
+// avoiding playbin3/decodebin3 in GtkMediaFile which aborts on GStreamer 1.28)
+// on the GTK thread, or a looping one's decoded track through the sound mixer
+// (audiotrack.go).
 type linuxPlayer struct {
 	owner  *window
 	audio  *linuxAudio
 	id     uint32
 	source driver.ImageSource
-	stream uintptr
+	stream uintptr // GStreamer playbin pipeline
+	bus    uintptr // playbin's GstBus
 	file   audioPlayerFile
 
-	// track is the decoded or streamed track, voice plays it and decoding cancels its decoding. noTrack says GStreamer could not read the track for the mixer, so GtkMediaFile plays it; loadWanted that the player was asked to load.
+	streamPlaying  bool
+	streamSeekable bool
+	streamEnded    bool
+
+	// track is the decoded or streamed track, voice plays it and decoding cancels its decoding. noTrack says GStreamer could not read the track for the mixer, so playbin plays it; loadWanted that the player was asked to load.
 	track                       trackFrames
 	voice                       *trackVoice
 	decoding                    context.CancelFunc
@@ -41,9 +50,9 @@ type linuxPlayer struct {
 	seeks, seekingNumber, appliedSeeks, laps                   uint32
 }
 
-// audioPlayerFile owns bytes staged on a worker for GtkMediaFile, whose
-// GStreamer backend accepts files and URIs. Closing the player can race
-// the write or the callback that opens the finished file.
+// audioPlayerFile owns bytes staged on a worker for GStreamer playbin, which
+// accepts files and URIs. Closing the player can race the write or the callback
+// that opens the finished file.
 type audioPlayerFile struct {
 	mu     sync.Mutex
 	path   string
@@ -63,7 +72,7 @@ func (f *audioPlayerFile) hold(path string) bool {
 		os.Remove(path)
 		return false
 	}
-	// GtkMediaFile and a track decoder can each stage the bytes; the later copy replaces the earlier.
+	// Playbin and a track decoder can each stage the bytes; the later copy replaces the earlier.
 	if f.path != "" && f.path != path {
 		os.Remove(f.path)
 	}
@@ -85,7 +94,7 @@ var audioRateWarning sync.Once
 
 func warnAudioRate(rate float32) {
 	if rate != 1 {
-		audioRateWarning.Do(func() { log.Print("nsgo: Linux audio players play at 1× with GtkMediaFile") })
+		audioRateWarning.Do(func() { log.Print("nsgo: Linux audio players play at 1×") })
 	}
 }
 
@@ -140,8 +149,7 @@ func (p *linuxPlayer) command(req *driver.AudioRequest) {
 			}
 		}
 		if p.stream != 0 {
-			gtkMediaStreamSetVolume(p.stream, float64(p.volume))
-			p.setStreamLoop()
+			p.setStreamVolume()
 			if p.loop && p.loaded {
 				p.decodeTrack()
 			}
@@ -149,10 +157,17 @@ func (p *linuxPlayer) command(req *driver.AudioRequest) {
 	}
 }
 
-// setStreamLoop leaves a whole-track loop to the stream, which always restarts at 0; a loop with a start is a seek at the end, in tick, since the stream may know no duration yet to tell whether the start is inside it, as is the end where a decoded track takes over.
-func (p *linuxPlayer) setStreamLoop() {
-	gtkMediaStreamSetLoop(p.stream, boolInt(p.loop && p.loopStart <= 0 && p.track == nil))
+func (p *linuxPlayer) setStreamVolume() {
+	var value gValue
+	gValueInit(uintptr(unsafe.Pointer(&value)), gTypeDouble)
+	gValueSetDouble(&value, float64(p.volume))
+	gObjectSetProperty(p.stream, cstr("volume"), &value)
+	gValueUnset(uintptr(unsafe.Pointer(&value)))
 }
+
+// setStreamLoop is a no-op for playbin because playbin loops by seeking in tick
+// once EOS arrives (or hands over to a decoded track when ready).
+func (p *linuxPlayer) setStreamLoop() {}
 
 // loopFrom is where a looping player starts over: loopStart inside a known duration, else 0.
 func (p *linuxPlayer) loopFrom() time.Duration {
@@ -161,12 +176,13 @@ func (p *linuxPlayer) loopFrom() time.Duration {
 
 // loopAgain seeks an ended player to its loop start and plays on, counting the lap, as tick plays again once the seek lands; a stream that cannot seek ends instead.
 func (p *linuxPlayer) loopAgain() bool {
-	if gtkMediaStreamIsSeekable(p.stream) == 0 {
+	if !p.streamSeekable {
 		return false
 	}
 	if p.duration == 0 {
-		p.duration = micros(max(0, gtkMediaStreamGetDuration(p.stream)))
+		p.duration = p.queryDuration()
 	}
+	p.streamEnded = false
 	p.laps++
 	p.position, p.pendingSeek = p.loopFrom(), true
 	p.lastProgress = time.Now()
@@ -234,16 +250,66 @@ func stageAudioPlayer(source driver.ImageSource) (path, code, message string) {
 }
 
 func (p *linuxPlayer) openFile(source string) {
-	file := videoFile(source)
-	stream := gtkMediaFileNewForFile(file)
-	gObjectUnref(file)
-	if stream == 0 {
-		p.fail(driver.AudioUnavailable, "GTK did not create a media stream")
+	pipeline, message := soundPipeline("playbin flags=audio+soft-volume")
+	if pipeline == 0 {
+		p.fail(driver.AudioUnavailable, message)
 		return
 	}
-	p.stream = stream
-	gtkMediaStreamSetVolume(stream, float64(p.volume))
-	p.setStreamLoop()
+	bus := gstElementGetBus(pipeline)
+	if bus == 0 {
+		gstObjectUnref(pipeline)
+		p.fail(driver.AudioUnavailable, "GStreamer did not create a message bus")
+		return
+	}
+	var value gValue
+	gValueInit(uintptr(unsafe.Pointer(&value)), gTypeString)
+	gValueSetString(&value, cstr(trackURI(source)))
+	gObjectSetProperty(pipeline, cstr("uri"), &value)
+	gValueUnset(uintptr(unsafe.Pointer(&value)))
+
+	p.stream, p.bus = pipeline, bus
+	p.streamPlaying, p.streamSeekable, p.streamEnded = false, false, false
+	p.setStreamVolume()
+	if gstElementSetState(pipeline, gstStatePaused) == gstStateChangeFail {
+		msg := soundBusError(bus)
+		if msg == "" {
+			msg = "GStreamer could not open the audio"
+		}
+		code := driver.AudioDecode
+		if remoteAudio(p.source.URI) {
+			code = driver.AudioNetwork
+		}
+		p.fail(code, msg)
+	}
+}
+
+func (p *linuxPlayer) queryDuration() time.Duration {
+	if p.stream == 0 {
+		return 0
+	}
+	var dur int64
+	if gstElementQueryDuration(p.stream, gstFormatTime, &dur) != 0 && dur > 0 {
+		return time.Duration(dur)
+	}
+	return 0
+}
+
+func (p *linuxPlayer) querySeekable() bool {
+	if p.stream == 0 {
+		return false
+	}
+	q := gstQueryNewSeeking(gstFormatTime)
+	if q == 0 {
+		return false
+	}
+	defer gstMiniObjectUnref(q)
+	if gstElementQuery(p.stream, q) == 0 {
+		return false
+	}
+	var format, seekable int32
+	var start, end int64
+	gstQueryParseSeeking(q, &format, &seekable, &start, &end)
+	return seekable != 0
 }
 
 func (p *linuxPlayer) tick(now time.Time) bool {
@@ -253,21 +319,44 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 	if p.stream == 0 {
 		return p.loading
 	}
-	if gerr := gtkMediaStreamGetError(p.stream); gerr != 0 {
-		code := driver.AudioDecode
-		if remoteAudio(p.source.URI) {
-			code = driver.AudioNetwork
-		} else if p.loaded {
-			code = driver.AudioFailed
+	var asyncDone bool
+	for p.bus != 0 {
+		msg := gstBusPopFiltered(p.bus, gstMessageAny)
+		if msg == 0 {
+			break
 		}
-		p.fail(code, mediaError(goString((*gError)(cPointer(gerr)).message)))
-		return false
+		kind := (*gstMessageHeader)(cPointer(msg)).kind
+		switch kind {
+		case gstMessageError:
+			text := gstErrorText(msg)
+			gstMiniObjectUnref(msg)
+			code := driver.AudioDecode
+			if remoteAudio(p.source.URI) {
+				code = driver.AudioNetwork
+			} else if p.loaded {
+				code = driver.AudioFailed
+			}
+			p.fail(code, text)
+			return false
+		case gstMessageAsyncDone:
+			asyncDone = true
+		case gstMessageEOS:
+			p.streamEnded = true
+		}
+		gstMiniObjectUnref(msg)
 	}
 	if !p.loaded {
 		switch {
-		case gtkMediaStreamIsPrepared(p.stream) != 0 && gtkMediaStreamHasAudio(p.stream) != 0:
+		case asyncDone:
+			var nAudio int32
+			gObjectGet(p.stream, uintptr(unsafe.Pointer(cstr("n-audio"))), uintptr(unsafe.Pointer(&nAudio)), 0)
+			if nAudio <= 0 {
+				p.fail(driver.AudioDecode, "the audio source has no audio stream")
+				return false
+			}
 			p.loaded = true
-			p.duration = micros(max(0, gtkMediaStreamGetDuration(p.stream)))
+			p.duration = p.queryDuration()
+			p.streamSeekable = p.querySeekable()
 			p.buffer(false)
 			p.opened = true
 			p.report(driver.AudioOpened)
@@ -277,6 +366,9 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 			}
 			p.applySeek()
 			p.play()
+			if p.seeking {
+				return true
+			}
 		case !now.Before(p.loadDeadline):
 			code := driver.AudioDecode
 			if remoteAudio(p.source.URI) {
@@ -287,9 +379,8 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 		default:
 			return true
 		}
-	}
-	if p.seeking {
-		if gtkMediaStreamIsSeeking(p.stream) != 0 {
+	} else if p.seeking {
+		if !asyncDone {
 			return true
 		}
 		p.seeking = false
@@ -303,9 +394,9 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 		p.play()
 	}
 	if !p.playing {
-		return false
+		return p.seeking
 	}
-	if gtkMediaStreamGetEnded(p.stream) != 0 {
+	if p.streamEnded {
 		if p.loop && p.track != nil {
 			// The track decoded while the stream played: it takes over at the loop start.
 			p.dropStream()
@@ -319,14 +410,17 @@ func (p *linuxPlayer) tick(now time.Time) bool {
 		if p.loop && p.loopAgain() {
 			return true
 		}
-		p.ended, p.wanted, p.playing = true, false, false
+		p.ended, p.wanted, p.playing, p.streamPlaying, p.streamEnded = true, false, false, false, false
+		gstElementSetState(p.stream, gstStatePaused)
+		if p.duration == 0 {
+			p.duration = p.timestamp()
+		}
 		p.position = p.duration
 		p.report(driver.AudioEnded)
 		return false
 	}
-	if gtkMediaStreamGetPlaying(p.stream) == 0 {
-		p.pause()
-		return false
+	if p.duration == 0 {
+		p.duration = p.queryDuration()
 	}
 	position := p.timestamp()
 	wrapped := p.loop && position < p.position
@@ -345,7 +439,9 @@ func (p *linuxPlayer) play() {
 	if !p.wanted || !p.loaded || p.pendingSeek || p.seeking {
 		return
 	}
-	gtkMediaStreamSetPlaying(p.stream, 1)
+	p.streamEnded = false
+	gstElementSetState(p.stream, gstStatePlaying)
+	p.streamPlaying = true
 	if !p.playing {
 		p.ended = false
 		p.playing = true
@@ -364,10 +460,11 @@ func (p *linuxPlayer) pause() {
 	}
 	p.wanted, p.playing = false, false
 	if p.stream != 0 {
-		gtkMediaStreamSetPlaying(p.stream, 0)
 		if p.loaded && !p.pendingSeek && !p.seeking {
 			p.position = p.timestamp()
 		}
+		gstElementSetState(p.stream, gstStatePaused)
+		p.streamPlaying = false
 	}
 	p.buffer(false)
 	p.report(driver.AudioPaused)
@@ -382,10 +479,13 @@ func (p *linuxPlayer) applySeek() {
 	}
 	p.pendingSeek = false
 	p.seekingNumber = p.seeks
-	if gtkMediaStreamIsSeekable(p.stream) != 0 {
+	if p.streamSeekable {
 		p.seeking = true
-		gtkMediaStreamSeek(p.stream, p.position.Microseconds())
-		return
+		p.streamEnded = false
+		if gstElementSeekSimple(p.stream, gstFormatTime, gstSeekFlush|gstSeekAccurate, p.position.Nanoseconds()) != 0 {
+			return
+		}
+		p.seeking = false
 	}
 	p.appliedSeeks = p.seeks
 	p.position = p.timestamp()
@@ -393,7 +493,13 @@ func (p *linuxPlayer) applySeek() {
 }
 
 func (p *linuxPlayer) timestamp() time.Duration {
-	return micros(max(0, gtkMediaStreamGetTimestamp(p.stream)))
+	if p.stream != 0 {
+		var pos int64
+		if gstElementQueryPosition(p.stream, gstFormatTime, &pos) != 0 && pos >= 0 {
+			return time.Duration(pos)
+		}
+	}
+	return p.position
 }
 
 func (p *linuxPlayer) report(phase driver.AudioPhase) {
@@ -430,13 +536,26 @@ func (p *linuxPlayer) resetStream() {
 	p.loading, p.loaded, p.wanted, p.playing, p.ended, p.seeking = false, false, false, false, false, false
 }
 
-// dropStream frees the GTK stream and leaves the player's state as it is.
+// dropStream frees the GStreamer playbin pipeline and leaves the player's state as it is.
 func (p *linuxPlayer) dropStream() {
 	if p.stream != 0 {
-		freeMediaStream(p.stream)
-		p.stream = 0
+		freePlayerPipeline(p.stream, p.bus)
+		p.stream, p.bus = 0, 0
 	}
-	p.seeking = false
+	p.seeking, p.streamPlaying, p.streamSeekable, p.streamEnded = false, false, false, false
+}
+
+// freePlayerPipeline stops a GStreamer playbin pipeline and releases its bus and pipeline references.
+func freePlayerPipeline(stream, bus uintptr) {
+	if stream != 0 {
+		gstElementSetState(stream, gstStateNull)
+	}
+	if bus != 0 {
+		gstObjectUnref(bus)
+	}
+	if stream != 0 {
+		gstObjectUnref(stream)
+	}
 }
 
 // freeMediaStream stops a GtkMediaFile, closes its file and lets it go.
