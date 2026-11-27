@@ -208,7 +208,7 @@ nsgo test ./pkg -fuzz FuzzX -fuzztime 3s  # headless fuzzing of ./pkg only, not 
 
 Vetting and tests use the same Go JSON policy as `build`. Headless `nsgo test -- -c` compiles tests without running them; compiler failures remain visible in the console and JUnit report.
 
-Name every target a change touches in one `check -target`, with `-jobs n` to vet up to n at once, each `go vet` with n compile workers; never start several checks, as a check waits for the one already running in its module. Reports name expanded targets (`linux_arm64`, `linux_x64` for `linux`). A target with no matching Go packages is skipped with a reason; if every target is skipped, the check fails.
+Name every target a change touches in one `check -target`, with `-jobs n` to vet up to n at once, each `go vet` with n compile workers; never start several checks, as a check waits for the one already running in its module. Reports name expanded targets (`linux_arm64`, `linux_x64` for `linux`). A target with no matching Go packages is skipped with a reason; if every target is skipped, the check fails. In a library module whose root `nsgo-module.yaml` declares `components`, `nsgo check` also enforces the copied-component rules before vetting and warns on flags that `nsgo add -y` will refuse ([copyable components](https://nsgo.dev/docs/authoring/shipping.md#copyable-components)).
 
 Test an app as a user uses it with `nsgotest`, finding views by text, role, label or test ID. Read [references/testing.md](references/testing.md) before writing tests.
 

@@ -102,3 +102,16 @@ components:
 - `notes`：最多 4 KiB 的纯文本，除换行外不能包含控制字符或 Unicode 格式字符。`nsgo add` 会把它打印在计划最后，标题为 `From <module>, the author's notes:`，并标记每一行。
 - `components`：从组件名（1 到 64 个 `[a-z0-9-]` 字符，不以 `-` 开头或结尾）到模块根目录之下相对包目录的映射。每个目录都必须是本模块的非 `main` 包，且目录路径的最后一段必须与 Go 包名一致。`nsgo add` 的计划会连同 `nsgo add <module>#<name>` 命令一并列出。
 - 新字段在 `version: 1` 内演进。当模块的 `go.mod` 要求比当前工具更新的 NSGo 且使用了当前工具不认识的字段时，`nsgo` 会报错并给出 `go get github.com/nsgo-dev/nsgo@<version>`。
+
+### 可复制组件
+
+当模块根目录的 `nsgo-module.yaml` 声明了 `components` 时，`nsgo check` 会在运行 `go vet` 之前，针对 `golang.org/x/mod/zip.CheckDir` 会打入模块 zip 的文件，按 `nsgo add` 复制组件相同的规则逐一检查：
+
+- **文件**（不区分大小写比较）：组件根目录和 `locales/` 下的 `.go` 文件；仅在 `locales/` 和 `testdata/` 中允许 YAML；图片（`.svg`、`.png`、`.jpg`、`.jpeg`、`.webp`、`.gif`、`.avif`、`.ico`）、字体（`.ttf`、`.otf`、`.woff2`）、音频（`.wav`、`.mp3`、`.ogg`）和 `.txt`；仅组件根目录允许 `README.md`；仅 `testdata/` 和资源子目录允许 `.json`（任何位置都不允许 `package.json`、`tsconfig.json`、`jsconfig.json`、`deno.json` 或 `composer.json`）；以及许可证文档（`LICENSE`、`NOTICE`、`COPYING` 等）。其余文件一律拒绝——包括 `.s`、`.syso`、C/C++/Objective-C/Fortran/SWIG 源码、`.wasm`、`go.mod`、`go.work`、`nsgo.yaml`、`nsgo-module.yaml`、`nsgo-natives.yaml`、`nsgo-copy.yaml`、`AGENTS.md`、`CLAUDE.md` 和 `SKILL.md`。
+- **路径**：每段路径只能包含 ASCII 字母、数字、`-`、`_` 和 `.`，不能以 `.` 或 `_` 开头；不能存在仅大小写不同的路径；除 `locales/` 外任何子目录都不能包含 `.go` 文件。
+- **限额**：单个组件最多 256 个文件，单文件不超过 1 MiB，总大小不超过 4 MiB。
+- **文本**：文本文件必须是不带 BOM 的合法 UTF-8。
+- **Go 规则**：每个 `.go` 文件（不论构建标签）都必须能正常解析并声明对应包名；禁止 `import "C"`；禁止导入外部副本无法访问的 `internal` 包；禁止在 `_test.go` 之外导入 `github.com/nsgo-dev/nsgo/tsx`；禁止 `//go:build ignore`（及 `+build ignore`）；除 `locales/` 中的 `//go:generate go tool nsgo i18n`（可带 `-source <tag>`）外禁止其他 `//go:generate`；禁止 `//go:embed` 模式匹配 `nsgo-copy.yaml`、逃出包目录或匹配被拒绝的文件。
+- **警示项**（发出警告并说明 `nsgo add -y` 会拒绝复制）：文本文件中的控制字符与格式字符（除制表符、LF 和 CRLF 外的 `Cc`、`Cf`、`U+2028`、`U+2029`，其中 `locales/` 下从右到左语言目录消息内容里的 `U+200E`、`U+200F`、`U+061C` 与 `U+2066`–`U+2069` 例外）；含非 ASCII 字符的 Go 标识符；导入 `unsafe`、`syscall`、`golang.org/x/sys/...`、`github.com/ebitengine/purego`、`os/exec` 或 `plugin`；以及 `//go:linkname`、`//go:wasmimport`、`//go:wasmexport`、`//go:cgo_*` 和 `//go:debug` 指令。
+
+`nsgo check` 还会注明组件导入的、属于同一模块但本身不是组件的包，因为复制该组件的应用会因此依赖本模块。未声明 `components` 的模块检查行为保持不变。
