@@ -13,7 +13,6 @@ import (
 	"github.com/nsgo-dev/nsgo/base/textview"
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/icons/lucide"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 	"github.com/nsgo-dev/nsgo/ui"
 )
@@ -659,10 +658,10 @@ func TestQuotaPace(t *testing.T) {
 			}}
 		})
 		for _, id := range []string{"panel", "summary"} {
-			var marks []driver.DrawOp
+			var marks []core.DrawOp
 			for _, v := range quotaViews(app.Find(id)) {
 				for _, op := range v.Ops {
-					if op.Kind == driver.DrawRoundRect {
+					if op.Kind == core.DrawRoundRect {
 						marks = append(marks, op)
 						if bar := v.Frame.Size.Width; op.X+op.W/2 != float32(bar)/4 || op.H != float32(v.Frame.Size.Height) {
 							t.Errorf("%s mark at %v of %v, want a quarter across", id, op.X+op.W/2, bar)

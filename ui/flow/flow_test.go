@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
@@ -17,9 +16,9 @@ func TestCardSlots(t *testing.T) {
 	if app.Exists("text:Replaced title") {
 		t.Fatal("the title shows beside a body slot")
 	}
-	var boxes []driver.Point
+	var boxes []core.Point
 	for _, s := range []string{"Status", "Icon", "Custom body", "Badge", "Counts"} {
-		var at driver.Point
+		var at core.Point
 		for v := app.Find("text:" + s); v != nil; v = v.Parent {
 			at.X, at.Y = at.X+v.Frame.Origin.X, at.Y+v.Frame.Origin.Y
 		}
@@ -42,7 +41,7 @@ func TestViewShowsCardsAndEmptyText(t *testing.T) {
 			{ID: "b", Label: "Design", Content: Card{Title: "Design", Variant: CardAccent}},
 		}, Edges: []Edge{{Source: "a", Target: "b", Label: "informs"}}}, func(a, b Data) bool { return false })
 		return View{Data: data.Get, State: &state, EmptyText: "Nothing planned", Style: core.Style{Width: core.Pt(720), Height: core.Pt(480)}}
-	}, nsgotest.Size(720, 480), nsgotest.Environment(driver.Environment{ReduceMotion: true, Idiom: driver.IdiomDesktop}))
+	}, nsgotest.Size(720, 480), nsgotest.Environment(core.Environment{ReduceMotion: true, Idiom: core.IdiomDesktop}))
 	app.Settle()
 	_, a, _ := state.Position("a")
 	_, b, _ := state.Position("b")

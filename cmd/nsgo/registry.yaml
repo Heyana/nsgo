@@ -1,2 +1,42 @@
 version: 1
-items: []
+items:
+  - name: chat
+    module: github.com/nsgo-dev/nsgo
+    component: chat
+    description: Conversation view, composer, turn actions and find bar.
+    license: Apache-2.0
+  - name: code-editor
+    module: github.com/nsgo-dev/nsgo
+    component: code-editor
+    description: Code editor in ui's look, styled over base/editor.
+    license: Apache-2.0
+  - name: commit-graph
+    module: github.com/nsgo-dev/nsgo
+    component: commit-graph
+    description: Commit list beside a revision graph, on base/commitgraph.
+    license: Apache-2.0
+  - name: diff-view
+    module: github.com/nsgo-dev/nsgo
+    component: diff-view
+    description: Diff view in ui's look, styled over base/diff.
+    license: Apache-2.0
+  - name: file-picker
+    module: github.com/nsgo-dev/nsgo
+    component: file-picker
+    description: Modal file and folder picker with sidebar and breadcrumbs.
+    license: Apache-2.0
+  - name: flow-diagram
+    module: github.com/nsgo-dev/nsgo
+    component: flow-diagram
+    description: Directed flow diagram and cards, styled over base/flow.
+    license: Apache-2.0
+  - name: rich-editor
+    module: github.com/nsgo-dev/nsgo
+    component: rich-editor
+    description: Rich text editor in ui's look, styled over base/richeditor.
+    license: Apache-2.0
+  - name: terminal
+    module: github.com/nsgo-dev/nsgo
+    component: terminal
+    description: Terminal emulator view in ui's look, on base/terminal.
+    license: Apache-2.0

@@ -1,0 +1,10 @@
+version: 1
+components:
+  chat: ui/chat
+  code-editor: ui/editor
+  commit-graph: ui/commitgraph
+  diff-view: ui/diff
+  file-picker: ui/filepicker
+  flow-diagram: ui/flow
+  rich-editor: ui/richeditor
+  terminal: ui/terminal

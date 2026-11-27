@@ -6,7 +6,6 @@ import (
 
 	"github.com/nsgo-dev/nsgo/base/richeditor"
 	"github.com/nsgo-dev/nsgo/core"
-	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 	uirich "github.com/nsgo-dev/nsgo/ui/richeditor"
 )
@@ -63,7 +62,7 @@ func TestViewShowsAnInlineImage(t *testing.T) {
 		t.Fatalf("%d image views", len(images))
 	}
 	text := app.Find("text:see ￼ here")
-	pageY := func(v *nsgotest.View) driver.Points {
+	pageY := func(v *nsgotest.View) core.Points {
 		y := v.Frame.Origin.Y
 		for p := v.Parent; p != nil; p = p.Parent {
 			y += p.Frame.Origin.Y - p.Offset.Y
@@ -76,7 +75,7 @@ func TestViewShowsAnInlineImage(t *testing.T) {
 	if pageY(images[1]) <= pageY(text) {
 		t.Fatalf("the block image did not follow the line: %v", images[1].Frame)
 	}
-	app.PressAt("role:image", driver.Point{X: images[0].Frame.Size.Width / 2, Y: images[0].Frame.Size.Height / 2})
+	app.PressAt("role:image", core.Point{X: images[0].Frame.Size.Width / 2, Y: images[0].Frame.Size.Height / 2})
 	sel, ok := s.State().Selection.(*richeditor.NodeSelection)
 	if !ok || sel.Node.Type.Name != "inlineImage" {
 		t.Fatalf("selection %+v", s.State().Selection)
@@ -106,7 +105,7 @@ func TestViewTouchSelectionHandlesUseThemeAccent(t *testing.T) {
 	if !ok {
 		t.Fatal("no page coords")
 	}
-	app.LongPressAt("id:rich-editor-content", driver.Point{X: driver.Points(r.X), Y: driver.Points(r.Y + r.Height/2)})
+	app.LongPressAt("id:rich-editor-content", core.Point{X: core.Points(r.X), Y: core.Points(r.Y + r.Height/2)})
 	start := app.Find("id:rich-editor-selection-handle-start")
 	if len(start.Children) == 0 || len(start.Children[0].Children) == 0 {
 		t.Fatalf("handle missing knob view: %+v", start)

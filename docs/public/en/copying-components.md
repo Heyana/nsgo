@@ -1,25 +1,28 @@
 ---
 title: Copying components
-description: Copy declared Go components into your app with nsgo add, rewrite imports, and keep their license notices and source records.
+description: Copy declared Go components such as chat and file-picker into your app with nsgo add, rewrite imports, and keep their license notices and source records.
 group: Components
 order: 35
 ---
 
-When an app needs to change a component rather than only configure it, `nsgo add` copies a package that its module declares under `components:` in `nsgo-module.yaml` directly into the app:
+When an app needs to change a component rather than only configure it, `nsgo add` copies a package that its module declares under `components:` in `nsgo-module.yaml` directly into the app. NSGo declares `ui`'s eight subpackages (`chat`, `code-editor`, `commit-graph`, `diff-view`, `file-picker`, `flow-diagram`, `rich-editor` and `terminal`) as copyable components and lists them in its built-in index:
 
 ```sh
-nsgo add github.com/acme/kit#field                  # copy into components/field
-nsgo add github.com/acme/kit@v1.2.0#field           # copy a specific version
-nsgo add -dir internal/components/field github.com/acme/kit#field
-nsgo add -tests=false github.com/acme/kit#field     # omit _test.go files and testdata/
-nsgo add -dry-run -diff github.com/acme/kit#field   # preview the plan and every file
+nsgo add -list chat                              # find chat in NSGo's built-in index
+nsgo add chat                                    # copy ui/chat into components/chat
+nsgo add file-picker                             # copy ui/filepicker into components/filepicker
+nsgo add -dir internal/components/chat chat      # place chat at another path in the module
+nsgo add -tests=false file-picker                # omit _test.go files and testdata/
+nsgo add -dry-run -diff chat                     # preview the plan and every copied file
 ```
+
+You can also copy any module's declared component directly by path with `nsgo add <module>[@version]#<component>`, such as `nsgo add github.com/nsgo-dev/nsgo#file-picker`.
 
 Once copied, the component is the app's own Go code.
 
 ## Where copies go
 
-By default, a copy lands at `components/<package>` relative to `nsgo.yaml` (or relative to the module root when there is no `nsgo.yaml`). Set `components.dir` in `nsgo.yaml` to change the base directory:
+By default, a copy lands at `components/<package>` relative to `nsgo.yaml` (or relative to the module root when there is no `nsgo.yaml`), so `chat` lands in `components/chat` and `file-picker` lands in `components/filepicker`. Set `components.dir` in `nsgo.yaml` to change the base directory:
 
 ```yaml
 components:
@@ -42,30 +45,44 @@ A typed version higher than `go.mod`'s requirement announces the raise on the fi
 
 1. **Verifies the archive.** `nsgo add` downloads the module zip in an isolated directory using `add`'s proxy-only, `GOTOOLCHAIN=local` environment, validates the zip structure (`zip.CheckZip`), and checks its `dirhash.HashZip` digest against both the download's `Sum` and any entry in `go.sum` before reading files directly from the archive.
 2. **Checks copy rules and flags.** Every file is checked against the copied-component allowlist, path restrictions, count/size limits (256 files, 1 MiB per file, 4 MiB total), UTF-8 without BOM, and Go AST rules (refusing `import "C"`, internal imports, `tsx` outside tests, `//go:build ignore`, foreign `//go:generate`, and disallowed `//go:embed` targets). Risky constructs (control/format characters, non-ASCII identifiers, imports of `unsafe`, `syscall`, `golang.org/x/sys/...`, `purego`, `os/exec`, `plugin`, and `//go:linkname`/`//go:wasm*`/`//go:cgo_*`/`//go:debug`) and `go vet` failures are shown with positions and refused under `-y`.
-3. **Rewrites imports and comments.** Imports of the component itself, its `locales/` package, and other components of the same module (which are copied automatically when needed) are rewritten to the copy's import path while keeping their import names. Whole-path occurrences in comments are rewritten too, string literals containing rewritten paths are listed in the plan, and every Go file is formatted with `go/format`.
-4. **Generates catalogs.** When the component has `locales/*.yaml`, `nsgo add` generates `locales/catalog_gen.go` in memory under the copy's final import path with this `nsgo`'s generator so `nsgo check` passes immediately. If the app's own catalogs supply the original `locales` path, the plan names the key to update once the copy is imported.
+3. **Rewrites imports and comments.** Imports of the component itself, its `locales/` package (such as `ui/chat/locales`), and other components of the same module (which are copied automatically when needed) are rewritten to the copy's import path while keeping their import names. Whole-path occurrences in comments are rewritten too, string literals containing rewritten paths are listed in the plan, and every Go file is formatted with `go/format`.
+4. **Generates catalogs.** When the component has `locales/*.yaml` (as `chat` does), `nsgo add` generates `locales/catalog_gen.go` in memory under the copy's final import path with this `nsgo`'s generator so `nsgo check` passes immediately. If the app's own catalogs supply the original `locales` path, the plan names the key to update once the copy is imported.
 5. **Plans requirements and vets targets.** External and non-component same-module imports are added to `go.mod` as direct requirements (at least at the versions the source module requires, never lowering the app's). The planned copy is vetted with `go vet -mod=readonly` for every target in `build.targets` (or the host without `nsgo.yaml`); targets whose toolchain the host lacks are listed under `not vetted` and do not block `-y`.
 6. **Writes atomically.** Under the module's check lock, each copy is staged in a hidden `.nsgo-copy-*` directory beside its destination and renamed into place along with `go.mod` and `go.sum`. Any error or interrupt restores the module cleanly.
 
 ## License notices and `nsgo-copy.yaml`
 
-License and notice documents from the source module root and directories between it and the component are copied beside the component (duplicate filenames are refused). `nsgo add` classifies every license document the copy brings—including nested asset licenses such as `icons/OFL.txt`—and applies the app's `licenses` policy immediately.
+License and notice documents from the source module root and directories between it and the component (such as NSGo's `LICENSE` and `NOTICE`) are copied beside the component (duplicate filenames are refused). `nsgo add` classifies every license document the copy brings—including nested asset licenses such as `icons/OFL.txt`—and applies the app's `licenses` policy immediately.
 
-During `nsgo build`, a directory holding `nsgo-copy.yaml` receives its own section in `THIRD_PARTY_NOTICES.txt` headed `<import path>, copied from <module> <version>`, keeping those texts separate from the app's own license section. For Apache-2.0 components, mark files you modify as required by section 4(b).
+During `nsgo build`, a directory holding `nsgo-copy.yaml` receives its own section in `THIRD_PARTY_NOTICES.txt` headed `<import path>, copied from <module> <version>`, keeping those texts separate from the app's own license section. For Apache-2.0 components such as `chat` and `file-picker`, mark files you modify as required by section 4(b).
 
 Each copied directory contains `nsgo-copy.yaml`, recording the source module, version, component name, test choice, copied files, and generated files (with no timestamps or hashes):
 
 ```yaml
 # Written by nsgo add. nsgo diff compares this directory with the copy of this version.
 version: 1
-module: github.com/acme/kit
-module_version: v1.0.0
-component: field
+module: github.com/nsgo-dev/nsgo
+module_version: v0.4.0
+component: chat
 tests: true
 files:
   - LICENSE
-  - field.go
+  - NOTICE
+  - actions.go
+  - actions_test.go
+  - chat.go
+  - chat_test.go
+  - composer.go
+  - controls.go
+  - conversation.go
+  - effort.go
+  - find.go
   - locales/en.yaml
+  - locales/locales.go
+  - locales/zh-Hans.yaml
+  - native_test.go
+  - reasoning.go
+  - reasoning_test.go
 generated:
   - locales/catalog_gen.go
 ```
