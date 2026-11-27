@@ -24,6 +24,7 @@ import (
 	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/sumdb/dirhash"
 	modzip "golang.org/x/mod/zip"
@@ -251,11 +252,13 @@ func TestUISubpackageComponentsCopyIntoScratchModule(t *testing.T) {
 	licenseData := readZipEntry(t, zipFiles, "LICENSE")
 	noticeData := readZipEntry(t, zipFiles, "NOTICE")
 
-	// Create the scratch module requiring the release through a replace of the checkout.
+	// Create the scratch module requiring the release through a replace of the checkout,
+	// carrying the repository's require/replace entries and go.sum so vetting and testing
+	// run completely offline under GOPROXY=off without invoking go mod tidy (which would
+	// inspect transitive test-only dependencies absent from an offline module cache).
 	const scratchMod = "example.com/scratch"
 	scratchDir := t.TempDir()
-	scratchGoMod := fmt.Sprintf("module %s\n\ngo 1.27.3\n\nrequire %s %s\n\nreplace %s => %s\n",
-		scratchMod, nsgoModule, releaseVersion, nsgoModule, filepath.ToSlash(root))
+	scratchGoMod := buildScratchGoMod(t, scratchMod, releaseVersion, root, goModBytes)
 	writeFiles(t, scratchDir, map[string]string{
 		"go.mod": scratchGoMod,
 		"go.sum": string(goSumBytes),
@@ -332,18 +335,10 @@ func TestUISubpackageComponentsCopyIntoScratchModule(t *testing.T) {
 		}
 	}
 
-	// Reconcile go.mod / go.sum offline in the scratch module (using local cache + replace).
-	tidyCmd := exec.Command("go", "mod", "tidy")
-	tidyCmd.Dir = scratchDir
-	tidyCmd.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local", "GOPROXY=off")
-	if out, err := tidyCmd.CombinedOutput(); err != nil {
-		t.Fatalf("go mod tidy in scratch module: %v\n%s", err, out)
-	}
-
-	// Vet every one of the eight copied components for the host.
+	// Vet every one of the eight copied components for the host completely offline.
 	for _, compName := range slices.Sorted(maps.Keys(manifest.Components)) {
 		pkgName := path.Base(manifest.Components[compName])
-		vetCmd := exec.Command("go", "vet", "./components/"+pkgName+"/...")
+		vetCmd := exec.Command("go", "vet", "-mod=readonly", "./components/"+pkgName+"/...")
 		vetCmd.Dir = scratchDir
 		vetCmd.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local", "GOPROXY=off")
 		if out, err := vetCmd.CombinedOutput(); err != nil {
@@ -409,6 +404,38 @@ func TestUISubpackageComponentsCopyIntoScratchModule(t *testing.T) {
 	if testErr != nil {
 		t.Fatalf("nsgo test ./components/chat failed: %v\n%s", testErr, out)
 	}
+}
+
+func buildScratchGoMod(t *testing.T, scratchMod, releaseVersion, repoRoot string, repoGoMod []byte) string {
+	t.Helper()
+	mf, err := modfile.Parse("go.mod", repoGoMod, nil)
+	if err != nil {
+		t.Fatalf("parse repo go.mod: %v", err)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "module %s\n\n", scratchMod)
+	if mf.Go != nil && mf.Go.Version != "" {
+		fmt.Fprintf(&b, "go %s\n\n", mf.Go.Version)
+	} else {
+		b.WriteString("go 1.27.3\n\n")
+	}
+	b.WriteString("require (\n")
+	fmt.Fprintf(&b, "\t%s %s\n", nsgoModule, releaseVersion)
+	for _, req := range mf.Require {
+		fmt.Fprintf(&b, "\t%s %s // indirect\n", req.Mod.Path, req.Mod.Version)
+	}
+	b.WriteString(")\n\n")
+	fmt.Fprintf(&b, "replace %s => %s\n", nsgoModule, filepath.ToSlash(repoRoot))
+	for _, rep := range mf.Replace {
+		if rep.Old.Version != "" {
+			fmt.Fprintf(&b, "replace %s %s => %s %s\n", rep.Old.Path, rep.Old.Version, rep.New.Path, rep.New.Version)
+		} else if rep.New.Version != "" {
+			fmt.Fprintf(&b, "replace %s => %s %s\n", rep.Old.Path, rep.New.Path, rep.New.Version)
+		} else {
+			fmt.Fprintf(&b, "replace %s => %s\n", rep.Old.Path, rep.New.Path)
+		}
+	}
+	return b.String()
 }
 
 func readZipEntry(t *testing.T, files map[string]*zip.File, name string) []byte {
