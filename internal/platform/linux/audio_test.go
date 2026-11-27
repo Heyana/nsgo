@@ -540,8 +540,9 @@ func TestLinuxAudioPlayer(t *testing.T) {
 	w.onLoop(t, func() {
 		var volume float64
 		gObjectGet(player.stream, uintptr(unsafe.Pointer(cstr("volume"))), uintptr(unsafe.Pointer(&volume)), 0)
-		if math.Abs(volume-0.4) > 1e-6 || !player.streamPlaying {
-			t.Error("unmuting did not restore the playing volume")
+		// pulsesink quantizes linear volume through 16-bit cubic pa_volume_t (~1e-5 step).
+		if math.Abs(volume-0.4) > 1e-3 || !player.streamPlaying {
+			t.Errorf("unmuting did not restore the playing volume: volume=%v playing=%v", volume, player.streamPlaying)
 		}
 	})
 	last := awaitAudio(t, progress)
