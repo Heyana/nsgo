@@ -3,6 +3,7 @@ package driver
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"slices"
 	"strings"
@@ -176,10 +177,11 @@ func webSchemeHeader(headers map[string]string, name string) string {
 // is 404, an empty body. It runs on the platform's UI thread.
 type WebSchemeHandler func(*WebSchemeRequest) *WebSchemeResponse
 
-// WebFailure identifies the platform error behind an EventError. Domain is empty for an error the engine produced itself, such as a refused navigation.
+// WebFailure identifies the platform error behind an EventError. Domain is empty for an error the engine produced itself, such as a refused navigation or an unavailable host. Err, when set, is wrapped by core.WebError (such as errors.ErrUnsupported).
 type WebFailure struct {
 	Domain string
 	Code   int
+	Err    error
 }
 
 // WebConfig is everything a web view loads and allows (ItemWeb).
@@ -460,18 +462,32 @@ func WebEvaluateFailure(marker, message string) string {
 	return marker + string(answer)
 }
 
+// WebEvaluateUnsupported is WebEvaluateFailure for a platform that provides no
+// web view host, so WebEvaluateAnswer wraps errors.ErrUnsupported.
+func WebEvaluateUnsupported(marker, message string) string {
+	answer, _ := json.Marshal(struct {
+		Error       string `json:"error"`
+		Unsupported bool   `json:"unsupported"`
+	}{Error: message, Unsupported: true})
+	return marker + string(answer)
+}
+
 // WebEvaluateAnswer decodes what WebEvaluateScript posted after its
 // marker: the result as JSON, or the error the script threw.
 func WebEvaluateAnswer(answer string) (string, error) {
 	var a struct {
-		JSON  *string `json:"json"`
-		Error *string `json:"error"`
+		JSON        *string `json:"json"`
+		Error       *string `json:"error"`
+		Unsupported bool    `json:"unsupported"`
 	}
 	if err := json.Unmarshal([]byte(answer), &a); err != nil {
 		return "", err
 	}
 	switch {
 	case a.Error != nil:
+		if a.Unsupported {
+			return "", fmt.Errorf("%s: %w", *a.Error, errors.ErrUnsupported)
+		}
 		return "", errors.New(*a.Error)
 	case a.JSON == nil:
 		return "", errors.New("nsgo: a web view's answer holds no result")

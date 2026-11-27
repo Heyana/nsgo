@@ -4,11 +4,12 @@ package nsgotest
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// TranslateShader returns an error when shader compilation is disabled.
+// TranslateShader returns an error wrapping errors.ErrUnsupported when shader compilation is disabled.
 func TranslateShader(*core.ShaderProgram) (ShaderSources, error) {
-	return ShaderSources{}, errors.New("nsgotest: shader compilation is disabled in this build")
+	return ShaderSources{}, fmt.Errorf("nsgotest: shader compilation is disabled in this build: %w", errors.ErrUnsupported)
 }

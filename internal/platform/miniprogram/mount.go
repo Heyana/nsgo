@@ -1,12 +1,19 @@
 package miniprogram
 
 import (
+	"errors"
 	"image"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
 	"github.com/nsgo-dev/nsgo/internal/platform/textselect"
 	"github.com/nsgo-dev/nsgo/internal/platform/webstyle"
+)
+
+const (
+	noMiniProgramWebView = "nsgo: web views are unavailable in mini programs (<web-view> fills a page of its own)"
+	noMiniProgramNative  = "nsgo: native components are unavailable in mini programs"
+	noMiniProgramShader  = "nsgo: shaders are unavailable in mini programs"
 )
 
 // The mounter turns each batch into the runtime's operations and the
@@ -286,6 +293,10 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 	case driver.ItemAppearance, driver.ItemDirection:
 		m.h.service(it)
 		return
+	case driver.ItemWebCookies:
+		// A mini program's web-view component keeps the platform's own cookies.
+		m.h.dispatch(driver.NoWebCookies(it))
+		return
 	case driver.ItemBlockNative:
 		prev := m.blocking
 		m.blocking = nil
@@ -563,9 +574,48 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		m.paint(v)
 	case driver.ItemModal:
 		v.modal = it.Modal.Animation
+	case driver.ItemWeb:
+		if it.Web != nil {
+			m.webViewUnsupported(v, it.Web.Source)
+		}
+	case driver.ItemWebCommand:
+		switch it.WebCommand {
+		case driver.WebLoad:
+			if src, ok := it.Data.(*driver.WebSource); ok && src != nil {
+				m.webViewUnsupported(v, *src)
+			}
+		case driver.WebInjectJavaScript:
+			if marker, ok := driver.WebEvaluateMarker(it.Value); ok {
+				m.send(v, driver.Event{
+					Kind: driver.EventMessage,
+					Text: driver.WebEvaluateUnsupported(marker, noMiniProgramWebView),
+				})
+			}
+		}
+	case driver.ItemNative:
+		m.send(v, driver.Event{Kind: driver.EventError, Text: noMiniProgramNative, Data: errors.ErrUnsupported})
+	case driver.ItemNativeCommand:
+		// Mini programs host no custom native components.
+	case driver.ItemShader:
+		m.send(v, driver.Event{Kind: driver.EventError, Text: noMiniProgramShader, Data: errors.ErrUnsupported})
+	case driver.ItemShaderTransition, driver.ItemShaderInput, driver.ItemGPU:
+		// Mini programs have no GPU shader surface.
 	default:
 		m.h.service(it)
 	}
+}
+
+func (m *mounter) webViewUnsupported(v *view, src driver.WebSource) {
+	url := src.Src
+	if url == "" {
+		url = src.BaseURL
+	}
+	m.send(v, driver.Event{
+		Kind:       driver.EventError,
+		Text:       noMiniProgramWebView,
+		Navigation: &driver.WebNavigation{URL: url},
+		Data:       driver.WebFailure{Err: errors.ErrUnsupported},
+	})
 }
 
 // samplingCSS is the inline CSS that scales an image with sampling, as the web's image views do: image-rendering, which the image component's inner element and the pixel canvas inherit.

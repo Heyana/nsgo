@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -671,4 +673,50 @@ func TestMiniProgramDevBuildWiring(t *testing.T) {
 			t.Errorf("release build unexpectedly added -overlay: %q", cmd.Args)
 		}
 	})
+}
+
+func TestMiniProgramBuildRefusesTSX(t *testing.T) {
+	repoRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wechat, _ := miniProgramPlatformOf("miniprogram_wechat")
+	for _, tc := range []struct {
+		name string
+		dir  string
+	}{
+		{"tsx/compiler", filepath.Join(repoRoot, "examples", "tsx")},
+		{"tsx", filepath.Join(repoRoot, "examples", "plugins")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &project{Dir: tc.dir, Name: "TSX Probe", ID: "dev.nsgo.mptsx", Version: "0.1.0", Release: true}
+			err := buildMiniProgram(t.Context(), p, wechat, t.TempDir())
+			if err == nil || !errors.Is(err, errors.ErrUnsupported) || !strings.Contains(err.Error(), "links package tsx") {
+				t.Fatalf("buildMiniProgram err = %v, want refusal mentioning package tsx and matching errors.ErrUnsupported", err)
+			}
+		})
+	}
+}
+
+func TestMiniProgramBuildTagUnsupportedChecks(t *testing.T) {
+	repoRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"shaders_nsgo_noshader", []string{"test", "-tags=nsgo_noshader", "-run", "^TestShadersReportErrUnsupported$", "./core"}},
+		{"tsx_nsgominiprogram", []string{"test", "-tags=nsgominiprogram", "-run", "^TestMiniProgramTSXUnsupported$", "./tsx"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), "go", tc.args...)
+			cmd.Dir = repoRoot
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("go %s failed: %v\n%s", strings.Join(tc.args, " "), err, out)
+			}
+		})
+	}
 }

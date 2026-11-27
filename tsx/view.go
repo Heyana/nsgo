@@ -129,8 +129,11 @@ var ErrViewExportNotComponent = errors.New("tsx: the view export is not a compon
 // ErrNoTree is what Load reports when its scope has no view tree.
 var ErrNoTree = errors.New("tsx: Load needs a scope attached to a view tree")
 
-// Load runs package p as a plugin under cx, within s as View runs it, and returns it once its entry module ran, or a nil Plugin and what that threw, which goes to no Catch above cx and not to the app's report, or ErrNoTree when cx is not attached to a view tree, or ErrUnisolated on a JS host without DOM iframe isolation unless Sandbox.WebUnisolated. It runs synchronously on the caller's goroutine. Call it on the engine's goroutine.
+// Load runs package p as a plugin under cx, within s as View runs it, and returns it once its entry module ran, or a nil Plugin and what that threw, which goes to no Catch above cx and not to the app's report, or ErrUnsupported on unsupported targets (such as mini programs), ErrNoTree when cx is not attached to a view tree, or ErrUnisolated on a JS host without DOM iframe isolation unless Sandbox.WebUnisolated. It runs synchronously on the caller's goroutine. Call it on the engine's goroutine.
 func Load(cx *core.Scope, p *pkg.Package, s Sandbox) (plugin *Plugin, err error) {
+	if targetUnsupported {
+		return nil, ErrUnsupported
+	}
 	if cx == nil || !cx.HasTree() {
 		return nil, ErrNoTree
 	}

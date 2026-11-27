@@ -47,9 +47,6 @@ type ShaderProgram struct {
 	// it samples.
 	animated bool
 	pictures driver.Pictures
-	// uncompiled is a program of a build without the compilers
-	// (shader_nocompile.go), which takes any uniform.
-	uncompiled bool
 	// enable activates the platform's shader handler when navShader uses this program.
 	enable func(*Tree)
 }
@@ -123,9 +120,14 @@ func MustCompileWGSL(src string) *ShaderProgram {
 
 // crossfade is the transitions' default program, compiled on first use:
 // a package variable's initializer would link the compiler into every
-// app.
+// app. In nsgo_noshader builds crossfadeSource is empty and crossfade returns nil.
 func crossfade() *ShaderProgram {
-	crossfadeProgram.Do(func() { crossfadeProgram.p = MustCompileWGSL(crossfadeSource) })
+	crossfadeProgram.Do(func() {
+		if crossfadeSource == "" {
+			return
+		}
+		crossfadeProgram.p = MustCompileWGSL(crossfadeSource)
+	})
 	return crossfadeProgram.p
 }
 
@@ -159,6 +161,9 @@ func DriverShaderProgram(p *ShaderProgram) *driver.ShaderProgram {
 // program declares its uniforms in. The lane indexes Shader.Lanes as the
 // platform receives it.
 func (p *ShaderProgram) UniformLanes(name string) (lane, n int, ok bool) {
+	if p == nil {
+		return 0, 0, false
+	}
 	slot, ok := p.uniforms[name]
 	return slot.lane, slot.n, ok
 }
@@ -166,6 +171,9 @@ func (p *ShaderProgram) UniformLanes(name string) (lane, n int, ok bool) {
 // HasUniform reports whether the program has a uniform named name, which
 // Uniforms may set.
 func (p *ShaderProgram) HasUniform(name string) bool {
+	if p == nil {
+		return false
+	}
 	_, ok := p.uniforms[name]
 	return ok
 }
@@ -222,6 +230,9 @@ type Shader struct {
 	StyleFunc func() Style
 	// Children draw over the shader.
 	Children []Node
+	// OnError receives an error when the platform does not draw shaders,
+	// such as mini programs (matching errors.ErrUnsupported).
+	OnError  func(err error)
 	OnPress  func(PressEvent)
 	OnLayout func(Bounds)
 	Ref      *Ref
@@ -242,7 +253,8 @@ type shaderNode struct {
 	sent  *driver.Shader
 	fresh bool
 	// frames are the copies of each image's pixels the platform was sent last.
-	frames []pixelFrame
+	frames  []pixelFrame
+	onError func(error)
 }
 
 // withFrames returns sn.sent with its images' pixels copied, as an image view's are (pixelFrame): an image at the version sent last keeps its copy, so the platform uploads nothing for it.
@@ -277,7 +289,7 @@ func (t *Tree) mountShader(cx *Scope, parent *node, s Shader) {
 	n.setHandlers(handlers{press: s.OnPress, layout: s.OnLayout})
 	n.setProps(driver.ViewProps{Label: s.Label, TestID: s.TestID})
 	t.bindIllustrationLabel(cx, n, s.LabelFunc)
-	sn := &shaderNode{}
+	sn := &shaderNode{onError: s.OnError}
 	n.ownExtra().shader = sn
 	if s.Program == nil {
 		return
@@ -316,6 +328,21 @@ func (t *Tree) mountShader(cx *Scope, parent *node, s Shader) {
 		}
 		set(u, images)
 	})
+}
+
+// dispatchShader handles a shader view's error events.
+func (t *Tree) dispatchShader(n *node, ev driver.Event) bool {
+	if ev.Kind != driver.EventError {
+		return false
+	}
+	if n.shader.onError != nil {
+		err := error(Unavailable(ev.Text))
+		if e, ok := ev.Data.(error); ok && e != nil {
+			err = &Error{Code: CodeUnavailable, Message: ev.Text, Err: e}
+		}
+		t.within(n.owner, func() { n.shader.onError(err) })
+	}
+	return true
 }
 
 // builtins writes a WGSL program's built-in lanes into d: the clock's
@@ -407,9 +434,6 @@ func (p *ShaderProgram) values(base, over Uniforms) *driver.Shader {
 	for _, u := range [2]Uniforms{base, over} {
 		for name, v := range u {
 			slot, ok := p.uniforms[name]
-			if !ok && p.uncompiled {
-				continue
-			}
 			if !ok {
 				panic(fmt.Sprintf("core: the shader has no uniform %s", name))
 			}

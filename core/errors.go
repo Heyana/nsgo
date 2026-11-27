@@ -49,8 +49,10 @@ func AccessDenied(permission, resource string) *Error {
 		Message: fmt.Sprintf("access to %q needs the %q capability", resource, permission)}
 }
 
-// Unavailable is the failure of what this platform does not do.
-func Unavailable(message string) *Error { return &Error{Code: CodeUnavailable, Message: message} }
+// Unavailable is the failure of what this platform does not do. It carries CodeUnavailable and wraps errors.ErrUnsupported.
+func Unavailable(message string) *Error {
+	return &Error{Code: CodeUnavailable, Message: message, Err: errors.ErrUnsupported}
+}
 
 // ErrorCode is the stable code of a failure, "" for one with none.
 func ErrorCode(err error) string {

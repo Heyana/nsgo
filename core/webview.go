@@ -118,12 +118,16 @@ type WebWindowRequest = driver.WebWindowRequest
 type WebError struct {
 	URL     string
 	Message string
-	// Domain and Code are the platform's: NSError's domain and code on Apple platforms, the GError domain's name and its code on Linux, COREWEBVIEW2_WEB_ERROR_STATUS and its value, or HRESULT and the HRESULT of a navigation WebView2 refused, on Windows, and android.webkit.WebViewClient and WebResourceError's error code on Android. Both are empty for a source or navigation Access refused.
+	// Domain and Code are the platform's: NSError's domain and code on Apple platforms, the GError domain's name and its code on Linux, COREWEBVIEW2_WEB_ERROR_STATUS and its value, or HRESULT and the HRESULT of a navigation WebView2 refused, on Windows, and android.webkit.WebViewClient and WebResourceError's error code on Android. Both are empty for a source or navigation Access refused or when the platform has no web view host.
 	Domain string
 	Code   int
+	// Err is the underlying error when one applies, such as errors.ErrUnsupported on targets without a web view host.
+	Err error
 }
 
 func (e *WebError) Error() string { return e.Message }
+
+func (e *WebError) Unwrap() error { return e.Err }
 
 type webNode struct {
 	config                      driver.WebConfig
@@ -341,7 +345,7 @@ func (t *Tree) dispatchWeb(n *node, ev driver.Event) {
 				failure = f
 			}
 			t.within(n.owner, func() {
-				wn.loadError(&WebError{URL: nav.URL, Message: ev.Text, Domain: failure.Domain, Code: failure.Code})
+				wn.loadError(&WebError{URL: nav.URL, Message: ev.Text, Domain: failure.Domain, Code: failure.Code, Err: failure.Err})
 			})
 		}
 	case driver.EventDownload:

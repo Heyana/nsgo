@@ -191,6 +191,9 @@ func (c *continuations) Exited() {
 }
 
 func newRuntime(cx *core.Scope) *runtime {
+	if targetUnsupported {
+		panic(ErrUnsupported)
+	}
 	started.Store(true)
 	r := &runtime{vm: js.New(), cx: cx, modules: map[string]*js.Object{}, warned: map[string]bool{}, origin: cx.Now()}
 	r.root = &node{r: r, kind: kindRegion, elem: core.NewElement(cx, nil)}

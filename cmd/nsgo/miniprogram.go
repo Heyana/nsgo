@@ -5,6 +5,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -133,7 +134,7 @@ func buildMiniProgram(ctx context.Context, p *project, mp miniProgramPlatform, d
 		return err
 	}
 	if tsx != "" {
-		return fmt.Errorf("mini programs run Go apps alone: this app links package tsx")
+		return fmt.Errorf("mini programs run Go apps alone: this app links package tsx: %w", errors.ErrUnsupported)
 	}
 	module, err := buildMiniProgramModule(ctx, p, wasm, env, nil)
 	if err != nil {

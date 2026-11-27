@@ -614,7 +614,7 @@ nsgo dev -target miniprogram_alipay
 
 `miniprogram.appid` 按平台（`wechat`、`qq`、`alipay`、`douyin`）设置小程序的 AppID；没有时微信开发者工具以测试号预览，其他工具会要求填写。微信的 `-run` 和 `dev` 每次重新构建都会通过 CLI 关闭并自动打开项目，因此开发者工具会编译最新文件。此流程已用 2.01.2510290 版开发者工具检查。平台的导航栏显示应用的标题；开启 `custom_navigation` 后应用占满页面，安全区让它避开右上角的胶囊按钮。在微信公众平台启用官方「微信同声传译」插件（`wx069ba97219f66d99`）后，可将 `miniprogram.wechat_speech_plugin` 设为插件版本（例如 `"0.3.5"`），在微信的 `app.json` 中声明该插件以启用 `Speak`。应用读到的是手机的操作系统，`Env.Simulated` 为 true，与网页的 `--nsgo-os` 相同：导航栈的页面显示自己的 `Header`，没有系统标题栏代替它。QQ、支付宝和抖音尚未在各自的工具中试过；支付宝暂不支持由应用处理返回、关键帧动画和键盘高度。
 
-小程序为试验性支持。小程序只运行 Go 应用，不运行 TSX，且各平台把应用压缩后的模块限制在 2 MB 以内：基于 `base` 的几个页面的应用放得下，`examples/gallery-miniprogram` 就是一例，用 `ui` 控件的应用暂时放不下，放不下时 `build` 会说明。着色器在小程序中不绘制，网页视图和原生组件暂不显示；应用自带字体文件（`loadFontFace`）、`TintColor` 着色图片、偏离基线的行内视图、文本选区与 `<video>` 视频播放已接入四个平台的模板，但尚未在各平台开发者工具中实测。
+小程序为试验性支持。小程序只运行 Go 应用：`build` 会拒绝链接了 `tsx` 的应用（在 `nsgominiprogram` 构建中 `tsx` 入口也会返回 `tsx.ErrUnsupported`），且各平台把应用压缩后的模块限制在 2 MB 以内：基于 `base` 的几个页面的应用放得下，`examples/gallery-miniprogram` 就是一例，用 `ui` 控件的应用暂时放不下，放不下时 `build` 会说明。网页视图（`<web-view>` 必须占满整个页面）、自定义原生组件和着色器（`nsgo_noshader`）在小程序中不可用，会报告 `errors.ErrUnsupported`（`core.CodeUnavailable`）；应用自带字体文件（`loadFontFace`）、`TintColor` 着色图片、偏离基线的行内视图、文本选区与 `<video>` 视频播放已接入四个平台的模板，但尚未在各平台开发者工具中实测。
 
 ## 鸿蒙
 

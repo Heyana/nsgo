@@ -29,7 +29,10 @@ type Native struct {
 	StyleFunc func() Style
 
 	// OnEvent receives what the component emits.
-	OnEvent    func(name string, data any)
+	OnEvent func(name string, data any)
+	// OnError receives an error when the platform cannot host native components,
+	// such as mini programs (matching errors.ErrUnsupported).
+	OnError    func(err error)
 	OnPress    func(PressEvent)
 	OnLayout   func(Bounds)
 	Ref        *Ref
@@ -53,6 +56,7 @@ type nativeNode struct {
 	named     bool                   // the component's name was sent
 	size      Size                   // what the component asked for
 	event     func(name string, data any)
+	onError   func(error)
 }
 
 func (t *Tree) mountNative(cx *Scope, parent *node, v Native) {
@@ -69,7 +73,7 @@ func (t *Tree) mountNative(cx *Scope, parent *node, v Native) {
 	if v.Invalid != nil {
 		t.bindBool(cx, n, v.Invalid, &n.ownProps().Invalid)
 	}
-	nn := &nativeNode{component: v.Component, props: v.Props, event: v.OnEvent}
+	nn := &nativeNode{component: v.Component, props: v.Props, event: v.OnEvent, onError: v.OnError}
 	n.ownExtra().native = nn
 	if v.PropsFunc != nil {
 		cx.renderEffect(func() {
@@ -158,6 +162,14 @@ func (t *Tree) dispatchNative(n *node, ev driver.Event) bool {
 		if ev.Size != nn.size {
 			nn.size = ev.Size
 			t.relayout(n)
+		}
+	case driver.EventError:
+		if nn.onError != nil {
+			err := error(Unavailable(ev.Text))
+			if e, ok := ev.Data.(error); ok && e != nil {
+				err = &Error{Code: CodeUnavailable, Message: ev.Text, Err: e}
+			}
+			t.within(n.owner, func() { nn.onError(err) })
 		}
 	default:
 		return false

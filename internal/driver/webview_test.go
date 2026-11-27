@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -93,6 +94,9 @@ func TestWebEvaluateMarker(t *testing.T) {
 		}
 		if _, err := WebEvaluateAnswer(WebEvaluateFailure(marker, "no page")[len(marker):]); err == nil || err.Error() != "no page" {
 			t.Errorf("a failure answers %v", err)
+		}
+		if _, err := WebEvaluateAnswer(WebEvaluateUnsupported(marker, "no web view")[len(marker):]); !errors.Is(err, errors.ErrUnsupported) {
+			t.Errorf("an unsupported failure answers %v, want errors.ErrUnsupported", err)
 		}
 	}
 	for _, script := range []string{`window.nsgo.postMessage("nsgo-evaluate:ffff:")`, "", WebMessageScript("x")} {

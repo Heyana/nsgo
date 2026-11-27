@@ -166,6 +166,9 @@ type Sandbox struct {
 	WebUnisolated bool
 }
 
+// ErrUnsupported is what TSX entry points fail with on targets that do not run TSX, such as mini programs.
+var ErrUnsupported = fmt.Errorf("tsx: TSX is not supported on mini programs: %w", errors.ErrUnsupported)
+
 // ErrUnisolated is what a sandbox with Capabilities, Grant or DisableStorage fails with on a JS host that cannot create an opaque-origin sandboxed frame unless Sandbox.WebUnisolated is set.
 var ErrUnisolated = errors.New("tsx: the web cannot isolate a sandboxed package from the page, so its restrictions would not hold; set Sandbox.WebUnisolated to run it with the page's authority")
 
@@ -207,6 +210,9 @@ func Sandboxed(name, src string, s Sandbox, options ...ViewOptions) func(cx *cor
 		inner := cx.Child()
 		var root core.Node
 		inner.Run(func() {
+			if targetUnsupported {
+				panic(ErrUnsupported)
+			}
 			var r *runtime
 			if s.needsWebIsolation() {
 				r = s.startIsolated(inner, name, src, view)
@@ -255,8 +261,11 @@ func (r *runtime) renderExport(name string, props map[string]any) {
 // sandboxFrame is the style of the view a sandboxed bundle shows in, which the host's scope owns and the bundle cannot restyle.
 var sandboxFrame = core.Style{FlexGrow: 1, FlexShrink: 1, Overflow: core.Hidden}
 
-// start runs src in a new runtime under cx, panicking with what it throws as it loads, or with ErrUnisolated where it cannot be isolated.
+// start runs src in a new runtime under cx, panicking with what it throws as it loads, with ErrUnsupported on unsupported targets, or with ErrUnisolated where it cannot be isolated.
 func (s Sandbox) start(cx *core.Scope, name, src string) *runtime {
+	if targetUnsupported {
+		panic(ErrUnsupported)
+	}
 	if err := s.isolation(js.Properties().SharesPageAuthority); err != nil {
 		panic(err)
 	}

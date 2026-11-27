@@ -2785,6 +2785,9 @@ func (t *Tree) Dispatch(ev driver.Event) {
 	if n.native != nil && t.dispatchNative(n, ev) {
 		return
 	}
+	if n.shader != nil && t.dispatchShader(n, ev) {
+		return
+	}
 	if n.image != nil && (n.image.sent.Source.Pixels != nil || n.image.sent.Source.Offscreen != nil) {
 		switch ev.Kind {
 		case driver.EventLoadStart, driver.EventProgress, driver.EventLoad, driver.EventError, driver.EventLoadEnd:
@@ -3417,6 +3420,10 @@ func (n *node) events() driver.EventMask {
 	if n.native != nil {
 		bit(driver.EventNative, n.native.event != nil)
 		bit(driver.EventNativeSize, true)
+		bit(driver.EventError, n.native.onError != nil)
+	}
+	if n.shader != nil {
+		bit(driver.EventError, n.shader.onError != nil)
 	}
 	if n.web != nil {
 		m |= n.web.events()
