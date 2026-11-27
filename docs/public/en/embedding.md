@@ -55,7 +55,7 @@ The host can also return the view's `preferredScreenEdgesDeferringSystemGestures
 
 ## Android
 
-For an arm64 app importing `base/terminal`, the AAR includes `jni/arm64-v8a/libghostty-vt.so` beside `libnsgo.so`; the host keeps native-library extraction enabled. The Android prebuild and terminal loader require [#1452](https://github.com/nsgo-dev/nsgo/issues/1452); x86_64 terminal libraries are not available yet.
+For an arm64 app importing `base/terminal`, the AAR includes `jni/arm64-v8a/libghostty-vt.so` beside `libnsgo.so` (requires Android 10 / API 29 and later); the host keeps native-library extraction enabled. Android x86_64 terminal libraries are not available yet.
 
 Add the AAR to the app module and package native libraries extracted, so the runtime finds them:
 

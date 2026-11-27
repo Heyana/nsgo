@@ -100,6 +100,10 @@ var layers = []struct {
 	{"internal/moduletest", nil},
 	// The code nsgo writes from catalogs runs on i18n.
 	{"i18n", []string{"core", "internal/cldr"}},
+	// NSGo's Android arm64 cgo-free purego subset imports only its own internal packages.
+	{"internal/purego/", []string{"internal/purego/"}},
+	// Android arm64's terminal binding reaches bionic through internal/purego until upstream purego ships cgo-free Android support.
+	{"base/terminal/internal/vt", []string{"base/", "internal/purego"}},
 	{"base/", []string{"core", "base/", "i18n"}},
 	{"mobile/locales", []string{"core", "i18n"}},
 	{"mobile", []string{"core"}},
@@ -298,10 +302,6 @@ func checkLayer(t *testing.T, p listedPackage, tags string) {
 	}
 	isPortable := matchesAny(pkg, portable) && !matchesAny(pkg, unportable)
 	for _, imp := range p.Imports {
-		// Android arm64 terminal binding uses NSGo’s cgo-free purego subset.
-		if pkg == "base/terminal/internal/vt" && imp == modulePath+"/internal/purego" {
-			continue
-		}
 		if dep, ok := inModule(imp); ok {
 			if ruled && !matchesAny(dep, allowed) {
 				t.Errorf("%s imports %s across layers", p.ImportPath, imp)

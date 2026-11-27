@@ -489,7 +489,7 @@ func validateNativeBinary(path, target string) error {
 				return nil
 			}
 		}
-	case "linux":
+	case "linux", "android":
 		machine := elf.EM_X86_64
 		if arch == "arm64" {
 			machine = elf.EM_AARCH64

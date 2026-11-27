@@ -4,16 +4,16 @@ package purego
 
 import (
 	"errors"
+	"runtime"
 	"unsafe"
 )
 
-// bionic exports the dynamic-loader API from libdl.so. These imports keep the
-// arm64 Android binary cgo-free; the assembly stubs below turn the imported
-// symbols into addresses that SyscallN can call.
+// Bionic exports the dynamic-loader API from libdl.so without versioned sonames; these dynamic imports keep the arm64 Android executable cgo-free while the assembly stubs expose symbol addresses for SyscallN.
 //go:cgo_import_dynamic purego_android_dlopen_import dlopen "libdl.so"
 //go:cgo_import_dynamic purego_android_dlsym_import dlsym "libdl.so"
 //go:cgo_import_dynamic purego_android_dlerror_import dlerror "libdl.so"
 //go:cgo_import_dynamic purego_android_dlclose_import dlclose "libdl.so"
+//go:cgo_import_dynamic _ _ "libdl.so"
 
 //go:linkname androidDlopen purego_android_dlopen
 var androidDlopen uint8
@@ -28,8 +28,16 @@ var androidDlerror uint8
 var androidDlclose uint8
 
 func dlopenPath(path string, mode int) (uintptr, error) {
-	p := append([]byte(path), 0)
-	r, _, _ := SyscallN(uintptr(unsafe.Pointer(&androidDlopen)), uintptr(unsafe.Pointer(&p[0])), uintptr(mode))
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	var arg uintptr
+	var p []byte
+	if path != "" {
+		p = append([]byte(path), 0)
+		arg = uintptr(unsafe.Pointer(&p[0]))
+	}
+	r, _, _ := SyscallN(uintptr(unsafe.Pointer(&androidDlopen)), arg, uintptr(mode))
+	runtime.KeepAlive(p)
 	if r == 0 {
 		return 0, dlerrorString()
 	}
@@ -37,8 +45,11 @@ func dlopenPath(path string, mode int) (uintptr, error) {
 }
 
 func dlsymName(handle uintptr, name string) (uintptr, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	p := append([]byte(name), 0)
 	r, _, _ := SyscallN(uintptr(unsafe.Pointer(&androidDlsym)), handle, uintptr(unsafe.Pointer(&p[0])))
+	runtime.KeepAlive(p)
 	if r == 0 {
 		return 0, dlerrorString()
 	}
@@ -46,6 +57,8 @@ func dlsymName(handle uintptr, name string) (uintptr, error) {
 }
 
 func dlcloseHandle(handle uintptr) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	r, _, _ := SyscallN(uintptr(unsafe.Pointer(&androidDlclose)), handle)
 	if r != 0 {
 		return dlerrorString()

@@ -5,7 +5,7 @@ group: 核心概念
 order: 63
 ---
 
-`base/terminal` 提供会话 `Terminal` 及其无样式的 `View`；`ui/terminal` 以 `ui` 的外观包装 `View`，为默认上下文菜单和触控按键栏着色。桌面运行本地程序；iOS 和浏览器使用 `Options.Conn`，即连接远程程序的 `io.ReadWriteCloser`。应用持有会话，并在结束时关闭它。
+`base/terminal` 提供会话 `Terminal` 及其无样式的 `View`；`ui/terminal` 以 `ui` 的外观包装 `View`，为默认上下文菜单和触控按键栏着色。桌面运行本地程序；iOS、Android arm64（Android 10 / API 29 及以上）和浏览器使用 `Options.Conn`，即连接远程程序的 `io.ReadWriteCloser`（暂不支持 Android x86_64）。应用持有会话，并在结束时关闭它。
 
 ```go
 t, err := terminal.New(terminal.Options{CursorBlink: true})

@@ -38,6 +38,9 @@ func Find() (string, error) {
 		if runtime.GOOS == "ios" {
 			return "", fmt.Errorf("terminal: the app has no GhosttyVT.framework: build it with the nsgo tool")
 		}
+		if runtime.GOOS == "android" && name != "" {
+			return "", fmt.Errorf("terminal: the app has no %s beside its executable: build it with the nsgo tool", name)
+		}
 		return "", fmt.Errorf("terminal: libghostty-vt has no build for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	return extract()
@@ -82,13 +85,17 @@ func extract() (string, error) {
 
 // findInApp searches the host bundle as well as a standalone executable's directory. Catalyst uses a macOS bundle layout even though its terminal takes the iOS path.
 func findInApp(executable string) string {
+	return findInAppWithName(executable, name)
+}
+
+func findInAppWithName(executable, libName string) string {
 	dir := filepath.Dir(executable)
 	paths := []string{
 		filepath.Join(dir, "Frameworks", "GhosttyVT.framework", "GhosttyVT"),
 		filepath.Join(dir, "..", "Frameworks", "GhosttyVT.framework", "GhosttyVT"),
 	}
-	if name != "" {
-		paths = append(paths, filepath.Join(dir, "..", "Frameworks", name), filepath.Join(dir, name))
+	if libName != "" {
+		paths = append(paths, filepath.Join(dir, "..", "Frameworks", libName), filepath.Join(dir, libName))
 	}
 	for _, path := range paths {
 		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {

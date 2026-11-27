@@ -5,7 +5,7 @@ group: Core concepts
 order: 63
 ---
 
-`base/terminal` provides a session (`Terminal`) and its unstyled `View`; `ui/terminal` wraps `View` in `ui`'s look for the default context menu and touch key bar. Desktops run local programs; iOS, tvOS, Android and browsers use `Options.Conn`, an `io.ReadWriteCloser` connected to a remote program. The app owns the session and closes it when finished.
+`base/terminal` provides a session (`Terminal`) and its unstyled `View`; `ui/terminal` wraps `View` in `ui`'s look for the default context menu and touch key bar. Desktops run local programs; iOS, tvOS, Android arm64 (Android 10 / API 29 and later) and browsers use `Options.Conn`, an `io.ReadWriteCloser` connected to a remote program (Android x86_64 is not supported). The app owns the session and closes it when finished.
 
 ```go
 t, err := terminal.New(terminal.Options{CursorBlink: true})

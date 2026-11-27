@@ -54,7 +54,7 @@ view.register(component: "host.badge") { context in Badge(context) }
 
 ## Android
 
-arm64 应用导入 `base/terminal` 时，AAR 会将 `jni/arm64-v8a/libghostty-vt.so` 放在 `libnsgo.so` 旁；宿主须保留本地库提取设置。Android 预编译库和终端加载器依赖 [#1452](https://github.com/nsgo-dev/nsgo/issues/1452)；目前没有 x86_64 终端库。
+arm64 应用导入 `base/terminal` 时，AAR 会将 `jni/arm64-v8a/libghostty-vt.so` 放在 `libnsgo.so` 旁（需要 Android 10 / API 29 及以上）；宿主须保留本地库提取设置。目前没有 Android x86_64 终端库。
 
 把 AAR 加入应用模块，并让原生库被解压，以便运行时找到它们：
 

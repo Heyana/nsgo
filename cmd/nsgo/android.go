@@ -11,7 +11,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -283,11 +282,13 @@ func androidGhosttyLibrary(ctx context.Context, p *project, goarch, abi string) 
 
 func androidGhosttyFile(dir, goarch, abi string) (apk.File, error) {
 	path := filepath.Join(dir, "lib", "android-"+goarch, "libghostty-vt.so")
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		// Until #1452 commits an Android prebuild the package has none for this ABI; the AAR builds without it, as before, rather than failing every embedded app that links the terminal.
-		return apk.File{}, nil
+	if err := validateNativeBinary(path, "android_"+goArchName(goarch)); err != nil {
+		if _, statErr := os.Stat(path); statErr != nil {
+			return apk.File{}, fmt.Errorf("base/terminal: read Android libghostty-vt: %w", statErr)
+		}
+		return apk.File{}, fmt.Errorf("base/terminal: libghostty-vt: %w", err)
 	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return apk.File{}, fmt.Errorf("base/terminal: read Android libghostty-vt: %w", err)
 	}
