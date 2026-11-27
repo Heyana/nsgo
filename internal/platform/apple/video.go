@@ -154,6 +154,10 @@ func (v *Video) SetHolder(holder objc.ID) {
 			holder.Send(sel("layer")).Send(sel("addSublayer:"), v.layer)
 			v.Layout()
 		}
+		if v.frame.layer != 0 {
+			holder.Send(sel("layer")).Send(sel("addSublayer:"), v.frame.layer)
+			v.layoutPiPVideo()
+		}
 	})
 }
 

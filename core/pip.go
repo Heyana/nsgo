@@ -21,6 +21,7 @@ type PictureInPicture struct {
 	Position      time.Duration
 	PositionFunc  func() time.Duration
 	Duration      time.Duration
+	DurationFunc  func() time.Duration
 	Automatically bool
 	Children      []Node
 	Ref           *Ref
@@ -43,7 +44,7 @@ func (p PictureInPicture) mountIn(t *Tree, cx *Scope, parent *node) {
 	}
 	n := t.newNode(driver.KindView, parent, cx)
 	n.pip = &pictureInPictureNode{config: driver.PictureInPictureConfig{Size: size, Paused: p.Paused,
-		Position: p.Position, Duration: p.Duration, Automatically: p.Automatically}, state: p.OnState,
+		Position: max(p.Position, 0), Duration: max(p.Duration, 0), Automatically: p.Automatically}, state: p.OnState,
 		restore: p.OnRestore, play: p.OnPlay, pause: p.OnPause, skip: p.OnSkip}
 	n.props = driver.ViewProps{TestID: p.TestID}
 	t.setRef(n, p.Ref)
@@ -58,6 +59,9 @@ func (p PictureInPicture) mountIn(t *Tree, cx *Scope, parent *node) {
 		}
 		if p.PositionFunc != nil {
 			c.Position = max(p.PositionFunc(), 0)
+		}
+		if p.DurationFunc != nil {
+			c.Duration = max(p.DurationFunc(), 0)
 		}
 		if c != n.pip.config {
 			n.pip.config = c

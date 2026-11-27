@@ -137,3 +137,69 @@ func testPictureInPictureComposite(t *testing.T, separateAudio bool) {
 	})
 	waitForChannel(0)
 }
+
+func TestPictureInPictureVideoSetHolderMovesFrameLayer(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pip.mov")
+	if err := os.WriteFile(path, clips.PiP, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(holdMainLoop())
+	var video *Video
+	var holder, nextHolder, root objc.ID
+	owner := &PictureInPicture{}
+	var wakes int
+	onMain(func() {
+		loadAVFoundation()
+		loadAVKit()
+		root = objc.ID(Class("CALayer")).Send(sel("new"))
+		root.Send(sel("setBounds:"), Rect(0, 0, 8, 8))
+		holder = objc.ID(Class("NSView")).Send(sel("alloc")).Send(sel("initWithFrame:"), Rect(0, 0, 8, 8))
+		holder.Send(sel("setWantsLayer:"), true)
+		nextHolder = objc.ID(Class("NSView")).Send(sel("alloc")).Send(sel("initWithFrame:"), Rect(0, 0, 8, 8))
+		nextHolder.Send(sel("setWantsLayer:"), true)
+		root.Send(sel("addSublayer:"), nextHolder.Send(sel("layer")))
+		video = NewVideo(holder)
+		video.Dispatch = func(driver.Event) {}
+		video.frame.owner = owner
+		video.frame.wake = func() { wakes++ }
+		video.Configure(&driver.VideoConfig{Source: path, Paused: true, Muted: true, Rate: 1, ResizeMode: driver.Stretch, ProgressInterval: 100 * time.Millisecond})
+		video.View().Send(sel("removeFromSuperview"))
+		video.Seek(250 * time.Millisecond)
+	})
+	defer onMain(func() {
+		video.Close()
+		holder.Send(sel("release"))
+		nextHolder.Send(sel("release"))
+		root.Send(sel("release"))
+	})
+	for deadline := time.Now().Add(6 * time.Second); time.Now().Before(deadline); {
+		var ready bool
+		onMain(func() {
+			video.UpdatePictureInPictureFrame(false)
+			ready = video.frame.layer != 0
+		})
+		if ready {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	var moved, detached bool
+	onMain(func() {
+		if video.frame.layer == 0 {
+			t.Fatal("video did not decode a PiP frame layer")
+		}
+		video.SetHolder(nextHolder)
+		moved = video.frame.layer.Send(sel("superlayer")) == nextHolder.Send(sel("layer"))
+		owner.framePending = false
+		beforeWakes := wakes
+		video.SetPictureInPictureOwner(nil, nil)
+		detached = video.frame.output == 0 && video.frame.layer == 0 && owner.framePending && wakes > beforeWakes
+	})
+	if !moved {
+		t.Fatal("SetHolder did not move the decoded PiP video layer to the new holder")
+	}
+	if !detached {
+		t.Fatal("clearing PiP owner did not release video output and wake the owner")
+	}
+}

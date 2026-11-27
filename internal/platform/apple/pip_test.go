@@ -341,3 +341,86 @@ func TestPictureInPictureStartPreservesInitError(t *testing.T) {
 		t.Fatalf("reported states = %+v, want error %q", states, want)
 	}
 }
+
+func TestPictureInPictureRenderSizeDelegateAndBackgroundLifecycle(t *testing.T) {
+	loadAVKit()
+	registerPiPDelegate()
+	cls := RegisterClass("NsgoTestPiPBackgroundLifecycleController", Class("NSObject"), nil, []objc.MethodDef{
+		{Cmd: sel("isPictureInPicturePossible"), Fn: func(objc.ID, objc.SEL) bool { return true }},
+		{Cmd: sel("isPictureInPictureActive"), Fn: func(objc.ID, objc.SEL) bool { return false }},
+		{Cmd: sel("setDelegate:"), Fn: func(objc.ID, objc.SEL, objc.ID) {}},
+	})
+	var wakes int
+	p := &PictureInPicture{
+		custom:     true,
+		automatic:  true,
+		controller: objc.ID(cls).Send(sel("new")),
+		state:      driver.PictureInPictureState{Supported: true, Possible: true},
+		OnWake:     func() { wakes++ },
+	}
+	defer p.controller.Send(sel("release"))
+	p.delegate = objc.ID(pipDelegateClass).Send(sel("new"))
+	pipDelegates.Store(p.delegate, p)
+	defer func() {
+		pipDelegates.Delete(p.delegate)
+		p.delegate.Send(sel("release"))
+	}()
+
+	if !p.ContinuesInBackground() {
+		t.Fatal("automatic possible session should continue in background before stopping")
+	}
+	p.delegate.Send(sel("pictureInPictureControllerWillStartPictureInPicture:"), p.controller)
+	if wakes != 1 {
+		t.Fatalf("willStart wakes = %d, want 1", wakes)
+	}
+	p.framePending = false
+	p.delegate.Send(sel("pictureInPictureControllerDidStartPictureInPicture:"), p.controller)
+	if wakes != 2 || !p.framePending || !p.state.Active {
+		t.Fatalf("didStart: wakes=%d dirty=%v active=%v", wakes, p.framePending, p.state.Active)
+	}
+	p.framePending = false
+	p.delegate.Send(sel("pictureInPictureController:didTransitionToRenderSize:"), p.controller, cmVideoDimensions{Width: 640, Height: 360})
+	if wakes != 3 || !p.framePending {
+		t.Fatalf("didTransitionToRenderSize: wakes=%d dirty=%v", wakes, p.framePending)
+	}
+	p.delegate.Send(sel("pictureInPictureControllerDidStopPictureInPicture:"), p.controller)
+	if p.state.Active || p.ContinuesInBackground() {
+		t.Fatal("stopped session kept background continuation armed")
+	}
+	p.ResetBackgroundStop()
+	if !p.ContinuesInBackground() {
+		t.Fatal("returning to foreground did not re-arm automatic background continuation")
+	}
+}
+
+func TestPictureInPictureTimebaseClampsPositionToDuration(t *testing.T) {
+	if got := clampPiPPosition(-time.Second, 10*time.Second); got != 0 {
+		t.Fatalf("negative position = %v, want 0", got)
+	}
+	if got := clampPiPPosition(15*time.Second, 10*time.Second); got != 10*time.Second {
+		t.Fatalf("position past duration = %v, want 10s", got)
+	}
+	if got := clampPiPPosition(15*time.Second, 0); got != 15*time.Second {
+		t.Fatalf("live stream position = %v, want 15s", got)
+	}
+	layerClass := RegisterClass("NsgoTestPiPTimebaseLayer", Class("NSObject"), nil, []objc.MethodDef{
+		{Cmd: sel("setControlTimebase:"), Fn: func(objc.ID, objc.SEL, uintptr) {}},
+	})
+	p := &PictureInPicture{custom: true, layer: objc.ID(layerClass).Send(sel("new"))}
+	defer func() {
+		if p.timebase != 0 {
+			Release(p.timebase)
+		}
+		p.layer.Send(sel("release"))
+	}()
+	p.configureTimebase(driver.PictureInPictureConfig{Paused: true, Duration: 5 * time.Second, Position: 8 * time.Second})
+	if p.timebase == 0 {
+		t.Fatal("configureTimebase did not create a CMTimebase")
+	}
+	cm := load("/System/Library/Frameworks/CoreMedia.framework/CoreMedia")
+	var cmTimebaseGetTime func(uintptr) cmTime
+	purego.RegisterLibFunc(&cmTimebaseGetTime, cm, "CMTimebaseGetTime")
+	if got := cmTimebaseGetTime(p.timebase).duration(); got != 5*time.Second {
+		t.Fatalf("timebase time = %v, want clamped 5s", got)
+	}
+}

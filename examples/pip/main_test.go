@@ -23,6 +23,10 @@ func TestScriptContentAndPiPControls(t *testing.T) {
 	if app.Find("id:script-status").Text != "Picture in Picture is active" {
 		t.Fatal("script did not enter PiP")
 	}
+	app.Play("id:caption-video", core.VideoInfo{Duration: 5 * time.Second, Size: core.Size{Width: 320, Height: 180}})
+	if got := app.FindMounted("id:caption-pip").PictureInPicture.Duration; got != 5*time.Second {
+		t.Fatalf("caption PiP duration = %v, want 5s", got)
+	}
 	app.PictureInPictureControl("id:caption-pip", "pause", 0)
 	if !app.FindMounted("id:caption-video").Video.Paused {
 		t.Fatal("pausing PiP did not pause its video")
@@ -34,5 +38,9 @@ func TestScriptContentAndPiPControls(t *testing.T) {
 	app.PictureInPictureControl("id:caption-pip", "skip", 2*time.Second)
 	if seeks := app.FindMounted("id:caption-video").Seeks; len(seeks) != 1 || seeks[0] != 2*time.Second {
 		t.Fatalf("video seeks after PiP skip: %v", seeks)
+	}
+	app.PictureInPictureControl("id:caption-pip", "skip", 10*time.Second)
+	if seeks := app.FindMounted("id:caption-video").Seeks; len(seeks) != 2 || seeks[1] != 5*time.Second {
+		t.Fatalf("video seeks after clamped PiP skip: %v", seeks)
 	}
 }

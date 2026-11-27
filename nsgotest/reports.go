@@ -564,12 +564,13 @@ func (a *App) Load(selector string, pixels driver.Size) {
 	}
 }
 
-// Play reports that the video selector matches opened and loaded
-// info, including its rate capability, as a platform does: it starts loading,
-// then loads.
+// Play reports that the video selector matches opened and loaded info,
+// including its rate capability, as a platform does: it starts loading, then
+// loads. The video need only be mounted, including inside a detached
+// mobile.PictureInPicture tree.
 func (a *App) Play(selector string, info core.VideoInfo) {
 	a.t.Helper()
-	v := a.Find(selector)
+	v := a.FindMounted(selector)
 	for _, k := range []driver.EventKind{driver.EventLoadStart, driver.EventLoad} {
 		if v.Events.Has(k) {
 			a.dispatch(driver.Event{Kind: k, ID: v.ID, Duration: info.Duration, Size: info.Size, RateChangeable: info.RateChangeable})
@@ -578,10 +579,11 @@ func (a *App) Play(selector string, info core.VideoInfo) {
 }
 
 // Progress reports that the video selector matches played to position:
-// its progress, then its end when position reaches duration.
+// its progress, then its end when position reaches duration. The video need
+// only be mounted, as Play's.
 func (a *App) Progress(selector string, position, duration time.Duration) {
 	a.t.Helper()
-	v := a.Find(selector)
+	v := a.FindMounted(selector)
 	if v.Events.Has(driver.EventProgress) {
 		a.dispatch(driver.Event{Kind: driver.EventProgress, ID: v.ID, Time: position, Duration: duration})
 	}
@@ -590,19 +592,19 @@ func (a *App) Progress(selector string, position, duration time.Duration) {
 	}
 }
 
-// PauseVideo reports that the platform paused the video selector matches for reason, as its controls or the system do (Video.OnPause).
+// PauseVideo reports that the platform paused the video selector matches for reason, as its controls or the system do (Video.OnPause). The video need only be mounted, as Play's.
 func (a *App) PauseVideo(selector string, reason core.VideoPauseReason) {
 	a.t.Helper()
-	v := a.Find(selector)
+	v := a.FindMounted(selector)
 	if v.Events.Has(driver.EventVideoPause) {
 		a.dispatch(driver.Event{Kind: driver.EventVideoPause, ID: v.ID, Index: int(reason)})
 	}
 }
 
-// PlayVideo reports that the platform played the video selector matches, as its controls or the system do (Video.OnPlay).
+// PlayVideo reports that the platform played the video selector matches, as its controls or the system do (Video.OnPlay). The video need only be mounted, as Play's.
 func (a *App) PlayVideo(selector string) {
 	a.t.Helper()
-	v := a.Find(selector)
+	v := a.FindMounted(selector)
 	if v.Events.Has(driver.EventVideoPlay) {
 		a.dispatch(driver.Event{Kind: driver.EventVideoPlay, ID: v.ID})
 	}

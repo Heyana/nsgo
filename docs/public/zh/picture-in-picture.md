@@ -37,9 +37,9 @@ Android 打包应用的 Activity 已声明画中画支持。进入画中画后�
 
 网页视频应在支持标准视频画中画 API 的浏览器中从用户点击启动。`Supported` 也反映页面的 Permissions Policy，`Possible` 要求视频元数据已加载。浏览器自带画中画控件报告相同的活动状态。停止、更换或清空来源、删除视频会结束其会话；未完成的启动请求不能重新打开旧来源。网页画中画仅显示视频，不支持自定义 NSGo 内容、自动进入或 `OnPictureInPictureRestore`。不支持的浏览器报告 `Supported: false`。
 
-iOS 上 `mobile.PictureInPicture` 的 `Children` 使用独立布局，默认为 320 × 180 点，在应用中不占空间。其 `Ref` 使用相同的启动和停止方法，`OnState`、`OnRestore`、`OnPlay`、`OnPause` 和 `OnSkip` 接收系统操作。用 `PausedFunc`、`PositionFunc` 绑定这些回调更新的播放状态；`Duration: 0` 表示直播内容。应用挂起时保留最后一帧。
+iOS 上 `mobile.PictureInPicture` 的 `Children` 使用独立布局，默认为 320 × 180 点，在应用中不占空间。其 `Ref` 使用相同的启动和停止方法，`OnState`、`OnRestore`、`OnPlay`、`OnPause` 和 `OnSkip` 接收系统操作。用 `PausedFunc`、`PositionFunc` 和 `DurationFunc`（或静态 `Duration`）绑定这些回调更新的播放状态；时长为 0 表示直播内容。应用挂起时保留最后一帧。
 
-在自定义树中放置 `core.Video`，可将其解码画面与应用绘制的字幕或其他叠层合成。使用外层 `Ref` 启动画中画，让视频与会话共用暂停信号，由 `Video.OnProgress` 为 `PositionFunc` 更新进度，并将 `OnSkip` 转发给视频的 `Ref.Seek`。声音仍由视频播放器播放。
+在自定义树中放置 `core.Video`，可将其解码画面与应用绘制的字幕或其他叠层合成。使用外层 `Ref` 启动画中画，让视频与会话共用暂停信号，由 `Video.OnLoad` 更新 `DurationFunc`、由 `Video.OnProgress` 更新 `PositionFunc`，并将 `OnSkip` 转发给视频的 `Ref.Seek`。声音仍由视频播放器播放。
 
 自定义树也可显示文字、视图、图片和 Canvas。捕获画面不支持 WebView、Metal 着色器和背景效果。动图和原生图层过渡显示其模型状态。需要动态内容时使用显式动画值。App Store 审核可能拒绝与视频无关的用途。
 

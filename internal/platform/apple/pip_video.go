@@ -97,7 +97,12 @@ func (v *Video) closePiPVideo() {
 	if f.layer != 0 {
 		f.layer.Send(sel("removeFromSuperlayer"))
 		f.layer.Send(sel("release"))
-		f.owner.Dirty()
+		if f.owner != nil {
+			f.owner.Dirty()
+		}
+		if f.wake != nil {
+			f.wake()
+		}
 	}
 	*f = pipVideo{owner: f.owner, wake: f.wake}
 }

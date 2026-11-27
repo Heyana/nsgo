@@ -217,3 +217,81 @@ func TestWebVideoPictureInPictureDoesNotEnableCustomContent(t *testing.T) {
 		}
 	}
 }
+
+func TestPictureInPictureDurationFuncAndVideoSubtitles(t *testing.T) {
+	var pipRef, videoRef Ref
+	var duration, position *Signal[time.Duration]
+	var paused *Signal[bool]
+	var subtitle *Signal[string]
+	h := newHost(t, Size{Width: 390, Height: 844}, func(cx *Scope) Node {
+		duration = NewSignal(cx, time.Duration(0))
+		position = NewSignal(cx, time.Duration(0))
+		paused = NewSignal(cx, false)
+		subtitle = NewSignal(cx, "Line one")
+		return View{Children: []Node{
+			PictureInPicture{
+				Ref: &pipRef, TestID: "pip", Size: Size{Width: 320, Height: 180},
+				PausedFunc: paused.Get, PositionFunc: position.Get, DurationFunc: duration.Get,
+				OnPlay:  func() { paused.Set(false) },
+				OnPause: func() { paused.Set(true) },
+				OnSkip: func(d time.Duration) {
+					next := max(position.Get()+d, 0)
+					if dur := duration.Get(); dur > 0 {
+						next = min(next, dur)
+					}
+					position.Set(next)
+					videoRef.Seek(next)
+				},
+				Children: []Node{
+					Video{
+						Ref: &videoRef, TestID: "pip-video", Source: "asset:film.mp4",
+						PausedFunc: paused.Get,
+						Style:      Style{Width: Pct(100), Height: Pct(100)},
+						OnLoad:     func(info VideoInfo) { duration.Set(info.Duration) },
+						OnProgress: func(pos, _ time.Duration) { position.Set(pos) },
+					},
+					Text{
+						TestID:      "pip-subtitle",
+						ContentFunc: subtitle.Get,
+						Style:       Style{Position: Absolute, Bottom: Pt(8), Left: Pt(8), Right: Pt(8)},
+					},
+				},
+			},
+		}}
+	})
+	h.tree.SetEnvironment(Environment{OS: OSIOS})
+	h.commit()
+	if pipRef.n.pip.config.Duration != 0 {
+		t.Fatalf("initial duration = %v, want 0", pipRef.n.pip.config.Duration)
+	}
+	if video := h.find("pip-video"); video.frame.Size != (Size{Width: 320, Height: 180}) {
+		t.Fatalf("pip video frame = %+v, want 320x180", video.frame)
+	}
+	// Video load feeds DurationFunc dynamically without remounting PiP.
+	h.tree.Dispatch(driver.Event{Kind: driver.EventLoad, ID: videoRef.n.id, Duration: 90 * time.Second})
+	h.tree.Dispatch(driver.Event{Kind: driver.EventProgress, ID: videoRef.n.id, Time: 12 * time.Second, Duration: 90 * time.Second})
+	subtitle.Set("Line two")
+	b := h.commit()
+	if got := pipRef.n.pip.config; got.Duration != 90*time.Second || got.Position != 12*time.Second {
+		t.Fatalf("pip config = %+v, want duration 90s and position 12s", got)
+	}
+	if got := h.find("pip-subtitle").text.content; got != "Line two" {
+		t.Fatalf("subtitle = %q, want Line two", got)
+	}
+	var updated bool
+	for _, it := range b.Items {
+		if it.Kind == driver.ItemPictureInPicture && it.ID == pipRef.n.id && it.PictureInPicture.Duration == 90*time.Second {
+			updated = true
+		}
+	}
+	if !updated {
+		t.Fatal("DurationFunc update did not emit ItemPictureInPicture")
+	}
+	// Negative duration/position clamp to zero.
+	duration.Set(-5 * time.Second)
+	position.Set(-2 * time.Second)
+	h.commit()
+	if got := pipRef.n.pip.config; got.Duration != 0 || got.Position != 0 {
+		t.Fatalf("negative duration/position not clamped: %+v", got)
+	}
+}

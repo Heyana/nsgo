@@ -975,6 +975,9 @@ func (s *surface) observe() {
 			if state == driver.LifecycleBackground {
 				s.wakePictureInPictures()
 			} else if name == "UIApplicationWillEnterForegroundNotification" {
+				for _, v := range s.pips {
+					v.pip.ResetBackgroundStop()
+				}
 				s.stopPictureInPictureTimer()
 				s.dirtyPictureInPictures()
 			}
@@ -1584,6 +1587,7 @@ func (s *surface) apply(b *driver.MountBatch) {
 		case driver.ItemPictureInPicture:
 			if v.pip == nil {
 				v.pip = apple.NewPictureInPicture(0, v.report)
+				v.pip.OnWake = s.wakePictureInPictures
 				s.pips = append(s.pips, v)
 				if layer := v.pip.Layer(); layer != 0 {
 					// AVKit needs an inline source attached to a window. The content

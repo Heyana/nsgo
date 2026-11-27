@@ -17,10 +17,15 @@ import (
 // main thread mutates it. The sample playback delegate reads an atomic
 // snapshot, so AVKit never waits for the engine while it is suspended.
 type PictureInPicture struct {
+	// OnWake schedules the host's custom PiP frame clock after AVKit starts
+	// or resizes a session.
+	OnWake func()
+
 	events                      atomic.Pointer[pipEvents]
 	controller, delegate, layer objc.ID
 	state                       driver.PictureInPictureState
 	automatic                   bool // the controller supports and has enabled automatic inline entry
+	backgroundStopped           bool // user or system stopped PiP since the app last entered foreground
 	snapshot                    atomic.Pointer[driver.PictureInPictureConfig]
 	custom, starting, closing   bool
 	observing                   bool
@@ -42,6 +47,13 @@ var pipDelegateClass objc.Class
 type cmTimeRange struct {
 	_               structs.HostLayout
 	Start, Duration cmTime
+}
+
+// cmVideoDimensions is CoreMedia's CMVideoDimensions, passed by value to
+// AVPictureInPictureSampleBufferPlaybackDelegate's render-size callback.
+type cmVideoDimensions struct {
+	_             structs.HostLayout
+	Width, Height int32
 }
 
 func pictureInPictureSupported() bool {
@@ -140,7 +152,16 @@ func (p *PictureInPicture) ContinuesInBackground() bool {
 	if p.state.Active || p.starting || objc.Send[bool](p.controller, sel("isPictureInPictureActive")) {
 		return true
 	}
-	return p.automatic && objc.Send[bool](p.controller, sel("isPictureInPicturePossible"))
+	return p.automatic && !p.backgroundStopped && objc.Send[bool](p.controller, sel("isPictureInPicturePossible"))
+}
+
+// ResetBackgroundStop re-arms automatic background continuation after the app returns to the foreground.
+func (p *PictureInPicture) ResetBackgroundStop() { p.backgroundStopped = false }
+
+func (p *PictureInPicture) wake() {
+	if !p.closing && p.OnWake != nil {
+		p.OnWake()
+	}
 }
 
 // HoldAudio holds the shared audio session in the playback category PiP needs while the session lives, paused or not: mixing with other apps' audio for AudioSessionMixWithOthers, which a video asks for, and pausing it otherwise.
@@ -208,6 +229,7 @@ func (p *PictureInPicture) Command(command uint32) {
 			return
 		}
 		p.state.Error = ""
+		p.backgroundStopped = false
 		p.starting = true
 		p.controller.Send(sel("startPictureInPicture"))
 	case driver.PictureInPictureStop:
@@ -296,20 +318,28 @@ func registerPiPDelegate() {
 		}},
 		{Cmd: sel("pictureInPictureControllerWillStartPictureInPicture:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {
 			if p := pipFor(self); p != nil {
+				p.backgroundStopped = false
 				p.starting = true
 				if p.closing {
 					p.controller.Send(sel("stopPictureInPicture"))
+				} else if p.custom {
+					p.wake()
 				}
 			}
 		}},
 		{Cmd: sel("pictureInPictureControllerDidStartPictureInPicture:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID) {
 			if p := pipFor(self); p != nil {
+				p.backgroundStopped = false
 				p.starting = false
 				p.state.Active = true
 				p.state.Error = ""
 				if p.closing {
 					p.controller.Send(sel("stopPictureInPicture"))
 				} else {
+					if p.custom {
+						p.Dirty()
+						p.wake()
+					}
 					p.report()
 				}
 			}
@@ -318,6 +348,7 @@ func registerPiPDelegate() {
 			if p := pipFor(self); p != nil {
 				p.starting = false
 				p.state.Active = false
+				p.backgroundStopped = true
 				if p.closing {
 					p.release()
 				} else {
@@ -375,7 +406,12 @@ func registerPiPDelegate() {
 			}
 			callPiPBlock(block)
 		}},
-		{Cmd: sel("pictureInPictureController:didTransitionToRenderSize:"), Fn: func(objc.ID, objc.SEL, objc.ID, CGSize) {}},
+		{Cmd: sel("pictureInPictureController:didTransitionToRenderSize:"), Fn: func(self objc.ID, _ objc.SEL, _ objc.ID, _ cmVideoDimensions) {
+			if p := pipFor(self); p != nil && p.custom && !p.closing {
+				p.Dirty()
+				p.wake()
+			}
+		}},
 	})
 }
 

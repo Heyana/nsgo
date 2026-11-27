@@ -80,7 +80,7 @@ func (p *PictureInPicture) DrawFrame(tree objc.ID, scale float64) bool {
 	c := p.snapshot.Load()
 	w := min(max(int(math.Ceil(float64(c.Size.Width)*scale)), 1), 2048)
 	h := min(max(int(math.Ceil(float64(c.Size.Height)*scale)), 1), 2048)
-	sample, err := sampleOfLayer(tree, w, h, float64(c.Size.Width), float64(c.Size.Height), c.Position)
+	sample, err := sampleOfLayer(tree, w, h, float64(c.Size.Width), float64(c.Size.Height), clampPiPPosition(c.Position, c.Duration))
 	p.framePending = false
 	if err != nil {
 		p.fail(err.Error())
@@ -144,6 +144,18 @@ func sampleOfLayer(layer objc.ID, w, h int, pointsW, pointsH float64, position t
 	return sample, nil
 }
 
+// clampPiPPosition keeps the display layer's timebase within [0, duration] for
+// finite playback, as AVPictureInPictureSampleBufferPlaybackDelegate requires.
+func clampPiPPosition(position, duration time.Duration) time.Duration {
+	if position < 0 {
+		position = 0
+	}
+	if duration > 0 && position > duration {
+		return duration
+	}
+	return position
+}
+
 func (p *PictureInPicture) configureTimebase(c driver.PictureInPictureConfig) {
 	sampleOnce.Do(loadSamples)
 	if p.timebase == 0 {
@@ -153,7 +165,7 @@ func (p *PictureInPicture) configureTimebase(c driver.PictureInPictureConfig) {
 		}
 		p.layer.Send(sel("setControlTimebase:"), p.timebase)
 	}
-	cmTimebaseSetTime(p.timebase, cmTimeOf(c.Position))
+	cmTimebaseSetTime(p.timebase, cmTimeOf(clampPiPPosition(c.Position, c.Duration)))
 	rate := float64(1)
 	if c.Paused {
 		rate = 0

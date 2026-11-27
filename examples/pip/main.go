@@ -16,12 +16,12 @@ func main() { nsgo.Run(Root, nsgo.WindowSize(420, 640)) }
 
 func Root(cx *core.Scope) core.Node {
 	const clip = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
-	const clipDuration = 5055 * time.Millisecond
 	video, script, captionVideo := &core.Ref{}, &core.Ref{}, &core.Ref{}
 	videoState := core.NewSignal(cx, core.PictureInPictureState{})
 	scriptState := core.NewSignal(cx, mobile.PictureInPictureState{})
 	scriptPaused := core.NewSignal(cx, false)
 	scriptPosition := core.NewSignal(cx, time.Duration(0))
+	scriptDuration := core.NewSignal(cx, time.Duration(0))
 	text := core.NewSignal(cx, "Welcome to the live stream")
 	line := core.NewSignal(cx, 1)
 	status := func(s core.PictureInPictureState) string {
@@ -57,17 +57,23 @@ func Root(cx *core.Scope) core.Node {
 			ui.Button{Text: "Stop script PiP", OnPress: script.StopPictureInPicture},
 		}},
 		mobile.PictureInPicture{Ref: script, Size: core.Size{Width: 320, Height: 180}, OnState: scriptState.Set, TestID: "caption-pip",
-			PausedFunc: scriptPaused.Get, PositionFunc: scriptPosition.Get, Duration: clipDuration,
+			PausedFunc: scriptPaused.Get, PositionFunc: scriptPosition.Get, DurationFunc: scriptDuration.Get,
 			OnPlay: func() { scriptPaused.Set(false) }, OnPause: func() { scriptPaused.Set(true) },
 			OnSkip: func(d time.Duration) {
-				position := min(max(scriptPosition.Get()+d, 0), clipDuration)
+				position := max(scriptPosition.Get()+d, 0)
+				if duration := scriptDuration.Get(); duration > 0 {
+					position = min(position, duration)
+				}
 				scriptPosition.Set(position)
 				captionVideo.Seek(position)
 			},
 			Children: []core.Node{
 				core.Video{Ref: captionVideo, Source: clip, PausedFunc: scriptPaused.Get, Muted: true, Repeat: true, TestID: "caption-video",
 					ResizeMode: core.Cover, Style: core.Style{Width: core.Pct(100), Height: core.Pct(100)},
-					OnProgress: func(position, _ time.Duration) { scriptPosition.Set(position) }},
+					OnLoad:     func(info core.VideoInfo) { scriptDuration.Set(info.Duration) },
+					OnProgress: func(position, _ time.Duration) { scriptPosition.Set(position) },
+					OnPlay:     func() { scriptPaused.Set(false) },
+					OnPause:    func(core.VideoPauseReason) { scriptPaused.Set(true) }},
 				core.View{Style: core.Style{
 					Position: core.Absolute, Bottom: core.Pt(0), Left: core.Pt(0), Right: core.Pt(0),
 					Padding: core.All(12), Gap: 4, Background: core.RGBA(0x172033, .85), Color: core.RGB(0xffffff),

@@ -36,18 +36,15 @@ func (s *surface) wakePictureInPictures() {
 	if s.closed || len(s.pips) == 0 {
 		return
 	}
-	background := appLifecycle() == driver.LifecycleBackground
+	lifecycle := appLifecycle()
 	for _, v := range s.pips {
-		if v.pip.Layer() == 0 {
-			continue
-		}
-		if !background {
+		switch choosePiPWake(s.closed, lifecycle, v.pip.Layer() != 0, v.pip.ContinuesInBackground()) {
+		case pipWakeDisplayLink:
 			s.pipFramePending = true
 			s.startTicking()
 			return
-		}
-		if v.pip.ContinuesInBackground() {
-			s.schedulePictureInPictureFrame(time.Second / 60)
+		case pipWakeBackgroundTimer:
+			s.schedulePictureInPictureFrame(pipBackgroundFrameInterval)
 			return
 		}
 	}
@@ -67,7 +64,7 @@ func (s *surface) schedulePictureInPictureFrame(delay time.Duration) {
 			s.pipTimer = nil
 			start := time.Now()
 			if appLifecycle() == driver.LifecycleBackground && s.drawPictureInPictures() {
-				s.schedulePictureInPictureFrame(max(time.Second/60-time.Since(start), time.Millisecond))
+				s.schedulePictureInPictureFrame(nextPiPBackgroundDelay(time.Since(start)))
 			}
 		})
 	})
