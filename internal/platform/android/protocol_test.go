@@ -3,6 +3,7 @@ package android
 import (
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/constant"
 	"go/importer"
 	"go/parser"
@@ -101,7 +102,13 @@ func driverProtocolConstants(t *testing.T) *types.Package {
 	testhost.RequireSource(t)
 	fset := token.NewFileSet()
 	dir := filepath.Join("..", "..", "driver")
-	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool { return !strings.HasSuffix(fi.Name(), "_test.go") }, 0)
+	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
+		if strings.HasSuffix(fi.Name(), "_test.go") {
+			return false
+		}
+		ok, err := build.Default.MatchFile(dir, fi.Name())
+		return err == nil && ok
+	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
