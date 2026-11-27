@@ -704,14 +704,17 @@ func (c *registryChecker) planAgainstNSGoRelease(ctx context.Context, scratchDir
 		return err
 	}
 	m := &addModule{
-		dir:   scratchDir,
-		goCmd: c.goCmd,
-		env:   c.env,
+		dir:     scratchDir,
+		cwd:     scratchDir,
+		goCmd:   c.goCmd,
+		env:     c.env,
+		listEnv: c.env,
 	}
 	req := addRequest{
-		path:    entry.Module,
-		version: entry.targetQuery(),
-		typed:   entry.Version != "",
+		path:            entry.Module,
+		version:         entry.targetQuery(),
+		typed:           entry.Version != "",
+		registryLicense: entry.License,
 	}
 	plan, err := m.plan(ctx, []addRequest{req})
 	if err != nil {
@@ -1152,6 +1155,9 @@ func addZipProxyModule(t *testing.T, proxyDir, modPath, version, zipGoMod, proxy
 		allFiles = map[string]string{}
 	}
 	allFiles["go.mod"] = zipGoMod
+	if _, ok := allFiles["LICENSE"]; !ok {
+		allFiles["LICENSE"] = licenseFixtureText(t, "MIT")
+	}
 	writeFiles(t, srcDir, allFiles)
 
 	escPath, err := module.EscapePath(modPath)
@@ -1391,7 +1397,7 @@ linux:
 			"nsgo-module.yaml":      "version: 1\nimport:\n  - .\n  - sub\ntargets:\n  - macos_arm64\n  - linux_x64\n  - windows_x64\nnotes: Works on desktop targets.\n",
 			"chart.go":              "package chart\n\nimport \"github.com/nsgo-dev/nsgo/core\"\n\nfunc Node() core.Node { return nil }\n",
 			"sub/sub.go":            "package sub\n\nfunc Name() string { return \"sub\" }\n",
-			"sub/LICENSE":           "MIT\n",
+			"sub/LICENSE":           licenseFixtureText(t, "MIT"),
 			"sub/nsgo-natives.yaml": validNatives,
 		},
 	)

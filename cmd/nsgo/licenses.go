@@ -34,6 +34,19 @@ type licensePackage struct {
 	DepOnly, Standard     bool
 	Module                *licenseModule
 	EmbedFiles            []string
+	Error                 *struct{ Err string }
+}
+
+type licenseDocument struct {
+	filename string
+	data     []byte
+}
+
+type licenseClassification struct {
+	types    []string
+	copyleft []string
+	unknown  []string
+	docs     []licenseDocument
 }
 
 type licenseSource struct {
@@ -81,35 +94,48 @@ func (p *project) licenseNoticesFile(ctx context.Context, target string, env, ta
 	return p.cacheFile("notices", ".go", source)
 }
 
-func (p *project) listLicenseSources(ctx context.Context, target string, env, tags, flags []string, overlay string, sources map[string]*licenseSource) (bool, error) {
-	args := append([]string{"list", "-deps", "-json=ImportPath,Dir,Root,DepOnly,Standard,Module,EmbedFiles"}, flags...)
-	if p.testBinary {
-		args = append(args, "-test")
-	}
+// listLicensePackages runs go list -deps with goCmd in dir using fullEnv, tags, flags and overlay over pkgs, returning the decoded packages.
+func listLicensePackages(ctx context.Context, goCmd, dir string, fullEnv, tags, flags []string, overlay string, pkgs []string) ([]licensePackage, error) {
+	args := append([]string{"list", "-deps", "-json=ImportPath,Dir,Root,DepOnly,Standard,Module,EmbedFiles,Error"}, flags...)
 	args = append(args, tagsArgs(tags)...)
 	if overlay != "" {
 		args = append(args, "-overlay", overlay)
 	}
-	cmd := exec.CommandContext(ctx, "go", append(args, ".")...)
-	cmd.Dir = p.Dir
-	cmd.Env = append(os.Environ(), env...)
+	cmd := exec.CommandContext(ctx, goCmd, append(args, pkgs...)...)
+	cmd.Dir = dir
+	cmd.Env = fullEnv
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return false, fmt.Errorf("list linked packages for license notices: %w\n%s", err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("list linked packages for license notices: %w\n%s", err, strings.TrimSpace(stderr.String()))
 	}
-
-	var hasCore bool
+	var listed []licensePackage
 	dec := json.NewDecoder(bytes.NewReader(out))
 	for {
 		var pkg licensePackage
 		if err := dec.Decode(&pkg); err != nil {
 			if errors.Is(err, io.EOF) {
-				return hasCore, nil
+				return listed, nil
 			}
-			return false, fmt.Errorf("decode linked packages for license notices: %w", err)
+			return nil, fmt.Errorf("decode linked packages for license notices: %w", err)
 		}
+		listed = append(listed, pkg)
+	}
+}
+
+func (p *project) listLicenseSources(ctx context.Context, target string, env, tags, flags []string, overlay string, sources map[string]*licenseSource) (bool, error) {
+	listFlags := slices.Clone(flags)
+	if p.testBinary {
+		listFlags = append(listFlags, "-test")
+	}
+	pkgs, err := listLicensePackages(ctx, "go", p.Dir, append(os.Environ(), env...), tags, listFlags, overlay, []string{"."})
+	if err != nil {
+		return false, err
+	}
+
+	var hasCore bool
+	for _, pkg := range pkgs {
 		if pkg.Standard && pkg.Root != "" {
 			if sources["Go"] == nil {
 				label := "Go runtime and standard library"
@@ -143,9 +169,14 @@ func (p *project) listLicenseSources(ctx context.Context, target string, env, ta
 			return false, err
 		}
 	}
+	return hasCore, nil
 }
 
 func addLicensePackage(sources map[string]*licenseSource, pkg licensePackage) {
+	addLicensePackageWith(sources, pkg, true)
+}
+
+func addLicensePackageWith(sources map[string]*licenseSource, pkg licensePackage, rootFirstParty bool) {
 	module := pkg.Module
 	source := sources[module.Path]
 	if source == nil {
@@ -171,7 +202,7 @@ func addLicensePackage(sources map[string]*licenseSource, pkg licensePackage) {
 		source = &licenseSource{name: module.Path, label: label, root: root, dirs: map[string]bool{root: true}}
 		sources[module.Path] = source
 	}
-	source.firstParty = source.firstParty || !pkg.DepOnly || module.Main
+	source.firstParty = source.firstParty || module.Main || (rootFirstParty && !pkg.DepOnly)
 	source.addDirs(pkg.Dir)
 	for _, file := range pkg.EmbedFiles {
 		source.addDirs(filepath.Join(pkg.Dir, filepath.Dir(file)))
@@ -196,9 +227,48 @@ func (source *licenseSource) addDirs(dir string) {
 	}
 }
 
-func (p *project) renderLicenseNotices(ctx context.Context, sources map[string]*licenseSource, env []string) (string, error) {
+// classifyLicenseSource reads and classifies every license document of source with the build's classifier.
+func classifyLicenseSource(source *licenseSource) (licenseClassification, error) {
 	classifier, err := licenseClassifier()
 	if err != nil {
+		return licenseClassification{}, err
+	}
+	files, err := source.licenseFiles()
+	if err != nil {
+		return licenseClassification{}, fmt.Errorf("read licenses for %s: %w", source.name, err)
+	}
+	types := map[string]bool{}
+	var result licenseClassification
+	for _, path := range slices.Sorted(maps.Keys(files)) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return licenseClassification{}, fmt.Errorf("read license for %s: %w", source.name, err)
+		}
+		rel, _ := filepath.Rel(source.root, path)
+		filename := filepath.ToSlash(rel)
+		known := false
+		for _, match := range classifier.Match(data).Matches {
+			if match.MatchType == "License" {
+				types[match.Name] = true
+				known = true
+			}
+		}
+		if files[path] && !known {
+			result.unknown = append(result.unknown, filename)
+		}
+		result.docs = append(result.docs, licenseDocument{filename: filename, data: data})
+	}
+	result.types = slices.Sorted(maps.Keys(types))
+	for _, id := range result.types {
+		if copyleftLicense(id) {
+			result.copyleft = append(result.copyleft, id)
+		}
+	}
+	return result, nil
+}
+
+func (p *project) renderLicenseNotices(ctx context.Context, sources map[string]*licenseSource, env []string) (string, error) {
+	if _, err := licenseClassifier(); err != nil {
 		return "", err
 	}
 	var out strings.Builder
@@ -228,58 +298,32 @@ func (p *project) renderLicenseNotices(ctx context.Context, sources map[string]*
 		source := sources[name]
 		var section strings.Builder
 		section.WriteString("\n" + source.label + "\n" + strings.Repeat("-", len(source.label)) + "\n")
-		types := map[string]bool{}
-		var unknown []string
-		var documents int
-		files, err := source.licenseFiles()
+		classified, err := classifyLicenseSource(source)
 		if err != nil {
-			return "", fmt.Errorf("read licenses for %s: %w", source.name, err)
+			return "", err
 		}
-		for _, path := range slices.Sorted(maps.Keys(files)) {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return "", fmt.Errorf("read license for %s: %w", source.name, err)
-			}
-			rel, _ := filepath.Rel(source.root, path)
-			filename := filepath.ToSlash(rel)
-			known := false
-			for _, match := range classifier.Match(data).Matches {
-				if match.MatchType == "License" {
-					types[match.Name] = true
-					known = true
-				}
-			}
-			if files[path] && !known {
-				unknown = append(unknown, filename)
-			}
-			fmt.Fprintf(&section, "\n%s\n\n", filename)
-			section.Write(data)
-			documents++
-			if !bytes.HasSuffix(data, []byte("\n")) {
+		for _, doc := range classified.docs {
+			fmt.Fprintf(&section, "\n%s\n\n", doc.filename)
+			section.Write(doc.data)
+			if !bytes.HasSuffix(doc.data, []byte("\n")) {
 				section.WriteByte('\n')
 			}
 		}
-		if source.firstParty && documents == 0 {
+		if source.firstParty && len(classified.docs) == 0 {
 			continue
 		}
-		if !source.firstParty && (len(types) == 0 || len(unknown) > 0) {
+		if !source.firstParty && (len(classified.types) == 0 || len(classified.unknown) > 0) {
 			reason := "has no recognized license text"
-			if len(unknown) > 0 {
-				reason = "has unrecognized license text in " + strings.Join(unknown, ", ")
+			if len(classified.unknown) > 0 {
+				reason = "has unrecognized license text in " + strings.Join(classified.unknown, ", ")
 			}
 			if err := reportLicense(ctx, p.Licenses, source.name, "unknown", reason); err != nil {
 				violations = append(violations, err)
 			}
 			section.WriteString("License identification incomplete.\n")
 		}
-		var copyleft []string
-		for _, id := range slices.Sorted(maps.Keys(types)) {
-			if copyleftLicense(id) {
-				copyleft = append(copyleft, id)
-			}
-		}
-		if len(copyleft) > 0 && !source.firstParty {
-			if err := reportLicense(ctx, p.Licenses, source.name, "copyleft", "has copyleft license text ("+strings.Join(copyleft, ", ")+")"); err != nil {
+		if len(classified.copyleft) > 0 && !source.firstParty {
+			if err := reportLicense(ctx, p.Licenses, source.name, "copyleft", "has copyleft license text ("+strings.Join(classified.copyleft, ", ")+")"); err != nil {
 				violations = append(violations, err)
 			}
 		}

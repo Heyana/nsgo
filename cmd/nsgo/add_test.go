@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/licenseclassifier/v2/assets"
 	"golang.org/x/mod/module"
 )
 
@@ -85,30 +86,41 @@ func addProxyModule(t *testing.T, dir, path, version, gomod string, files map[st
 	}
 }
 
+// licenseFixtureText reads a pristine license text from the license classifier's embedded assets.
+func licenseFixtureText(t *testing.T, id string) string {
+	t.Helper()
+	data, err := assets.ReadLicenseFile("License/" + id + "/pristine.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
 // libraryProxy is a module proxy holding a stand-in NSGo at the releases v0.3.4 and v0.4.0 and at a commit after them, and the modules the tests add.
 func libraryProxy(t *testing.T) string {
 	t.Helper()
 	proxy := t.TempDir()
+	mit := licenseFixtureText(t, "MIT")
 	addNSGoVersion(t, proxy, "v0.3.4", stubNSGoMod, stubNSGo)
 	addNSGoVersion(t, proxy, "v0.4.0", stubNSGoMod, stubNSGo)
 	addNSGoVersion(t, proxy, "v0.4.1-0.20261125111955-8d716d9b939c", stubNSGoMod, stubNSGo)
-	addProxyModule(t, proxy, "example.com/dep", "v1.0.0", "module example.com/dep\n\ngo 1.26\n", map[string]string{"dep.go": "package dep\n"})
+	addProxyModule(t, proxy, "example.com/dep", "v1.0.0", "module example.com/dep\n\ngo 1.26\n", map[string]string{"dep.go": "package dep\n", "LICENSE": mit})
 	addProxyModule(t, proxy, "github.com/acme/chart", "v1.2.0", "module github.com/acme/chart\n\ngo 1.27.3\n\nrequire (\n\texample.com/dep v1.0.0\n\tgithub.com/nsgo-dev/nsgo v0.4.0\n)\n",
-		map[string]string{"chart.go": "package chart\n\nimport _ \"example.com/dep\"\n"})
+		map[string]string{"chart.go": "package chart\n\nimport _ \"example.com/dep\"\n", "LICENSE": mit})
 	addProxyModule(t, proxy, "github.com/acme/media", "v0.1.0", "module github.com/acme/media\n\ngo 1.27.3\n\nrequire github.com/nsgo-dev/nsgo v0.4.1-0.20261125111955-8d716d9b939c\n",
-		map[string]string{"player/player.go": "package player\n"})
-	addProxyModule(t, proxy, "example.com/newgo", "v1.0.0", "module example.com/newgo\n\ngo 1.99\n", map[string]string{"newgo.go": "package newgo\n"})
-	addProxyModule(t, proxy, "example.com/old", "v1.0.0", "module example.com/old\n\ngo 1.26\n", map[string]string{"old.go": "package old\n"})
+		map[string]string{"player/player.go": "package player\n", "LICENSE": mit})
+	addProxyModule(t, proxy, "example.com/newgo", "v1.0.0", "module example.com/newgo\n\ngo 1.99\n", map[string]string{"newgo.go": "package newgo\n", "LICENSE": mit})
+	addProxyModule(t, proxy, "example.com/old", "v1.0.0", "module example.com/old\n\ngo 1.26\n", map[string]string{"old.go": "package old\n", "LICENSE": mit})
 	// The notice's second line stays out of the plan, as go get leaves it out.
-	addProxyModule(t, proxy, "example.com/old", "v1.1.0", "// Deprecated: use example.com/new\n// instead, which is maintained.\nmodule example.com/old\n\ngo 1.26\n\nretract v1.0.0 // broken build\n", map[string]string{"old.go": "package old\n"})
+	addProxyModule(t, proxy, "example.com/old", "v1.1.0", "// Deprecated: use example.com/new\n// instead, which is maintained.\nmodule example.com/old\n\ngo 1.26\n\nretract v1.0.0 // broken build\n", map[string]string{"old.go": "package old\n", "LICENSE": mit})
 	// Notices with an escape that would hide the rest of the plan in a terminal.
-	addProxyModule(t, proxy, "example.com/sneaky", "v1.0.0", "module example.com/sneaky\n\ngo 1.26\n", map[string]string{"sneaky.go": "package sneaky\n"})
-	addProxyModule(t, proxy, "example.com/sneaky", "v1.1.0", "// Deprecated: fine\x1b[8m\n// second line\nmodule example.com/sneaky\n\ngo 1.26\n\nretract v1.0.0 // broken\x1b[8m\n", map[string]string{"sneaky.go": "package sneaky\n"})
-	addProxyModule(t, proxy, "example.com/std", "v1.0.0", "module example.com/std\n\ngo 1.26\n", map[string]string{"std.go": "package std\n\nimport _ \"strings\"\n"})
-	addProxyModule(t, proxy, "github.com/acme/edge", "v0.0.0-20260101000000-abcdefabcdef", "module github.com/acme/edge\n\ngo 1.27\n", map[string]string{"edge.go": "package edge\n"})
-	addProxyModule(t, proxy, "example.com/lib", "v1.2.0", "module example.com/lib\n\ngo 1.26\n", map[string]string{"lib.go": "package lib\n"})
-	addProxyModule(t, proxy, "example.com/lib", "v1.3.0-rc.1", "module example.com/lib\n\ngo 1.26\n", map[string]string{"lib.go": "package lib\n"})
-	addProxyModule(t, proxy, "example.com/cmdonly", "v1.0.0", "module example.com/cmdonly\n\ngo 1.26\n", map[string]string{"cmd/tool/main.go": "package main\n\nfunc main() {}\n"})
+	addProxyModule(t, proxy, "example.com/sneaky", "v1.0.0", "module example.com/sneaky\n\ngo 1.26\n", map[string]string{"sneaky.go": "package sneaky\n", "LICENSE": mit})
+	addProxyModule(t, proxy, "example.com/sneaky", "v1.1.0", "// Deprecated: fine\x1b[8m\n// second line\nmodule example.com/sneaky\n\ngo 1.26\n\nretract v1.0.0 // broken\x1b[8m\n", map[string]string{"sneaky.go": "package sneaky\n", "LICENSE": mit})
+	addProxyModule(t, proxy, "example.com/std", "v1.0.0", "module example.com/std\n\ngo 1.26\n", map[string]string{"std.go": "package std\n\nimport _ \"strings\"\n", "LICENSE": mit})
+	addProxyModule(t, proxy, "github.com/acme/edge", "v0.0.0-20260101000000-abcdefabcdef", "module github.com/acme/edge\n\ngo 1.27\n", map[string]string{"edge.go": "package edge\n", "LICENSE": mit})
+	addProxyModule(t, proxy, "example.com/lib", "v1.2.0", "module example.com/lib\n\ngo 1.26\n", map[string]string{"lib.go": "package lib\n", "LICENSE": mit})
+	addProxyModule(t, proxy, "example.com/lib", "v1.3.0-rc.1", "module example.com/lib\n\ngo 1.26\n", map[string]string{"lib.go": "package lib\n", "LICENSE": mit})
+	addProxyModule(t, proxy, "example.com/cmdonly", "v1.0.0", "module example.com/cmdonly\n\ngo 1.26\n", map[string]string{"cmd/tool/main.go": "package main\n\nfunc main() {}\n", "LICENSE": mit})
 	return proxy
 }
 
@@ -205,6 +217,8 @@ func TestAddPlansAndAppliesWhatGoGetWrites(t *testing.T) {
 	const want = `github.com/acme/chart
   module     github.com/acme/chart v1.2.0, published 2026-01-01
   owner      github.com/acme, the first module from it in go.mod
+  licenses   github.com/acme/chart: MIT
+             example.com/dep: MIT
   next       import "github.com/acme/chart"
 
 example.com/app
@@ -245,12 +259,14 @@ func TestAddPlanShowsNotices(t *testing.T) {
   owner      example.com
   retracted  broken build
   deprecated use example.com/new
+  licenses   example.com/old: MIT
   next       import "example.com/old"
 
 github.com/acme/edge
   module     github.com/acme/edge v0.0.0-20260101000000-abcdefabcdef, published 2026-01-01
   owner      github.com/acme, the first module from it in go.mod
   untagged   v0.0.0-20260101000000-abcdefabcdef is a commit with no release tag
+  licenses   github.com/acme/edge: MIT
   next       import "github.com/acme/edge"
 
 example.com/tool
@@ -315,7 +331,11 @@ func TestAddPlanReplacedModuleWithoutPackage(t *testing.T) {
 	offlineAdd(t, libraryProxy(t))
 	dir := t.TempDir()
 	local := filepath.Join(t.TempDir(), "cmdonly")
-	writeFiles(t, local, map[string]string{"go.mod": "module example.com/cmdonly\n\ngo 1.26\n", "cmd/tool/main.go": "package main\n\nfunc main() {}\n"})
+	writeFiles(t, local, map[string]string{
+		"go.mod":           "module example.com/cmdonly\n\ngo 1.26\n",
+		"cmd/tool/main.go": "package main\n\nfunc main() {}\n",
+		"LICENSE":          licenseFixtureText(t, "MIT"),
+	})
 	writeFiles(t, dir, map[string]string{"go.mod": "module example.com/tool\n\ngo 1.26\n\nreplace example.com/cmdonly => " + filepath.ToSlash(local) + "\n"})
 	plan, err := planAdd(t, dir, "example.com/cmdonly@v1.0.0")
 	if err != nil {
@@ -325,6 +345,7 @@ func TestAddPlanReplacedModuleWithoutPackage(t *testing.T) {
   module     example.com/cmdonly v1.0.0
   owner      example.com
   replaced   go.mod replaces it with ` + filepath.ToSlash(local) + `, which builds use instead
+  licenses   example.com/cmdonly: MIT
 
 example.com/tool
   go.mod     + require example.com/cmdonly v1.0.0 // indirect
@@ -861,6 +882,7 @@ components:
   controls: ui/controls
   player-bar: ui/playerbar
 `,
+			"LICENSE":                 licenseFixtureText(t, "MIT"),
 			"player/player.go":        "package player\n",
 			"player/ui/ui.go":         "package ui\n",
 			"ui/controls/controls.go": "package controls\n",
@@ -879,6 +901,7 @@ components:
 	const want = `github.com/acme/av
   module     github.com/acme/av v1.0.0, published 2026-01-01
   owner      github.com/acme, the first module from it in go.mod
+  licenses   github.com/acme/av: MIT
   targets    lacks android_arm64, web
   components controls: nsgo add github.com/acme/av#controls
              player-bar: nsgo add github.com/acme/av#player-bar
@@ -925,6 +948,7 @@ func TestAddPlanWithModuleManifestDotAndBuildConstrained(t *testing.T) {
 		"module example.com/flags\n\ngo 1.26\n",
 		map[string]string{
 			"nsgo-module.yaml": "version: 1\nimport: [., catalog]\ncomponents:\n  picker: ui/picker\n",
+			"LICENSE":          licenseFixtureText(t, "MIT"),
 			"flags.go":         "package flags\n",
 			"catalog/cat.go":   "//go:build plan9\n\npackage catalog\n",
 			"ui/picker/p.go":   "//go:build plan9\n\npackage picker\n",

@@ -36,9 +36,10 @@ type addOptions struct {
 
 // addRequest is a module named on nsgo add's command line: its path, the version typed after @ (else the index entry's version or the query upgrade, which takes the newest release and never lowers a version), and the bare index name it was resolved from when named by one.
 type addRequest struct {
-	path, version string
-	typed         bool
-	fromName      string
+	path, version   string
+	typed           bool
+	fromName        string
+	registryLicense string // SPDX expression from a registry entry, when added by name
 }
 
 // parseAddRequests reads nsgo add's arguments, resolving bare names in NSGo's built-in index.
@@ -93,7 +94,7 @@ func parseAddRequestsWithIndex(args []string, idx *registryIndex) ([]addRequest,
 			} else {
 				version = "upgrade"
 			}
-			req = addRequest{path: item.Module, version: version, typed: hasVersion, fromName: spec}
+			req = addRequest{path: item.Module, version: version, typed: hasVersion, fromName: spec, registryLicense: item.License}
 		} else {
 			return nil, fmt.Errorf("add: %q is not a module path or listed name with an optional @version", arg)
 		}
@@ -204,20 +205,27 @@ func askToApply(ctx context.Context) (bool, error) {
 // addModule is the module nsgo add plans in, and how its go commands run.
 type addModule struct {
 	dir string // the module's root, which holds go.mod
+	cwd string // the working directory where nsgo add was invoked
 	// goCmd is the go command of the toolchain the module selects, which runs with GOTOOLCHAIN=local, so planning downloads and runs no other toolchain.
 	goCmd string
-	// env is every go command's environment: the user's, with GOWORK=off, GOTOOLCHAIN=local, the toolchain's GOROOT and GOPROXY up to its first direct, which becomes off, so only modules GOPRIVATE or GONOPROXY marks are fetched from their own hosts.
+	// env is every planning go command's environment: the user's, with GOWORK=off, GOTOOLCHAIN=local, the toolchain's GOROOT and GOPROXY up to its first direct, which becomes off, so only modules GOPRIVATE or GONOPROXY marks are fetched from their own hosts.
 	env []string
+	// listEnv is env without forcing GOWORK=off when the module is under a go.work, so target listing through -overlay runs in the workspace as nsgo build does.
+	listEnv []string
+	// goFlags is the module's GOFLAGS from go env.
+	goFlags string
 	// workspace is the go.work the module is under, which planning leaves out, as GOWORK=off go get does.
 	workspace string
 	// sumDB, noSumDB and noProxy are GOSUMDB, GONOSUMDB and GONOPROXY, the last two GOPRIVATE when unset.
 	sumDB, noSumDB, noProxy string
-	// appTargets are the expanded build.targets of the app's nsgo.yaml, when one is present.
-	appTargets []string
 }
 
 // findAddModule finds the module holding the working directory, its toolchain's go command, and the settings planning keeps.
 func findAddModule(ctx context.Context) (*addModule, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("add: %w", err)
+	}
 	// The one go command without GOWORK=off, which reports where the module and its workspace are and, with the local toolchain, switches to none a go.work names.
 	found, err := goEnvValues(ctx, "go", ".", append(os.Environ(), "GOTOOLCHAIN=local"), "GOMOD", "GOWORK")
 	if err != nil {
@@ -226,24 +234,13 @@ func findAddModule(ctx context.Context) (*addModule, error) {
 	if found["GOMOD"] == "" || found["GOMOD"] == os.DevNull {
 		return nil, fmt.Errorf("add: not in a module: run %s add in the module that takes the library", nsgoCommand())
 	}
-	m := &addModule{dir: filepath.Dir(found["GOMOD"])}
+	m := &addModule{dir: filepath.Dir(found["GOMOD"]), cwd: cwd}
 	if w := found["GOWORK"]; w != "off" {
 		m.workspace = w
 	}
-	if proj, err := load("."); err == nil {
-		m.appTargets = proj.Build.Targets
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("add: %w", err)
-	} else if wd, wdErr := filepath.Abs("."); wdErr == nil && wd != m.dir {
-		if proj, err := load(m.dir); err == nil {
-			m.appTargets = proj.Build.Targets
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("add: %w", err)
-		}
-	}
 	alone := append(os.Environ(), "GOWORK=off")
 	// The go found on PATH reports the GOROOT of the toolchain the module selects, switching to it as any command in the module would.
-	vars, err := goEnvValues(ctx, "go", m.dir, alone, "GOROOT", "GOPROXY", "GOSUMDB", "GONOSUMDB", "GONOPROXY")
+	vars, err := goEnvValues(ctx, "go", m.dir, alone, "GOROOT", "GOPROXY", "GOSUMDB", "GONOSUMDB", "GONOPROXY", "GOFLAGS")
 	if err != nil {
 		return nil, fmt.Errorf("add: %w", err)
 	}
@@ -255,7 +252,14 @@ func findAddModule(ctx context.Context) (*addModule, error) {
 		return nil, fmt.Errorf("add: the module's toolchain has no go command: %w", err)
 	}
 	// GOROOT is the toolchain's own, as the go command sets it for a toolchain it switches to: a GOROOT the user exported, such as another toolchain's, would have this go command read that tree's standard library.
-	m.env = append(alone, "GOTOOLCHAIN=local", "GOROOT="+vars["GOROOT"], "GOPROXY="+initModuleProxy(vars["GOPROXY"]))
+	common := []string{"GOTOOLCHAIN=local", "GOROOT=" + vars["GOROOT"], "GOPROXY=" + initModuleProxy(vars["GOPROXY"])}
+	m.env = append(alone, common...)
+	if m.workspace != "" {
+		m.listEnv = append(os.Environ(), common...)
+	} else {
+		m.listEnv = m.env
+	}
+	m.goFlags = vars["GOFLAGS"]
 	m.sumDB, m.noSumDB, m.noProxy = vars["GOSUMDB"], vars["GONOSUMDB"], vars["GONOPROXY"]
 	return m, nil
 }
@@ -321,14 +325,13 @@ func goMessages(stderr string) string {
 
 // goListModule is what go list -m -json prints of a module, as far as the plan reads it.
 type goListModule struct {
-	Path, Version string
-	Dir           string
-	Time          *time.Time
-	Update        *goListModule
-	Replace       *goListModule
-	Retracted     []string
-	Deprecated    string
-	Error         *struct{ Err string }
+	Path, Version, Dir string
+	Time               *time.Time
+	Update             *goListModule
+	Replace            *goListModule
+	Retracted          []string
+	Deprecated         string
+	Error              *struct{ Err string }
 }
 
 // listModules runs go list -m -e -json on paths with flags, and returns what it printed of each path.
@@ -368,6 +371,7 @@ func (m *addModule) packageNames(ctx context.Context, flags []string, paths []st
 // addPlan is what nsgo add would write: go.mod and go.sum as go get writes them for the requests, with what each request resolved to, and why any of it is refused.
 type addPlan struct {
 	m       *addModule
+	app     *addAppConfig
 	items   []addItem
 	already []module.Version // requests go.mod required already, which change nothing
 
@@ -381,8 +385,10 @@ type addItem struct {
 	addRequest
 	selected, initial string
 	listed            goListModule
+	modDir            string
 	packageName       string
 	manifest          *moduleManifest
+	inspection        *addItemInspection
 }
 
 // importable reports whether the item's module has a root package an app imports.
@@ -410,6 +416,9 @@ var tooNewGo = regexp.MustCompile(`(\S+) requires go >= (\S+) \(running go`)
 func (m *addModule) plan(ctx context.Context, reqs []addRequest) (*addPlan, error) {
 	p := &addPlan{m: m}
 	var err error
+	if p.app, err = loadAddAppConfig(m.cwd, m.dir); err != nil {
+		return nil, err
+	}
 	if p.oldMod, err = os.ReadFile(filepath.Join(m.dir, "go.mod")); err != nil {
 		return nil, fmt.Errorf("add: %w", err)
 	}
@@ -519,7 +528,7 @@ func (m *addModule) plan(ctx context.Context, reqs []addRequest) (*addPlan, erro
 		}
 		if item.listed.Error == nil {
 			modDir := item.listed.Dir
-			if modDir == "" && item.listed.Replace != nil {
+			if item.listed.Replace != nil && item.listed.Replace.Dir != "" {
 				modDir = item.listed.Replace.Dir
 			}
 			if modDir == "" && item.selected != "" {
@@ -530,6 +539,7 @@ func (m *addModule) plan(ctx context.Context, reqs []addRequest) (*addPlan, erro
 					}
 				}
 			}
+			item.modDir = modDir
 			if modDir != "" {
 				manifest, err := readModuleManifest(modDir, item.path, currentNSGo)
 				if err != nil {
@@ -547,6 +557,9 @@ func (m *addModule) plan(ctx context.Context, reqs []addRequest) (*addPlan, erro
 			}
 		}
 		p.items = append(p.items, item)
+	}
+	if err := p.inspect(ctx, tmp); err != nil {
+		return nil, err
 	}
 	return p, nil
 }
@@ -585,6 +598,13 @@ func (p *addPlan) refusal() error {
 		}
 		if item.initial != "" && semver.Compare(item.selected, item.initial) < 0 && !(item.typed && item.version == item.selected) {
 			reasons = append(reasons, fmt.Sprintf("%s@%s is %s, below the %s this module has: %s add %s@%s lowers it on purpose", item.path, item.version, item.selected, item.initial, nsgoCommand(), item.path, item.selected))
+		}
+		if item.inspection != nil {
+			for _, reason := range item.inspection.refusals {
+				if !slices.Contains(reasons, reason) {
+					reasons = append(reasons, reason)
+				}
+			}
 		}
 	}
 	old, moved := requiredVersion(p.before, nsgoModule), requiredVersion(p.after, nsgoModule)
@@ -690,9 +710,28 @@ func (p *addPlan) write(w io.Writer) error {
 		if r := item.listed.Replace; r != nil {
 			row("replaced", "go.mod replaces it with "+strings.TrimSpace(r.Path+" "+r.Version)+", which builds use instead")
 		}
-		if missing := item.manifest.missingTargets(p.m.appTargets); len(missing) > 0 {
-			row("targets", "lacks "+strings.Join(missing, ", "))
+		var targetLines []string
+		if p.app != nil {
+			if missing := item.manifest.missingTargets(p.app.appTargets); len(missing) > 0 {
+				targetLines = append(targetLines, "lacks "+strings.Join(missing, ", "))
+			}
 		}
+		if insp := item.inspection; insp != nil {
+			var licenseLines []string
+			for _, m := range insp.modules {
+				licenseLines = append(licenseLines, formatModuleLicenseLine(m))
+			}
+			for _, n := range insp.natives {
+				if line := formatNativePolicyLine(n); line != "" {
+					licenseLines = append(licenseLines, line)
+				}
+			}
+			rows("licenses", licenseLines)
+			for _, tr := range insp.targets {
+				targetLines = append(targetLines, formatTargetLines(tr)...)
+			}
+		}
+		rows("targets", targetLines)
 		if comps := item.manifest.componentNames(); len(comps) > 0 {
 			lines := make([]string, len(comps))
 			cmd := nsgoCommand()

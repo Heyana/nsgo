@@ -208,6 +208,8 @@ Bare names (without a dot in their first segment) resolve only in NSGo's built-i
 github.com/acme/chart
   module     github.com/acme/chart v1.3.0, published 2026-11-20
   owner      github.com/acme, the first module from it in go.mod
+  licenses   github.com/acme/chart: MIT
+             example.com/units: MIT
   next       import "github.com/acme/chart"
 
 example.com/hello
@@ -219,7 +221,7 @@ example.com/hello
 Apply these changes? [y/N]
 ```
 
-For each module, the plan names its version and publication date, and its owner: the host, and on a code host such as github.com the account, marked when `go.mod` has no module from it yet. Retraction and deprecation notices, a version with no release tag, a `replace` of the module and the import line of its root package follow when they apply. When a module ships an [`nsgo-module.yaml`](authoring/shipping.md#module-manifest), the plan uses its declared `import` packages, names any of the app's `build.targets` its `targets` lack, lists its `components` with their `nsgo add <module>#<name>` commands, and prints the author's `notes` last and marked. Then come the lines of `go.mod` that change, `go` and `toolchain` included, the `go tool` commands that would run another version, the modules fetched from their own hosts and those `go.sum` takes unchecked by the checksum database. `go get` marks a module no package imports yet `// indirect`, and `go mod tidy` drops the mark once one does.
+For each module, the plan names its version and publication date, and its owner: the host, and on a code host such as github.com the account, marked when `go.mod` has no module from it yet. Retraction and deprecation notices, a version with no release tag, a `replace` of the module, the classified licenses of every module and native library it brings in (noting when a registry license differs from what was detected), each target's native libraries with their licenses and download hosts, any package that does not build for a target (such as when build constraints exclude every file), and the import line of its root package follow when they apply. Target inspection runs for each of the app's expanded `build.targets`, or the host's target without `nsgo.yaml`. When a module ships an [`nsgo-module.yaml`](authoring/shipping.md#module-manifest), the plan uses its declared `import` packages, names any of the app's `build.targets` its `targets` lack, lists its `components` with their `nsgo add <module>#<name>` commands, and prints the author's `notes` last and marked. Then come the lines of `go.mod` that change, `go` and `toolchain` included, the `go tool` commands that would run another version, the modules fetched from their own hosts and those `go.sum` takes unchecked by the checksum database. `go get` marks a module no package imports yet `// indirect`, and `go mod tidy` drops the mark once one does.
 
 In a terminal, `add` asks before writing, and `-y` applies the plan without asking; without a terminal and without `-y`, it writes nothing and exits with status 1. An interrupt, such as Ctrl+C, leaves `go.mod` and `go.sum` as they were and exits with status 130. A module `go.mod` already requires is left as it is, its version printed, unless a version is typed.
 
@@ -227,13 +229,14 @@ Planning runs nothing but the go command, on copies of `go.mod` and `go.sum`:
 
 - with the toolchain the module already uses and `GOTOOLCHAIN=local`, so no other toolchain is downloaded or run;
 - through the module proxies `GOPROXY` lists before its first `direct`, which becomes `off`, so only the modules `GOPRIVATE` or `GONOPROXY` marks are fetched from their own hosts, with `GONOSUMDB` and `GOAUTH` as they are;
-- with `GOWORK=off`, so in a workspace it plans `go.mod` for the module alone, as `GOWORK=off go get` writes it, and says so.
+- with `GOWORK=off` for `go get`, so in a workspace it plans `go.mod` for the module alone, as `GOWORK=off go get` writes it, and says so; per-target package listing reads the planned `go.mod` and `go.sum` through `-overlay` with `-mod=readonly`, so it also runs in a workspace and ignores a `vendor` directory.
 
 Whether or not `-y` is given, `add` refuses:
 
 - moving NSGo's requirement to a pseudo-version or a pre-release, as a library that requires a commit of NSGo would; `go get github.com/nsgo-dev/nsgo@<version>` moves it there on purpose first;
 - a module that needs a newer Go than the module's toolchain; `go get go@<version>` raises the module's first;
-- lowering a module through a query such as `@latest`; typing the version lowers it, and the plan calls it a downgrade.
+- lowering a module through a query such as `@latest`; typing the version lowers it, and the plan calls it a downgrade;
+- a module or native library whose license fails the app's `licenses` policy (unrecognized or missing license text by default, or copyleft text under `licenses.copyleft: error`), naming the `licenses.allow` entry or `warn` setting for `nsgo.yaml`; `add` never edits the policy.
 
 It writes `go.mod` and `go.sum` only when neither has changed since planning, each through a temporary file renamed over it, and puts both back on an error or an interrupt. In a module with a `vendor` directory, the plan names `go mod vendor` as the next step.
 

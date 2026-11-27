@@ -176,6 +176,8 @@ nsgo add -dry-run github.com/acme/chart  # 只打印计划，什么也不写
 github.com/acme/chart
   module     github.com/acme/chart v1.3.0, published 2026-11-20
   owner      github.com/acme, the first module from it in go.mod
+  licenses   github.com/acme/chart: MIT
+             example.com/units: MIT
   next       import "github.com/acme/chart"
 
 example.com/hello
@@ -187,7 +189,7 @@ example.com/hello
 Apply these changes? [y/N]
 ```
 
-对每个模块，计划列出它的版本和发布日期，以及它的所有者：主机，在 github.com 这类代码托管站点上还有账号；`go.mod` 里还没有来自这个所有者的模块时会注明。适用时，接着列出撤回和弃用通知、没有发布标签的版本、对该模块的 `replace`，以及其根包的 import 行。若模块带有 [`nsgo-module.yaml`](authoring/shipping.md#模块清单)，计划会改用它声明的 `import` 包、列出应用 `build.targets` 中其 `targets` 缺少的目标、连同 `nsgo add <module>#<name>` 命令列出它的 `components`，并在计划最后按行标记打印作者的 `notes`。然后是 `go.mod` 中改变的行（包括 `go` 和 `toolchain` 行）、此后会运行另一个版本的 `go tool` 命令、从模块自己的主机获取的模块，以及 `go.sum` 收下却未经校验和数据库检查的模块。`go get` 会把还没有包导入的模块标为 `// indirect`，有包导入它之后，`go mod tidy` 会去掉这个标记。
+对每个模块，计划列出它的版本和发布日期，以及它的所有者：主机，在 github.com 这类代码托管站点上还有账号；`go.mod` 里还没有来自这个所有者的模块时会注明。适用时，接着列出撤回和弃用通知、没有发布标签的版本、对该模块的 `replace`、引入的每个模块和原生库经分类器识别出的许可证（若注册表声明的许可证与识别结果不一致也会注明）、每个目标的原生库及其许可证和下载主机、在某目标上无法构建的包（例如构建约束排除了全部文件），以及其根包的 import 行。目标检查覆盖应用展开后的 `build.targets`，没有 `nsgo.yaml` 时检查本机目标。若模块带有 [`nsgo-module.yaml`](authoring/shipping.md#模块清单)，计划会改用它声明的 `import` 包、列出应用 `build.targets` 中其 `targets` 缺少的目标、连同 `nsgo add <module>#<name>` 命令列出它的 `components`，并在计划最后按行标记打印作者的 `notes`。然后是 `go.mod` 中改变的行（包括 `go` 和 `toolchain` 行）、此后会运行另一个版本的 `go tool` 命令、从模块自己的主机获取的模块，以及 `go.sum` 收下却未经校验和数据库检查的模块。`go get` 会把还没有包导入的模块标为 `// indirect`，有包导入它之后，`go mod tidy` 会去掉这个标记。
 
 在终端中，`add` 写入前会先询问，`-y` 则不经询问直接应用计划；不在终端中又没有 `-y` 时，它什么也不写，并以状态 1 退出。以 Ctrl+C 等方式中断时，`go.mod` 和 `go.sum` 保持原样，并以状态 130 退出。`go.mod` 已经依赖的模块保持原样，只打印其版本，除非输入了版本。
 
@@ -195,13 +197,14 @@ Apply these changes? [y/N]
 
 - 使用模块已在用的工具链并设置 `GOTOOLCHAIN=local`，因此不会下载或运行其他工具链；
 - 只经由 `GOPROXY` 中第一个 `direct` 之前列出的模块代理获取，`direct` 改为 `off`，因此只有 `GOPRIVATE` 或 `GONOPROXY` 标记的模块从它们自己的主机获取，`GONOSUMDB` 和 `GOAUTH` 保持不变；
-- 设置 `GOWORK=off`，因此在工作区中，它只为这个模块本身规划 `go.mod`，与 `GOWORK=off go get` 写出的一致，并在计划中注明。
+- `go get` 设置 `GOWORK=off`，因此在工作区中，它只为这个模块本身规划 `go.mod`，与 `GOWORK=off go get` 写出的一致，并在计划中注明；按目标列出依赖包时通过 `-overlay` 和 `-mod=readonly` 读取规划中的 `go.mod` 与 `go.sum`，因此同样可在工作区中运行并忽略 `vendor` 目录。
 
 无论是否给出 `-y`，`add` 都会拒绝：
 
 - 把 NSGo 的依赖移到伪版本或预发布版本，依赖 NSGo 某个提交的库就会这样做；要有意这样做，先运行 `go get github.com/nsgo-dev/nsgo@<版本>`；
 - 需要比模块的工具链更新的 Go 的模块；先用 `go get go@<版本>` 提高模块的 Go 版本；
-- 经由 `@latest` 这样的查询降低模块的版本；输入具体版本才会降低，计划称之为降级。
+- 经由 `@latest` 这样的查询降低模块的版本；输入具体版本才会降低，计划称之为降级；
+- 模块或原生库的许可证不满足应用的 `licenses` 策略（默认拒绝未识别或缺失的许可证文本，`licenses.copyleft: error` 下拒绝著佐权许可证），并给出应在 `nsgo.yaml` 中添加的 `licenses.allow` 条目或 `warn` 设置；`add` 不会修改策略。
 
 只有在规划之后 `go.mod` 和 `go.sum` 都没有改变时，它才写入这两个文件，各自先写入临时文件再改名覆盖；出错或被中断时，两个文件都恢复原样。有 `vendor` 目录的模块，计划会把 `go mod vendor` 列为下一步。
 
