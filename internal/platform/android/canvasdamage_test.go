@@ -35,7 +35,7 @@ func encodedDrawingOps(d *driver.Drawing) []byte {
 func applyDrawingChange(d *driver.Drawing, op int, arg driver.DrawArg, num float64, col driver.Color) *driver.Drawing {
 	ops := append([]driver.DrawOp(nil), d.Ops...)
 	ops[op] = driver.DrawSlot{Op: op, Arg: arg}.Set(ops[op], num, col)
-	return &driver.Drawing{Ops: ops, Slots: d.Slots, Nodes: d.Nodes}
+	return &driver.Drawing{Ops: ops, Slots: d.Slots, Nodes: d.Nodes, Images: d.Images, Sprites: d.Sprites}
 }
 
 // TestAndroidCanvasDamageMatchesDriver compiles CanvasDamage.java and
@@ -420,7 +420,7 @@ public class CanvasDamageDriver {
 			}
 			continue
 		}
-		want, ok := driver.CanvasDamage(c.before.Ops, c.after.Ops)
+		want, ok := driver.CanvasDamage(c.before, c.before.Ops, c.after.Ops)
 		if !ok {
 			if f[2] != "FULL" {
 				t.Errorf("%s: Java returned %q, want FULL (matching driver.CanvasDamage)", c.name, line)
