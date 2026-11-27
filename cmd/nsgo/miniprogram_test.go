@@ -307,6 +307,9 @@ func TestMiniProgramAlipayAPI(t *testing.T) {
 		showActionSheet(o) { o.success({ index: o.items.length - 1 }) },
 		getClipboard(o) { o.success({ text: 'copied' }) },
 		chooseImage(o) { o.success({ apFilePaths: ['a.png', 'b.png'] }) },
+		loadFontFace(o) { this.lastFont = o; o.success({ status: 'loaded' }) },
+		createVideoContext(id) { return { id } },
+		getFileSystemManager() { return { readFileSync(o) { return { data: o.filePath + ':' + (o.encoding || 'bin') } }, writeFileSync() {} } },
 		request(o) {
 			this.lastReq = o
 			o.success({ status: 201, headers: { 'X-Ok': '1' }, data: 'hello' })
@@ -325,6 +328,9 @@ func TestMiniProgramAlipayAPI(t *testing.T) {
 		{"api.chooseMedia({ count: 2, success: (x) => (r = x.tempFiles.map((f) => f.tempFilePath).join()) }); r", "a.png,b.png"},
 		{"typeof api.chooseMessageFile", "undefined"},
 		{"typeof api.getStorageInfoSync", "function"},
+		{"let s; api.loadFontFace({ family: 'Demo', source: 'url(\"data:font/ttf;base64,AA==\")', global: true, desc: { style: 'normal', weight: '400' }, success: (x) => (s = x.status) }); [s, base.lastFont.family, base.lastFont.desc.weight, 'global' in base.lastFont].join(',')", "loaded,Demo,400,false"},
+		{"api.createVideoContext('nsgo-vd-7', {}).id", "nsgo-vd-7"},
+		{"api.getFileSystemManager().readFileSync('resources/a.ttf', 'base64')", "resources/a.ttf:base64"},
 		{"let res; const t = api.request({ url: 'http://127.0.0.1:8080/_nsgo/events', method: 'GET', header: { 'X-NSGo-Token': 'tok' }, responseType: 'arraybuffer', enableChunked: true, success: (x) => (res = x) }); t.abort(); [base.lastReq.headers['X-NSGo-Token'], base.lastReq.dataType, base.lastReq.enableChunked, res.statusCode, res.header['X-Ok'], res.data, t.aborted].join(',')", "tok,arraybuffer,true,201,1,hello,true"},
 	} {
 		v, err := vm.RunString(c.script)
@@ -382,12 +388,15 @@ pixels.release(42);
 pixels.buffer(42, 4).set([0, 0, 255, 255]);
 pixels.show(42, 1, 1);
 equal(painted[2], "0,0,255,255");
+// Tinting recolors opaque pixels and multiplies alpha.
+pixels.show(42, 1, 1, [200, 100, 50, 128]);
+equal(painted[3], "200,100,50,128");
 equal(allocations, 1);
 pixels.detach(42, canvas);
 pixels.show(42, 1, 1);
-equal(painted.length, 3);
+equal(painted.length, 4);
 equal(pixels.offscreen({ createOffscreenCanvas: () => canvas }, bytes, 1, 1), canvas);
-equal(painted[3], "0,255,0,255");
+equal(painted[4], "0,255,0,255");
 `
 	if _, err := vm.RunString(script); err != nil {
 		t.Fatal(err)
@@ -412,6 +421,105 @@ func TestMiniProgramImageTakesItsSampling(t *testing.T) {
 		if !strings.Contains(string(src), `style="{{node.im.s}}"`) {
 			t.Errorf("%s does not bind the image's style", name)
 		}
+	}
+}
+
+func TestMiniProgramRenderingOpsVideoAndTemplates(t *testing.T) {
+	// 1. tree.js carries tinted image mask CSS, selection highlights/handles, video config and video commands.
+	apply := runTree(t)
+	first := apply(`[
+		["c",1,"view"],["root",1],
+		["c",2,"image"],["i",1,2,null],
+		["im",2,"a.png","aspectFit","","background-color:rgba(255,0,0,1);mask-image:url(\"a.png\");"],
+		["c",3,"text"],["i",1,3,null],
+		["hl",3,{"c":"rgba(0,122,255,0.22)","r":[[0,0,50,12]]}],
+		["sh",1,{"c":"rgba(0,122,255,1)","s":[0,0,12],"e":[50,0,12]}],
+		["c",4,"video"],["i",1,4,null],
+		["vd",4,{"src":"/resources/clip.mp4","ap":true,"loop":false,"muted":true,"ctrl":true,"fit":"cover"}],
+		["vc",4,[1,[["rate",1.5],["seek",3],["play"]]]]
+	]`)
+	for _, want := range []string{
+		`"t":"background-color:rgba(255,0,0,1);mask-image:url(\"a.png\");"`,
+		`"hl":{"c":"rgba(0,122,255,0.22)","r":[[0,0,50,12]]}`,
+		`"sh":{"c":"rgba(0,122,255,1)","s":[0,0,12],"e":[50,0,12]}`,
+		`"vd":{"src":"/resources/clip.mp4","ap":true,"loop":false,"muted":true,"ctrl":true,"fit":"cover"}`,
+		`"vc":[1,[["rate",1.5],["seek",3],["play"]]]`,
+	} {
+		if !strings.Contains(first, want) {
+			t.Fatalf("tree payload missing %s in %s", want, first)
+		}
+	}
+
+	// 2. video.js executes queued VideoContext commands in order.
+	vm := goja.New()
+	module := vm.NewObject()
+	vm.Set("module", module)
+	vm.Set("require", func(call goja.FunctionCall) goja.Value {
+		switch call.Argument(0).String() {
+		case "./config.js":
+			return vm.ToValue(map[string]any{"platform": "wechat"})
+		case "./api.js":
+			return vm.ToValue(map[string]any{
+				"globalOf": func() any { return nil },
+				"apiOf":    func() any { return nil },
+			})
+		}
+		return goja.Undefined()
+	})
+	src, err := miniprogramRuntime.ReadFile("miniprogram/common/nsgo/video.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := vm.RunString(string(src)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := vm.RunString(`
+		const log = [];
+		const comp = { tag: 'c' };
+		const api = {
+			createVideoContext(id, c) {
+				log.push('ctx:' + id + ':' + (c === comp));
+				return {
+					playbackRate(r) { log.push('rate:' + r); },
+					seek(s) { log.push('seek:' + s); },
+					play() { log.push('play'); },
+					pause() { log.push('pause'); },
+				};
+			},
+		};
+		if (!module.exports.run(9, comp, [['rate', 1.25], ['seek', 4.5], ['play'], ['pause']], api)) {
+			throw new Error('video.run returned false');
+		}
+		const got = log.join(',');
+		if (got !== 'ctx:nsgo-vd-9:true,rate:1.25,seek:4.5,play,pause') {
+			throw new Error('got ' + got);
+		}
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. All 4 mini-program platforms emit video.js and valid tint, selection, and <video> markup.
+	for _, mp := range miniProgramPlatforms {
+		t.Run(mp.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p := &project{Dir: t.TempDir(), Name: "Demo", ID: "dev.demo"}
+			if err := writeMiniProgram(p, mp, dir, []byte("module")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "nsgo", "video.js")); err != nil {
+				t.Fatalf("missing nsgo/video.js: %v", err)
+			}
+			markupBytes, err := os.ReadFile(filepath.Join(dir, "components", "nsgo-node", "index."+mp.markup))
+			if err != nil {
+				t.Fatal(err)
+			}
+			markup := string(markupBytes)
+			for _, want := range []string{"tint-mask", "node.im.t", "<video", "nsgo-vd-{{node.id}}", "sel-rect", "sel-handle", "onSelHandle", "onVideoPlay", "onVideoPause", "onVideoEnd", "onVideoTime", "onVideoError"} {
+				if !strings.Contains(markup, want) {
+					t.Errorf("%s markup missing %q", mp.name, want)
+				}
+			}
+		})
 	}
 }
 

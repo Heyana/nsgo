@@ -176,3 +176,91 @@ func layoutTransitionCSS(tr *driver.LayoutTransition) string {
 	timing := fmt.Sprintf(" %gms %s %gms", float64(dur)/1e6, easing, float64(tr.Delay)/1e6)
 	return "left" + timing + ",top" + timing + ",width" + timing + ",height" + timing
 }
+
+var maskURLEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\a `)
+
+func maskURLValue(url string) string {
+	return `url("` + maskURLEscaper.Replace(url) + `")`
+}
+
+func positionAxisCSS(a driver.PositionAxis) string {
+	off := a.Resolve(0)
+	pct := a.Resolve(100) - off
+	switch {
+	case off == 0:
+		return fmt.Sprintf("%g%%", pct)
+	case pct == 0:
+		return webstyle.Px(off)
+	default:
+		return fmt.Sprintf("calc(%g%% + %s)", pct, webstyle.Px(off))
+	}
+}
+
+// imageInlineCSS builds the inline CSS for an untinted <image> element.
+func imageInlineCSS(c *driver.ImageConfig) string {
+	var parts []string
+	if c.BlurRadius > 0 {
+		parts = append(parts, "filter:blur("+webstyle.Px(c.BlurRadius)+")")
+	}
+	if s := samplingCSS(c.Sampling); s != "" {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, ";")
+}
+
+// imageTintCSS builds the inline CSS for a tinted image view's mask layer,
+// painting TintColor through the image's alpha mask so no untinted pixels leak.
+func imageTintCSS(v *view, maskURL string) string {
+	c := v.image
+	if c == nil || v.style.TintColor == 0 || maskURL == "" {
+		return ""
+	}
+	var out css
+	out.add("background-color", webstyle.Color(v.style.TintColor))
+	u := maskURLValue(maskURL)
+	out.add("mask-image", u)
+	out.add("-webkit-mask-image", u)
+	out.add("mask-repeat", "no-repeat")
+	out.add("-webkit-mask-repeat", "no-repeat")
+
+	natural := c.Source.Size
+	if natural.Width <= 0 || natural.Height <= 0 {
+		natural = v.imageNatural
+	}
+	border := v.border()
+	box := driver.Size{
+		Width:  max(0, v.frame.Size.Width-border.Left-border.Right),
+		Height: max(0, v.frame.Size.Height-border.Top-border.Bottom),
+	}
+	if natural.Width > 0 && natural.Height > 0 && box.Width > 0 && box.Height > 0 {
+		fit := c.ResizeMode.Fit(natural, box, c.Position)
+		size := webstyle.Px(fit.Size.Width) + " " + webstyle.Px(fit.Size.Height)
+		pos := webstyle.Px(fit.Origin.X) + " " + webstyle.Px(fit.Origin.Y)
+		out.add("mask-size", size)
+		out.add("-webkit-mask-size", size)
+		out.add("mask-position", pos)
+		out.add("-webkit-mask-position", pos)
+	} else {
+		size := "cover"
+		switch c.ResizeMode {
+		case driver.Contain, driver.ScaleDown:
+			size = "contain"
+		case driver.Stretch:
+			size = "100% 100%"
+		case driver.Center:
+			size = "auto"
+		}
+		pos := positionAxisCSS(c.Position.X) + " " + positionAxisCSS(c.Position.Y)
+		out.add("mask-size", size)
+		out.add("-webkit-mask-size", size)
+		out.add("mask-position", pos)
+		out.add("-webkit-mask-position", pos)
+	}
+	if c.BlurRadius > 0 {
+		out.add("filter", "blur("+webstyle.Px(c.BlurRadius)+")")
+	}
+	if c.Sampling == driver.ImageSamplingNearest {
+		out.add("image-rendering", "pixelated")
+	}
+	return out.String()
+}

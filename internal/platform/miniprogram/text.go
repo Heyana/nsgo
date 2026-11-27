@@ -118,10 +118,18 @@ type runStyle struct {
 	size          driver.Points
 	lineHeight    driver.Points
 	letterSpacing driver.Points
+	ascent        driver.Points
+	descent       driver.Points
+	xHeight       driver.Points
+	capHeight     driver.Points
 	hidden        bool
 }
 
-func newRunStyle(t driver.TextStyle) runStyle {
+type fontMetrics struct {
+	ascent, descent, xHeight, capHeight driver.Points
+}
+
+func (e *TextEngine) newRunStyle(t driver.TextStyle) runStyle {
 	css := fontCSS(t.Font) + "color:" + webstyle.Color(t.Color) + ";"
 	if t.Decoration != 0 {
 		css += "text-decoration:" + webstyle.Decoration(t.Decoration) + " " + webstyle.DecorationStyles[t.DecorationStyle]
@@ -140,37 +148,101 @@ func newRunStyle(t driver.TextStyle) runStyle {
 	if lh <= 0 {
 		lh = t.Font.Size * 1.2
 	}
+	font := canvasFont(t.Font)
+	fm := e.fontMetrics(font, t.Font.Language, t.Font.Size)
 	return runStyle{
-		font:          canvasFont(t.Font),
+		font:          font,
 		css:           css,
 		language:      t.Font.Language,
 		keepAll:       driver.KeepAllWords(t.Font.Language),
 		size:          t.Font.Size,
 		lineHeight:    lh,
 		letterSpacing: t.LetterSpacing,
+		ascent:        fm.ascent,
+		descent:       fm.descent,
+		xHeight:       fm.xHeight,
+		capHeight:     fm.capHeight,
 	}
 }
 
 // above is how far the baseline is below the top of the style's line box:
-// the glyphs sit around its middle, a baseline about 0.3 em below it.
-func (r *runStyle) above() driver.Points { return r.lineHeight/2 + 0.3*r.size }
+// ascent plus half-leading, matching CSS inline boxes (0.3 em below middle for
+// default 0.8/0.2 metrics).
+func (r *runStyle) above() driver.Points { return r.lineHeight/2 + (r.ascent-r.descent)/2 }
 
 // TextEngine is driver.TextEngine over a Measurer.
 type TextEngine struct {
-	m      Measurer
-	widths map[widthKey]driver.Points
+	m            Measurer
+	widths       map[widthKey]driver.Points
+	metricsCache map[metricsKey]fontMetrics
 }
 
 type widthKey struct{ font, language, text string }
+type metricsKey struct{ font, language string }
 
 // langMeasurer is optionally implemented by a Measurer that passes a BCP 47 language tag to the canvas context.
 type langMeasurer interface {
 	WidthLang(font, text, language string) float64
 }
 
+// metricsMeasurer is optionally implemented by a Measurer that reports the
+// canvas font's vertical metrics in points.
+type metricsMeasurer interface {
+	Metrics(font, language string) (ascent, descent, xHeight, capHeight float64, ok bool)
+}
+
 // NewTextEngine returns an engine measuring with m.
 func NewTextEngine(m Measurer) *TextEngine {
-	return &TextEngine{m: m, widths: map[widthKey]driver.Points{}}
+	return &TextEngine{
+		m:            m,
+		widths:       map[widthKey]driver.Points{},
+		metricsCache: map[metricsKey]fontMetrics{},
+	}
+}
+
+// ClearWidths drops cached glyph widths and font metrics after new fonts load.
+func (e *TextEngine) ClearWidths() {
+	clear(e.widths)
+	clear(e.metricsCache)
+}
+
+func (e *TextEngine) fontMetrics(font, language string, size driver.Points) fontMetrics {
+	def := fontMetrics{
+		ascent:    0.8 * size,
+		descent:   0.2 * size,
+		xHeight:   0.5 * size,
+		capHeight: 0.7 * size,
+	}
+	mm, ok := e.m.(metricsMeasurer)
+	if !ok {
+		return def
+	}
+	k := metricsKey{font, language}
+	if fm, cached := e.metricsCache[k]; cached {
+		return fm
+	}
+	if len(e.metricsCache) > 1<<10 {
+		clear(e.metricsCache)
+	}
+	asc, desc, xh, ch, ok := mm.Metrics(font, language)
+	if !ok || asc <= 0 || desc < 0 {
+		e.metricsCache[k] = def
+		return def
+	}
+	fm := fontMetrics{
+		ascent:    driver.Points(asc),
+		descent:   driver.Points(desc),
+		xHeight:   def.xHeight,
+		capHeight: def.capHeight,
+	}
+	if xh > 0 {
+		fm.xHeight = driver.Points(xh)
+	}
+	if ch > 0 {
+		fm.capHeight = driver.Points(ch)
+	}
+	e.metricsCache[k] = fm
+	return fm
 }
 
 // width is text's advance in style, its letter spacing included.
@@ -228,10 +300,10 @@ func (e *TextEngine) Prepare(t *driver.AttributedText) driver.PreparedText {
 	p := &prepared{e: e, t: *t}
 	// The text's style, then the spans' that differ: spans of one look,
 	// as a link in the text's, share it and their runs join.
-	p.styles = append(p.styles, newRunStyle(t.Style))
+	p.styles = append(p.styles, e.newRunStyle(t.Style))
 	spanStyle := make([]int, len(t.Spans))
 	for k, sp := range t.Spans {
-		st := newRunStyle(sp.Style)
+		st := e.newRunStyle(sp.Style)
 		st.hidden = sp.Hidden
 		spanStyle[k] = len(p.styles)
 		for i := range p.styles {
@@ -429,18 +501,17 @@ func (p *prepared) split(pc piece, maxWidth driver.Points) []piece {
 }
 
 // metrics returns a line's height and how far its baseline is below its
-// top: the runs' line boxes share the baseline, and an attachment
+// top: every line keeps its font strut on the baseline, and each attachment
 // reserves its extent around it.
 func (p *prepared) metrics(ln *line) (height, baseline driver.Points) {
 	var above, below driver.Points
 	for _, sg := range ln.segments {
 		st := &p.styles[sg.style]
+		above, below = max(above, st.above()), max(below, st.lineHeight-st.above())
 		if sg.attachment >= 0 {
 			a, b := p.t.Attachments[sg.attachment].Extent(p.extent(st))
 			above, below = max(above, a), max(below, b)
-			continue
 		}
-		above, below = max(above, st.above()), max(below, st.lineHeight-st.above())
 	}
 	if above+below <= 0 {
 		st := &p.styles[0]
@@ -451,7 +522,7 @@ func (p *prepared) metrics(ln *line) (height, baseline driver.Points) {
 
 // extent is the font around an attachment in st.
 func (p *prepared) extent(st *runStyle) driver.FontExtent {
-	return driver.FontExtent{Ascent: 0.8 * st.size, Descent: 0.2 * st.size, XHeight: 0.5 * st.size}
+	return driver.FontExtent{Ascent: st.ascent, Descent: st.descent, XHeight: st.xHeight}
 }
 
 // Measure implements driver.PreparedText. Widths round up, as native text
@@ -579,10 +650,10 @@ func (p *prepared) Layout(size driver.Size) driver.TextLayout {
 		if n := len(l.runs) - 1; n >= 0 {
 			l.runs[n].text = strings.TrimRightFunc(l.runs[n].text, unicode.IsSpace)
 		}
-		fs := p.styles[0].size
+		baseStyle := p.styles[0]
 		l.lines = append(l.lines, driver.TextLine{Start: ln.start, End: ln.end,
 			Bounds:   driver.Bounds{Origin: driver.Point{X: x, Y: y}, Size: driver.Size{Width: ln.trimmed, Height: h}},
-			Ascender: base, Descender: h - base, CapHeight: 0.7 * fs, XHeight: 0.5 * fs})
+			Ascender: base, Descender: h - base, CapHeight: baseStyle.capHeight, XHeight: baseStyle.xHeight})
 		y += h
 	}
 	l.carets.Set(func() driver.CaretLayout { return p.carets(lines, l.lines) })
@@ -611,11 +682,11 @@ func (p *prepared) backgrounds(l *TextLayout, sg segment, st *runStyle, line int
 			right = x + p.e.width(st, p.t.Text[sg.start:end])
 		}
 		right = min(right, lineEnd)
-		top, bottom := bg.VerticalBounds(st.size)
+		top, bottom := bg.VerticalBounds(st.ascent + st.descent)
 		if right <= left || bottom <= top {
 			continue
 		}
-		box := driver.Bounds{Origin: driver.Point{X: left, Y: baseline - 0.8*st.size + top},
+		box := driver.Bounds{Origin: driver.Point{X: left, Y: baseline - st.ascent + top},
 			Size: driver.Size{Width: right - left, Height: bottom - top}}
 		n := len(l.under) - 1
 		if n >= 0 && l.under[n].span == i && l.under[n].line == line &&

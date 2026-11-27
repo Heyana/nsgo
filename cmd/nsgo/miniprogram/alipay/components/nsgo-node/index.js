@@ -6,6 +6,7 @@
 // Keyframes do not run: Alipay's components have no animate.
 
 // The phases of a touch event, as Go numbers them.
+const video = require('../../nsgo/video.js')
 const PHASES = { touchstart: 0, touchmove: 1, touchend: 2, touchcancel: 3 }
 
 const fingers = (list) =>
@@ -33,6 +34,14 @@ const point = (e) => {
 
 Component({
   props: { node: null, onNsgo: () => {} },
+  didMount() {
+    const n = this.props.node
+    if (n && n.vc) this.videoCommand(n.vc)
+  },
+  didUpdate() {
+    const n = this.props.node
+    if (n && n.vc) this.videoCommand(n.vc)
+  },
   didUnmount() {
     if (this.scrollTimer) clearTimeout(this.scrollTimer)
   },
@@ -108,6 +117,42 @@ Component({
     },
     onError(e) {
       this.send('imgerror', this.id(), e.detail.errMsg || 'the image did not load')
+    },
+    onSelHandle(e) {
+      const phase = PHASES[String(e.type).toLowerCase()]
+      if (phase == null) return
+      const [x, y] = point(e)
+      const h = Number((e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.h) || 0)
+      this.send('selhandle', this.id(), h, phase, x || 0, y || 0)
+    },
+    videoCommand(vc) {
+      if (!Array.isArray(vc) || vc.length < 2 || vc[0] === this.lastVideoCmd) return
+      this.lastVideoCmd = vc[0]
+      video.run(this.id(), this, vc[1])
+    },
+    onVideoMeta(e) {
+      const d = e.detail || {}
+      this.send('vdmeta', this.id(), d.duration || 0, d.width || 0, d.height || 0)
+    },
+    onVideoPlay() {
+      this.send('vdplay', this.id())
+    },
+    onVideoPause() {
+      this.send('vdpause', this.id())
+    },
+    onVideoEnd() {
+      this.send('vdend', this.id())
+    },
+    onVideoTime(e) {
+      const d = e.detail || {}
+      this.send('vdtime', this.id(), d.currentTime || 0, d.duration || 0)
+    },
+    onVideoWait() {
+      this.send('vdwait', this.id())
+    },
+    onVideoError(e) {
+      const d = e.detail || {}
+      this.send('vderror', this.id(), d.errMsg || 'the video could not play')
     },
   },
 })

@@ -113,6 +113,23 @@ func (m *mounter) touch(id driver.NodeID, seq int, phase driver.GesturePhase, ch
 		return
 	}
 	t.event = seq
+	if phase == driver.GestureBegan && len(changed) > 0 && m.selecting != nil && !m.selHandleActive && !m.selDragging {
+		if !m.selectionContains(changed[0].page) {
+			m.clearSelection()
+			m.flush()
+		}
+	}
+	if m.selDragging {
+		switch phase {
+		case driver.GestureChanged:
+			if len(changed) > 0 {
+				m.selectDrag(changed[0].page)
+			}
+			return
+		case driver.GestureEnded, driver.GestureCancelled:
+			m.selDragging = false
+		}
+	}
 	v := m.view(id)
 	for _, f := range changed {
 		switch phase {

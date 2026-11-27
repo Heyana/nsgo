@@ -95,6 +95,7 @@ On 2026-11-22, the controls regression failed before the fixes and passed in Chr
 | Linux | A `GtkMediaStream` backed by GstPlay in a `GtkPicture` or a `GtkVideo` with controls. Rate changes seek from the current position and `scaletempo` preserves pitch. The stream paints through `gtk4paintablesink` when installed and through RGBA textures from `appsink` otherwise. If the libraries or pitch filter are absent, `GtkMediaFile` plays at 1× and reports `RateChangeable: false`. |
 | Android | `MediaPlayer` on a `TextureView`, with a `MediaController` for controls |
 | Web | A `<video>` element |
+| Mini programs | A `<video>` component driven through `createVideoContext` (`nsgo/video.js`), tracking playback ownership with `videoplay.State` |
 
 ## Native components
 

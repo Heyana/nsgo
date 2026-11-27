@@ -448,3 +448,129 @@ func TestKoreanBreaksBetweenWordsAndPicksLanguageFonts(t *testing.T) {
 		t.Errorf("Inter + ja family = %q, want Inter falling back to Hiragino Sans", got)
 	}
 }
+
+func TestAttachmentsOffBaselineAlignments(t *testing.T) {
+	e := NewTextEngine(&approx{})
+	att := string(driver.AttachmentRune)
+	// Font size 10, lineHeight 12 -> above=9, below=3, FontExtent{Ascent:8, Descent:2, XHeight:5}.
+	for _, tc := range []struct {
+		name      string
+		align     driver.VerticalAlign
+		height    driver.Points
+		descent   driver.Points
+		wantLineH driver.Points
+		wantTop   driver.Points
+		wantBase  driver.Points
+	}{
+		// Baseline with descent 5: Ascent=20-5=15, Extent=(15,5) -> line above=15, below=5, height=20, top=0.
+		{"baseline with descent", driver.VerticalAlignBaseline, 20, 5, 20, 0, 15},
+		// TextTop: Ascent=8, Extent=(8,12) -> line above=9, below=12, height=21, top=9-8=1.
+		{"text-top tall", driver.VerticalAlignTextTop, 20, 0, 21, 1, 9},
+		// TextBottom: Ascent=20-2=18, Extent=(18,2) -> line above=18, below=3, height=21, top=18-18=0.
+		{"text-bottom tall", driver.VerticalAlignTextBottom, 20, 0, 21, 0, 18},
+		// Middle: Ascent=(20+5)/2=12.5, Extent=(12.5,7.5) -> line above=12.5, below=7.5, height=20, top=0.
+		{"middle tall", driver.VerticalAlignMiddle, 20, 0, 20, 0, 12.5},
+		// Small text-top inside normal line: Ascent=8, Extent=(8,0) -> line keeps strut (9,3)=12, top=1.
+		{"text-top small", driver.VerticalAlignTextTop, 4, 0, 12, 1, 9},
+		// Small middle inside normal line: Ascent=(4+5)/2=4.5, Extent=(4.5,0) -> line keeps strut (9,3)=12, top=4.5.
+		{"middle small", driver.VerticalAlignMiddle, 4, 0, 12, 4.5, 9},
+		// Small text-bottom inside normal line: Ascent=4-2=2, Extent=(2,2) -> line keeps strut (9,3)=12, top=7 (bottom=11=base+2).
+		{"text-bottom small", driver.VerticalAlignTextBottom, 4, 0, 12, 7, 9},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at := plain("a" + att + "b")
+			at.Attachments = []driver.TextAttachment{{
+				Offset:  1,
+				Size:    driver.Size{Width: 10, Height: tc.height},
+				Align:   tc.align,
+				Descent: tc.descent,
+			}}
+			p := e.Prepare(at)
+			measured := p.Measure(200)
+			if measured.Height != tc.wantLineH {
+				t.Fatalf("Measure height = %v, want %v", measured.Height, tc.wantLineH)
+			}
+			l := p.Layout(driver.Size{Width: 200, Height: measured.Height}).(*TextLayout)
+			box, ok := l.Attachment(0)
+			if !ok {
+				t.Fatal("attachment not shown")
+			}
+			if box.Origin.X != 5 || box.Origin.Y != tc.wantTop || box.Size.Height != tc.height {
+				t.Fatalf("attachment box = %+v, want origin (5, %v) height %v", box, tc.wantTop, tc.height)
+			}
+			lines := l.TextLines()
+			if len(lines) != 1 || lines[0].Ascender != tc.wantBase || lines[0].Bounds.Size.Height != tc.wantLineH {
+				t.Fatalf("line = %+v, want baseline %v height %v", lines[0], tc.wantBase, tc.wantLineH)
+			}
+		})
+	}
+}
+
+func TestAttachmentOnlyLineKeepsFontStrut(t *testing.T) {
+	e := NewTextEngine(&approx{})
+	at := plain(string(driver.AttachmentRune))
+	at.Attachments = []driver.TextAttachment{{
+		Offset: 0,
+		Size:   driver.Size{Width: 8, Height: 4},
+		Align:  driver.VerticalAlignTextTop,
+	}}
+	p := e.Prepare(at)
+	size := p.Measure(100)
+	if size.Height != 12 {
+		t.Fatalf("attachment-only line height = %v, want 12 (font strut)", size.Height)
+	}
+	l := p.Layout(size).(*TextLayout)
+	box, ok := l.Attachment(0)
+	if !ok || box.Origin.Y != 1 {
+		t.Fatalf("attachment-only box = %+v (ok=%v), want top 1", box, ok)
+	}
+}
+
+type metricsStub struct {
+	approx
+	ascent, descent, xHeight, capHeight float64
+	metricCalls                         int
+}
+
+func (m *metricsStub) Metrics(_, _ string) (float64, float64, float64, float64, bool) {
+	m.metricCalls++
+	return m.ascent, m.descent, m.xHeight, m.capHeight, true
+}
+
+func TestMeasuredFontMetricsAndClearWidths(t *testing.T) {
+	m := &metricsStub{ascent: 9, descent: 3, xHeight: 6, capHeight: 8}
+	e := NewTextEngine(m)
+	at := plain("a" + string(driver.AttachmentRune))
+	at.Style.LineHeight = 14
+	at.Attachments = []driver.TextAttachment{{
+		Offset: 1,
+		Size:   driver.Size{Width: 10, Height: 6},
+		Align:  driver.VerticalAlignMiddle,
+	}}
+	// above = 14/2 + (9-3)/2 = 10; Middle Ascent = (6 + 6)/2 = 6 -> top = 10 - 6 = 4.
+	l := e.Prepare(at).Layout(driver.Size{Width: 100, Height: 20}).(*TextLayout)
+	box, ok := l.Attachment(0)
+	if !ok || box.Origin.Y != 4 {
+		t.Fatalf("measured metrics middle box = %+v (ok=%v), want top 4", box, ok)
+	}
+	if lines := l.TextLines(); len(lines) != 1 || lines[0].XHeight != 6 || lines[0].CapHeight != 8 {
+		t.Fatalf("TextLines = %+v, want XHeight 6 CapHeight 8", lines)
+	}
+
+	// Clearing widths after a font loads re-queries both metrics and widths.
+	beforeM, beforeW := m.metricCalls, m.calls
+	e.Prepare(at)
+	if m.metricCalls != beforeM || m.calls != beforeW {
+		t.Fatalf("cache miss before ClearWidths: metrics %d->%d widths %d->%d", beforeM, m.metricCalls, beforeW, m.calls)
+	}
+	m.ascent, m.descent, m.xHeight = 10, 2, 8
+	e.ClearWidths()
+	l2 := e.Prepare(at).Layout(driver.Size{Width: 100, Height: 20}).(*TextLayout)
+	if m.metricCalls == beforeM || m.calls == beforeW {
+		t.Fatalf("ClearWidths did not invalidate caches")
+	}
+	// New above = 14/2 + (10-2)/2 = 11; Middle Ascent = (6 + 8)/2 = 7 -> top = 11 - 7 = 4; XHeight = 8.
+	if lines := l2.TextLines(); len(lines) != 1 || lines[0].XHeight != 8 || lines[0].Ascender != 11 {
+		t.Fatalf("refreshed TextLines = %+v, want XHeight 8 Ascender 11", lines)
+	}
+}

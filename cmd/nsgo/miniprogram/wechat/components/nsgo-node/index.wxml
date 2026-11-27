@@ -156,15 +156,44 @@
   </view>
   <image
     wx:if="{{node.k === 'image' && node.im}}"
-    class="fill"
+    class="{{node.im.t ? 'fill tint-source' : 'fill'}}"
     style="{{node.im.s}}"
     src="{{node.im.src}}"
     mode="{{node.im.mode}}"
     bindload="onLoad"
     binderror="onError"
   />
+  <view
+    wx:if="{{node.k === 'image' && node.im && node.im.t}}"
+    class="fill tint-mask"
+    style="{{node.im.t}}"
+  />
+  <video
+    wx:if="{{node.k === 'video' && node.vd}}"
+    id="nsgo-vd-{{node.id}}"
+    class="fill"
+    src="{{node.vd.src}}"
+    autoplay="{{node.vd.ap}}"
+    loop="{{node.vd.loop}}"
+    muted="{{node.vd.muted}}"
+    controls="{{node.vd.ctrl}}"
+    object-fit="{{node.vd.fit}}"
+    show-center-play-btn="{{node.vd.ctrl}}"
+    show-play-btn="{{node.vd.ctrl}}"
+    show-progress="{{node.vd.ctrl}}"
+    show-fullscreen-btn="{{node.vd.ctrl}}"
+    enable-progress-gesture="{{node.vd.ctrl}}"
+    bindloadedmetadata="onVideoMeta"
+    bindplay="onVideoPlay"
+    bindpause="onVideoPause"
+    bindended="onVideoEnd"
+    bindtimeupdate="onVideoTime"
+    bindwaiting="onVideoWait"
+    binderror="onVideoError"
+  />
   <image wx:if="{{node.cv}}" class="fill" src="{{node.cv}}" mode="scaleToFill" />
   <view wx:for="{{node.t ? node.t.b : []}}" wx:for-item="b" class="span-background" style="{{m.background(node.t, b)}}" />
+  <view wx:for="{{node.hl ? node.hl.r : []}}" wx:for-item="h" class="sel-rect" style="{{m.selRect(node.hl, h)}}" />
   <text
     wx:for="{{node.t ? node.t.r : []}}"
     wx:for-item="r"
@@ -174,4 +203,30 @@
     aria-hidden="{{node.ax && (node.ax.l || node.ax.hd) ? 'true' : ''}}"
   >{{r[0]}}</text>
   <nsgo-node wx:for="{{node.c}}" wx:key="id" node="{{item}}" />
+  <block wx:if="{{node.sh}}">
+    <view
+      class="sel-handle sel-start"
+      data-h="0"
+      style="{{m.selHandle(node.sh.s)}}"
+      catchtouchstart="onSelHandle"
+      catchtouchmove="onSelHandle"
+      catchtouchend="onSelHandle"
+      catchtouchcancel="onSelHandle"
+    >
+      <view class="sel-knob sel-knob-top" style="{{m.selKnob(node.sh)}}" />
+      <view class="sel-bar" style="{{m.selBar(node.sh, node.sh.s)}}" />
+    </view>
+    <view
+      class="sel-handle sel-end"
+      data-h="1"
+      style="{{m.selHandle(node.sh.e)}}"
+      catchtouchstart="onSelHandle"
+      catchtouchmove="onSelHandle"
+      catchtouchend="onSelHandle"
+      catchtouchcancel="onSelHandle"
+    >
+      <view class="sel-bar" style="{{m.selBar(node.sh, node.sh.e)}}" />
+      <view class="sel-knob sel-knob-bottom" style="{{m.selKnob(node.sh)}}" />
+    </view>
+  </block>
 </view>

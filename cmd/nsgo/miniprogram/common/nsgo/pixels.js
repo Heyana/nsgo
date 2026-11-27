@@ -12,10 +12,11 @@ function buffer(id, length) {
   return frame.bytes
 }
 
-function show(id, width, height) {
+function show(id, width, height, tint) {
   const frame = frames.get(id)
   frame.width = width
   frame.height = height
+  frame.tint = Array.isArray(tint) && tint.length === 4 ? tint : null
   const target = canvases.get(id)
   if (target) paint(target, frame)
 }
@@ -62,11 +63,21 @@ function paint(target, frame) {
   }
   const rgba = target.data.data
   rgba.set(bytes)
-  // ImageData takes straight alpha. Go's image.RGBA is premultiplied.
-  for (let i = 0; i < rgba.length; i += 4) {
-    const alpha = rgba[i + 3]
-    if (alpha === 0 || alpha === 255) continue
-    for (let c = 0; c < 3; c++) rgba[i + c] = Math.min(Math.floor(rgba[i + c] * 255 / alpha), 255)
+  if (frame.tint) {
+    const [r, g, b, a] = frame.tint
+    for (let i = 0; i < rgba.length; i += 4) {
+      rgba[i] = r
+      rgba[i + 1] = g
+      rgba[i + 2] = b
+      rgba[i + 3] = Math.floor((rgba[i + 3] * a + 127) / 255)
+    }
+  } else {
+    // ImageData takes straight alpha. Go's image.RGBA is premultiplied.
+    for (let i = 0; i < rgba.length; i += 4) {
+      const alpha = rgba[i + 3]
+      if (alpha === 0 || alpha === 255) continue
+      for (let c = 0; c < 3; c++) rgba[i + c] = Math.min(Math.floor(rgba[i + c] * 255 / alpha), 255)
+    }
   }
   ctx.putImageData(target.data, 0, 0)
   return true

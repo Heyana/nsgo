@@ -19,6 +19,9 @@ type fakeHost struct {
 	ticks       int
 	pixelImages bool
 	pixelFrames []*image.RGBA
+	pixelTints  []driver.Color
+	clipboard   []string
+	maskURL     string
 	paints      []fakePaint
 }
 
@@ -29,13 +32,26 @@ func (h *fakeHost) submit(ops []byte) {
 	}
 	h.batches = append(h.batches, batch)
 }
-func (h *fakeHost) dispatch(ev driver.Event)           { h.events = append(h.events, ev) }
-func (h *fakeHost) service(it *driver.MountItem)       { h.services = append(h.services, it.Kind) }
-func (h *fakeHost) imageURL(driver.ImageSource) string { return "img" }
-func (h *fakeHost) supportsPixelImages() bool          { return h.pixelImages }
-func (h *fakeHost) imagePixels(_ driver.NodeID, pixels *image.RGBA) {
-	h.pixelFrames = append(h.pixelFrames, pixels)
+func (h *fakeHost) dispatch(ev driver.Event)     { h.events = append(h.events, ev) }
+func (h *fakeHost) service(it *driver.MountItem) { h.services = append(h.services, it.Kind) }
+func (h *fakeHost) imageURL(src driver.ImageSource) string {
+	if p, ok := strings.CutPrefix(src.URI, "asset:"); ok {
+		return "/resources/" + strings.TrimPrefix(p, "/")
+	}
+	return "img"
 }
+func (h *fakeHost) imageMaskURL(src driver.ImageSource) string {
+	if h.maskURL != "" {
+		return h.maskURL
+	}
+	return h.imageURL(src)
+}
+func (h *fakeHost) supportsPixelImages() bool { return h.pixelImages }
+func (h *fakeHost) imagePixels(_ driver.NodeID, pixels *image.RGBA, tint driver.Color) {
+	h.pixelFrames = append(h.pixelFrames, pixels)
+	h.pixelTints = append(h.pixelTints, tint)
+}
+func (h *fakeHost) setClipboard(text string) { h.clipboard = append(h.clipboard, text) }
 
 func (h *fakeHost) paint(_ driver.NodeID, _ []driver.DrawOp, _ driver.Size, scale float64, smooth bool) string {
 	h.paints = append(h.paints, fakePaint{scale, smooth})
@@ -478,5 +494,85 @@ func TestCanvasPaintsAtItsResolutionScale(t *testing.T) {
 	want := []fakePaint{{0.5, false}, {1, true}, {1, true}}
 	if !slices.Equal(h.paints, want) {
 		t.Fatalf("paints = %v, want %v", h.paints, want)
+	}
+}
+
+func TestImageTintColorEmitsMaskAndRefreshesOnLoadAndResize(t *testing.T) {
+	h := &fakeHost{pixelImages: true, maskURL: "data:image/png;base64,AAAA"}
+	m := newMounter(h)
+	m.mount(&driver.MountBatch{Root: 1, Items: []driver.MountItem{
+		{Kind: driver.ItemCreate, ID: 1, View: driver.KindImage},
+		frame(1, 0, 0, 100, 50),
+		{Kind: driver.ItemImage, ID: 1, Image: &driver.ImageConfig{
+			Source:     driver.ImageSource{URI: "https://example.com/icon.png"},
+			ResizeMode: driver.Contain,
+			Sampling:   driver.ImageSamplingNearest,
+		}},
+	}})
+	// Untinted image keeps the 4-argument op without mask CSS.
+	if got := h.ops("im"); len(got) != 1 || got[0] != `[1,"img","aspectFit","image-rendering:pixelated"]` {
+		t.Fatalf("untinted im = %v", got)
+	}
+
+	// Setting TintColor switches to a 5-argument op with mask CSS.
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemViewStyle, ID: 1, ViewStyle: &driver.ViewStyle{Opacity: 1, TintColor: driver.RGB(0xff3300)}},
+	}})
+	ims := h.ops("im")
+	last := ims[len(ims)-1]
+	for _, want := range []string{
+		`background-color:rgba(255,51,0,1);`,
+		`mask-image:url(\"data:image/png;base64,AAAA\");`,
+		`-webkit-mask-image:url(\"data:image/png;base64,AAAA\");`,
+		`mask-size:contain;`,
+		`mask-position:50% 50%;`,
+		`image-rendering:pixelated;`,
+	} {
+		if !strings.Contains(last, want) {
+			t.Fatalf("tinted im = %s, missing %q", last, want)
+		}
+	}
+
+	// Reporting natural dimensions fits the mask exactly inside the 100x50 box (20x20 Contain -> 50x50 centered at x=25, y=0).
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemEvents, ID: 1, Events: 1<<driver.EventLoad | 1<<driver.EventLoadEnd},
+	}})
+	m.imageLoaded(1, 20, 20)
+	ims = h.ops("im")
+	last = ims[len(ims)-1]
+	if !strings.Contains(last, `mask-size:50px 50px;`) || !strings.Contains(last, `mask-position:25px 0px;`) {
+		t.Fatalf("fitted tinted im = %s", last)
+	}
+	if len(h.events) != 2 || h.events[0].Kind != driver.EventLoad || h.events[1].Kind != driver.EventLoadEnd {
+		t.Fatalf("imgload events = %+v", h.events)
+	}
+
+	// Resizing updates the fitted mask geometry.
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{frame(1, 0, 0, 40, 20)}})
+	ims = h.ops("im")
+	last = ims[len(ims)-1]
+	if !strings.Contains(last, `mask-size:20px 20px;`) || !strings.Contains(last, `mask-position:10px 0px;`) {
+		t.Fatalf("resized tinted im = %s", last)
+	}
+
+	// Clearing TintColor drops the mask CSS.
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemViewStyle, ID: 1, ViewStyle: &driver.ViewStyle{Opacity: 1}},
+	}})
+	ims = h.ops("im")
+	if got := ims[len(ims)-1]; got != `[1,"img","aspectFit","image-rendering:pixelated"]` {
+		t.Fatalf("cleared tint im = %s", got)
+	}
+
+	// Pixel-buffer images also re-upload when TintColor changes.
+	px := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemImage, ID: 1, Image: &driver.ImageConfig{Source: driver.ImageSource{Pixels: px}}},
+	}})
+	m.mount(&driver.MountBatch{Items: []driver.MountItem{
+		{Kind: driver.ItemViewStyle, ID: 1, ViewStyle: &driver.ViewStyle{Opacity: 1, TintColor: driver.RGBA(0x00ff00, 0.5)}},
+	}})
+	if len(h.pixelTints) != 2 || h.pixelTints[0] != 0 || h.pixelTints[1] != driver.RGBA(0x00ff00, 0.5) {
+		t.Fatalf("pixel tints = %v", h.pixelTints)
 	}
 }

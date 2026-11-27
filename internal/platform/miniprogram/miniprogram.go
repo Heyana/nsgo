@@ -18,6 +18,7 @@
 package miniprogram
 
 import (
+	"encoding/base64"
 	"image"
 	"math"
 	"slices"
@@ -43,6 +44,8 @@ type Options struct {
 	UpdateChannel string
 	// ID names the app's entries in the mini program's storage.
 	ID string
+	// Fonts are the app's bundled font file paths under resources/.
+	Fonts []string
 	// Appearance is the appearance the app starts in.
 	Appearance driver.Appearance
 }
@@ -107,6 +110,7 @@ func Run(app engine.App, opts Options) {
 		Storage: engine.NewStorage(&storage{api: s.api, prefix: "nsgo:" + id + ":"}),
 		Secrets: s.secretsStore(),
 	})
+	s.registerFonts(opts.Fonts)
 	s.registerAutomation()
 	s.bridge.Set("event", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		s.event(args)
@@ -125,6 +129,18 @@ func (m measurer) Width(font, text string) float64 {
 
 func (m measurer) WidthLang(font, text, language string) float64 {
 	return m.bridge.Call("measure", font, text, language).Float()
+}
+
+func (m measurer) Metrics(font, language string) (ascent, descent, xHeight, capHeight float64, ok bool) {
+	fn := m.bridge.Get("measureMetrics")
+	if fn.Type() != js.TypeFunction {
+		return 0, 0, 0, 0, false
+	}
+	res := m.bridge.Call("measureMetrics", font, language)
+	if res.Type() != js.TypeObject || res.IsNull() || res.Length() < 4 {
+		return 0, 0, 0, 0, false
+	}
+	return res.Index(0).Float(), res.Index(1).Float(), res.Index(2).Float(), res.Index(3).Float(), true
 }
 
 // Prepare implements engine.Platform.
@@ -253,16 +269,30 @@ func (s *surface) event(args []js.Value) {
 		s.env.KeyboardDuration = time.Duration(arg(3).Float() * float64(time.Second))
 		s.engine.SetEnvironment(s.env)
 	case "imgload":
-		if v := m.view(id); v != nil {
-			m.send(v, driver.Event{Kind: driver.EventLoad, Size: driver.Size{Width: driver.Points(arg(2).Float()),
-				Height: driver.Points(arg(3).Float())}})
-			m.send(v, driver.Event{Kind: driver.EventLoadEnd})
-		}
+		m.imageLoaded(id, driver.Points(arg(2).Float()), driver.Points(arg(3).Float()))
 	case "imgerror":
 		if v := m.view(id); v != nil {
 			m.send(v, driver.Event{Kind: driver.EventError, Text: arg(2).String()})
 			m.send(v, driver.Event{Kind: driver.EventLoadEnd})
 		}
+	case "selhandle":
+		phase := []driver.GesturePhase{driver.GestureBegan, driver.GestureChanged, driver.GestureEnded,
+			driver.GestureCancelled}[arg(3).Int()]
+		m.selectionHandle(id, arg(2).Int(), phase, pt(4))
+	case "vdmeta":
+		m.videoLoaded(id, arg(2).Float(), arg(3).Float(), arg(4).Float())
+	case "vdplay":
+		m.videoPlay(id)
+	case "vdpause":
+		m.videoPause(id)
+	case "vdend":
+		m.videoEnded(id)
+	case "vdtime":
+		m.videoTimeUpdate(id, arg(2).Float(), arg(3).Float())
+	case "vdwait":
+		m.videoWaiting(id)
+	case "vderror":
+		m.videoError(id, arg(2).String())
 	case "back":
 		s.engine.Dispatch(driver.Event{Kind: driver.EventBack})
 	case "frame":
@@ -404,14 +434,23 @@ func (s *surface) stretch(c js.Value, width, height int) js.Value {
 
 func (s *surface) supportsPixelImages() bool { return s.pixelImages }
 
-func (s *surface) imagePixels(id driver.NodeID, pixels *image.RGBA) {
+func (s *surface) imagePixels(id driver.NodeID, pixels *image.RGBA, tint driver.Color) {
 	if pixels == nil {
 		s.bridge.Call("releasePixels", int(id))
 		return
 	}
 	bytes := s.bridge.Call("pixelBuffer", int(id), len(pixels.Pix))
 	js.CopyBytesToJS(bytes, pixels.Pix)
-	s.bridge.Call("showPixels", int(id), pixels.Rect.Dx(), pixels.Rect.Dy())
+	if tint != 0 {
+		s.bridge.Call("showPixels", int(id), pixels.Rect.Dx(), pixels.Rect.Dy(),
+			[]any{int(byte(tint >> 24)), int(byte(tint >> 16)), int(byte(tint >> 8)), int(byte(tint))})
+		return
+	}
+	s.bridge.Call("showPixels", int(id), pixels.Rect.Dx(), pixels.Rect.Dy(), nil)
+}
+
+func (s *surface) setClipboard(text string) {
+	s.call("setClipboardData", map[string]any{"data": text}, nil)
 }
 
 type canvasPixelFrame struct {
@@ -564,6 +603,30 @@ func (s *surface) imageURL(src driver.ImageSource) string {
 	}
 	if path, ok := strings.CutPrefix(src.URI, "asset:"); ok {
 		return "/resources/" + strings.TrimPrefix(path, "/")
+	}
+	return src.URI
+}
+
+// imageMaskURL returns a CSS-usable URL for mask-image in mini-program WXSS:
+// remote http(s) and data URIs pass through directly, while embedded bytes and
+// packaged asset: files are encoded as base64 data URIs because mini-program
+// WebViews cannot load local package or wxfile:// paths from CSS url().
+func (s *surface) imageMaskURL(src driver.ImageSource) string {
+	dataURI := func(data []byte) string {
+		mime := driver.SniffImage(data)
+		if mime == "" {
+			mime = "image/png"
+		}
+		return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
+	}
+	if len(src.Data) > 0 {
+		return dataURI(src.Data)
+	}
+	if p, ok := strings.CutPrefix(src.URI, "asset:"); ok {
+		if data, ok := s.readResource(p); ok {
+			return dataURI(data)
+		}
+		return "/resources/" + strings.TrimPrefix(p, "/")
 	}
 	return src.URI
 }

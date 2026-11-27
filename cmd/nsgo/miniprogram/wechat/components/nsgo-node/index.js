@@ -5,6 +5,7 @@
 // components' boundaries (composed) to the page's one listener.
 
 const pixels = require('../../nsgo/pixels.js')
+const video = require('../../nsgo/video.js')
 
 // The phases of a touch event, as Go numbers them.
 const PHASES = { touchstart: 0, touchmove: 1, touchend: 2, touchcancel: 3 }
@@ -26,11 +27,16 @@ Component({
     'node.px': function () {
       if (this.pixelReady) this.bindPixels()
     },
+    'node.vc': function (vc) {
+      if (this.pixelReady) this.videoCommand(vc)
+    },
   },
   lifetimes: {
     ready() {
       this.pixelReady = true
       this.bindPixels()
+      const n = this.data.node
+      if (n && n.vc) this.videoCommand(n.vc)
     },
     detached() {
       this.pixelReady = false
@@ -133,6 +139,44 @@ Component({
     },
     onError(e) {
       this.send('imgerror', this.id(), e.detail.errMsg || 'the image did not load')
+    },
+    onSelHandle(e) {
+      const phase = PHASES[String(e.type).toLowerCase()]
+      if (phase == null) return
+      const t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]) || {}
+      const x = t.pageX != null ? t.pageX : t.clientX || 0
+      const y = t.pageY != null ? t.pageY : t.clientY || 0
+      const h = Number((e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.h) || 0)
+      this.send('selhandle', this.id(), h, phase, x, y)
+    },
+    videoCommand(vc) {
+      if (!Array.isArray(vc) || vc.length < 2 || vc[0] === this.lastVideoCmd) return
+      this.lastVideoCmd = vc[0]
+      video.run(this.id(), this, vc[1])
+    },
+    onVideoMeta(e) {
+      const d = e.detail || {}
+      this.send('vdmeta', this.id(), d.duration || 0, d.width || 0, d.height || 0)
+    },
+    onVideoPlay() {
+      this.send('vdplay', this.id())
+    },
+    onVideoPause() {
+      this.send('vdpause', this.id())
+    },
+    onVideoEnd() {
+      this.send('vdend', this.id())
+    },
+    onVideoTime(e) {
+      const d = e.detail || {}
+      this.send('vdtime', this.id(), d.currentTime || 0, d.duration || 0)
+    },
+    onVideoWait() {
+      this.send('vdwait', this.id())
+    },
+    onVideoError(e) {
+      const d = e.detail || {}
+      this.send('vderror', this.id(), d.errMsg || 'the video could not play')
     },
     // A keyframe animation (op ka): {d, n, delay, f}, its duration, its
     // iterations (0 for ever) and its frames, run in the render layer and

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/platform/textselect"
 	"github.com/nsgo-dev/nsgo/internal/platform/webstyle"
 )
 
@@ -15,7 +16,7 @@ import (
 //
 // The operations, which nsgo/tree.js applies to the tree the page draws:
 //
-//	c  id kind               create a view: view, text, input, scroll, image, canvas, modal
+//	c  id kind               create a view: view, text, input, scroll, image, canvas, video, modal
 //	root id                  the view the page shows
 //	i  parent id before      insert id below sibling before (null: on top)
 //	r  id                    detach a view, keeping it
@@ -26,12 +27,16 @@ import (
 //	tr id css                the transition of its frame's next change
 //	ka id frames             its keyframe animation (null: none)
 //	t  id text               a text's runs: {x, y, s: [css], r: [[text, x, y, h, style]], b: [[x, y, w, h, color, radius]]}
+//	hl id highlight          a text's selection highlight rectangles (null: none)
+//	sh id handles            a selection area's start and end handles (null: none)
 //	e  id bits               the touches it reports (touch* constants)
 //	sc id config             a scroll view's: {h, hide, rf, rt}
 //	ss id w h                a scroll view's content size
 //	so id x y animated       scroll to an offset
-//	im id src mode css       an encoded image's source, mode and inline CSS
+//	im id src mode css [t]   an encoded image's source, mode, inline CSS and optional tint mask CSS
 //	px id css                a pixel image's fitted canvas, or "" to clear it
+//	vd id config             a video's configuration: {src, ap, loop, muted, ctrl, fit}
+//	vc id [seq, cmds]        ordered VideoContext commands (play, pause, seek, rate)
 //	fd id config             a text field's configuration
 //	iv id text               a text field's value
 //	fo id focused            focus or blur a text field
@@ -60,11 +65,17 @@ type host interface {
 	// service carries out an item no view shows: an alert, the
 	// clipboard, the title.
 	service(it *driver.MountItem)
-	// imageURL is what an <image> loads for src.
+	// imageURL is what an <image> or <video> loads for src.
 	imageURL(src driver.ImageSource) string
+	// imageMaskURL is a CSS-usable URL (https/http or data URI) for a tinted
+	// image's mask-image layer.
+	imageMaskURL(src driver.ImageSource) string
 	supportsPixelImages() bool
-	// imagePixels writes a version into an image view, or releases it for nil.
-	imagePixels(id driver.NodeID, pixels *image.RGBA)
+	// imagePixels writes a version into an image view (recoloring opaque pixels
+	// when tint != 0), or releases it for nil.
+	imagePixels(id driver.NodeID, pixels *image.RGBA, tint driver.Color)
+	// setClipboard writes text to the host clipboard (for selection copy).
+	setClipboard(text string)
 	// paint draws a canvas's ops at size points, its pixel ratio's
 	// pixels times scale (Drawing.ResolutionScale), stretched to the
 	// pixel ratio's to their nearest unless smooth, and returns the
@@ -98,6 +109,8 @@ type view struct {
 	transformedKids bool
 	layout          *TextLayout
 	text            *driver.TextContent
+	selHL           string // last sent selection highlight JSON
+	selSH           string // last sent selection handles JSON
 	// A scroll view's offset, content size, axis, the scrolls it applied and sticky cells.
 	offset      driver.Point
 	contentSize driver.Size
@@ -112,12 +125,16 @@ type view struct {
 	inputReadonly bool
 	maxLength     int
 	selectedAll   bool
-	// A canvas's drawing.
-	drawing    *driver.Drawing
-	pixelImage *driver.ImageConfig
-	pixelCSS   string
-	modal      driver.ModalAnimation
-	shown      bool // a modal was presented
+	// A canvas's drawing, an image's state, a video's state.
+	drawing      *driver.Drawing
+	image        *driver.ImageConfig
+	imageNatural driver.Size
+	pixelImage   *driver.ImageConfig
+	pixelTint    driver.Color
+	pixelCSS     string
+	video        *videoState
+	modal        driver.ModalAnimation
+	shown        bool // a modal was presented
 }
 
 // border returns the width of each side of v's border.
@@ -155,6 +172,14 @@ type mounter struct {
 	presenting map[driver.NodeID]modalPresent
 	now        time.Duration
 	hasNow     bool
+	// Active text selection state across a SelectionArea or standalone SelectableOn text.
+	selecting       *textselect.Selection
+	selected        []*view
+	selArea         *view
+	selDragging     bool
+	selHandle       driver.SelectionHandle
+	selHandleActive bool
+	selGrab         driver.Point
 }
 
 type modalPresent struct {
@@ -200,6 +225,8 @@ func kindName(k driver.ViewKind) string {
 		return "image"
 	case driver.KindCanvas:
 		return "canvas"
+	case driver.KindVideo:
+		return "video"
 	case driver.KindModal:
 		return "modal"
 	}
@@ -217,6 +244,8 @@ func (m *mounter) mount(b *driver.MountBatch) {
 		m.item(b, &b.Items[i], lb)
 	}
 	m.applyAnimated()
+	m.refreshSelection()
+	m.flushVideos()
 	m.flush()
 	if m.animator.Running() {
 		m.startTicking()
@@ -325,7 +354,10 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		m.o.op("r", v.id)
 	case driver.ItemDelete:
 		if v.pixelImage != nil {
-			m.h.imagePixels(v.id, nil)
+			m.h.imagePixels(v.id, nil, 0)
+		}
+		if m.selecting != nil && m.selecting.Area == v.id {
+			m.clearSelection()
 		}
 		isModal := v.kind == driver.KindModal
 		delete(m.presenting, v.id)
@@ -339,6 +371,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		}
 		if m.focused == v {
 			m.focused = nil
+		}
+		if m.selArea == v {
+			m.selArea = nil
 		}
 		m.animator.Forget(v.id)
 		delete(m.repaint, v.id)
@@ -374,12 +409,25 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 			if v.pixelImage != nil {
 				m.placePixelImage(v)
 			}
+			if v.image != nil && v.style.TintColor != 0 {
+				m.sendImage(v)
+			}
 		}
 	case driver.ItemViewStyle:
 		old := v.border()
+		oldTint := v.style.TintColor
 		anim := v.style.Animation
 		v.style = *it.ViewStyle
 		m.sendStyle(v)
+		if v.style.TintColor != oldTint {
+			if v.pixelImage != nil {
+				v.pixelTint = v.style.TintColor
+				m.h.imagePixels(v.id, v.pixelImage.Source.Pixels, v.style.TintColor)
+			}
+			if v.image != nil {
+				m.sendImage(v)
+			}
+		}
 		if v.border() != old {
 			for _, c := range v.children {
 				if c.framed {
@@ -391,6 +439,9 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 			}
 			if v.pixelImage != nil {
 				m.placePixelImage(v)
+			}
+			if v.image != nil && v.style.TintColor != 0 && v.style.TintColor == oldTint {
+				m.sendImage(v)
 			}
 		}
 		if v.style.Animation != anim {
@@ -476,35 +527,32 @@ func (m *mounter) item(b *driver.MountBatch, it *driver.MountItem, lb *driver.La
 		m.stick(v)
 	case driver.ItemImage:
 		if it.Image.Source.Pixels != nil && m.h.supportsPixelImages() {
-			if v.pixelImage == nil || v.pixelImage.Source.Pixels != it.Image.Source.Pixels {
-				m.h.imagePixels(v.id, it.Image.Source.Pixels)
+			if v.pixelImage == nil || v.pixelImage.Source.Pixels != it.Image.Source.Pixels || v.pixelTint != v.style.TintColor {
+				v.pixelTint = v.style.TintColor
+				m.h.imagePixels(v.id, it.Image.Source.Pixels, v.style.TintColor)
 			}
 			if v.pixelImage == nil {
 				m.o.op("im", v.id).str("").str("").str("")
 			}
+			v.image, v.imageNatural = nil, driver.Size{}
 			v.pixelImage = it.Image
 			m.placePixelImage(v)
 			break
 		}
 		if v.pixelImage != nil {
-			v.pixelImage, v.pixelCSS = nil, ""
-			m.h.imagePixels(v.id, nil)
+			v.pixelImage, v.pixelCSS, v.pixelTint = nil, "", 0
+			m.h.imagePixels(v.id, nil, 0)
 			m.o.op("px", v.id).str("")
 		}
-		mode := "aspectFill"
-		switch it.Image.ResizeMode {
-		case driver.Contain, driver.ScaleDown:
-			mode = "aspectFit"
-		case driver.Stretch:
-			mode = "scaleToFill"
-		case driver.Center:
-			mode = "center"
+		if v.image == nil || v.image.Source.Key() != it.Image.Source.Key() {
+			v.imageNatural = driver.Size{}
 		}
-		src := ""
-		if it.Image.Source.URI != "" || len(it.Image.Source.Data) > 0 {
-			src = m.h.imageURL(it.Image.Source)
-		}
-		m.o.op("im", v.id).str(src).str(mode).str(samplingCSS(it.Image.Sampling))
+		v.image = it.Image
+		m.sendImage(v)
+	case driver.ItemVideo:
+		m.setVideo(v, it.Video)
+	case driver.ItemVideoSeek:
+		m.seekVideo(v, it.Time)
 	case driver.ItemCanvas:
 		v.drawing = it.Drawing
 		var slots []driver.DrawSlot
@@ -526,6 +574,62 @@ func samplingCSS(sampling driver.ImageSampling) string {
 		return "image-rendering:pixelated"
 	}
 	return ""
+}
+
+// sendImage emits the "im" op for an encoded image view, including a CSS mask
+// layer when TintColor is non-zero so opaque pixels recolor without leaking
+// untinted pixels.
+func (m *mounter) sendImage(v *view) {
+	c := v.image
+	if c == nil {
+		return
+	}
+	mode := "aspectFill"
+	switch c.ResizeMode {
+	case driver.Contain, driver.ScaleDown:
+		mode = "aspectFit"
+	case driver.Stretch:
+		mode = "scaleToFill"
+	case driver.Center:
+		mode = "center"
+	}
+	src := ""
+	if c.Source.URI != "" || len(c.Source.Data) > 0 {
+		src = m.h.imageURL(c.Source)
+	}
+	inline := imageInlineCSS(c)
+	if v.style.TintColor != 0 && src != "" {
+		maskURL := m.h.imageMaskURL(c.Source)
+		if maskURL == "" {
+			maskURL = src
+		}
+		if tintCSS := imageTintCSS(v, maskURL); tintCSS != "" {
+			m.o.op("im", v.id).str(src).str(mode).str(inline).str(tintCSS)
+			return
+		}
+	}
+	m.o.op("im", v.id).str(src).str(mode).str(inline)
+}
+
+// imageLoaded records natural dimensions from <image>'s bindload, refreshes
+// tinted mask sizing when needed, and dispatches EventLoad and EventLoadEnd.
+func (m *mounter) imageLoaded(id driver.NodeID, width, height driver.Points) {
+	v := m.view(id)
+	if v == nil {
+		return
+	}
+	if width > 0 && height > 0 {
+		natural := driver.Size{Width: width, Height: height}
+		if natural != v.imageNatural {
+			v.imageNatural = natural
+			if v.image != nil && v.style.TintColor != 0 {
+				m.sendImage(v)
+				m.flush()
+			}
+		}
+	}
+	m.send(v, driver.Event{Kind: driver.EventLoad, Size: driver.Size{Width: width, Height: height}})
+	m.send(v, driver.Event{Kind: driver.EventLoadEnd})
 }
 
 // placePixelImage keeps the buffer at its fitted rectangle as its box changes.
@@ -645,6 +749,12 @@ func (m *mounter) sendEvents(v *view) {
 		if m.blocking == v && ev.Has(driver.EventTouch) {
 			bits |= touchCapture
 		}
+	}
+	if isSelectionTrigger(v) {
+		bits |= touchLongPress | touchFollow
+	}
+	if m.selecting != nil && v.id == m.root {
+		bits |= touchFollow
 	}
 	m.o.op("e", v.id).num(float64(bits))
 }
@@ -1032,6 +1142,15 @@ func (m *mounter) press(id driver.NodeID, kind driver.EventKind, page driver.Poi
 	if v == nil || v.props.Disabled && kind == driver.EventPress {
 		return
 	}
+	if kind == driver.EventPress && m.selecting != nil && !m.selectionContains(page) {
+		m.clearSelection()
+		m.flush()
+	}
+	if kind == driver.EventLongPress && !v.events.Has(driver.EventLongPress) {
+		if m.selectLongPress(v, page) {
+			return
+		}
+	}
 	ev := m.pointer(v, kind, page)
 	if (kind == driver.EventPress || kind == driver.EventLongPress) && v.layout != nil && v.text != nil {
 		// A text's links take the presses on them.
@@ -1041,6 +1160,9 @@ func (m *mounter) press(id driver.NodeID, kind driver.EventKind, page driver.Poi
 			ev.Index = driver.UTF16Offset(v.text.Text, c.Offset)
 		}
 		if !driver.PressesAt(v.text.Spans, ev.Index) {
+			if kind == driver.EventLongPress {
+				m.selectLongPress(v, page)
+			}
 			return
 		}
 	}

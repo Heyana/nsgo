@@ -16,4 +16,16 @@ module.exports = {
     var i = n.fd
     return 'left:' + i.x + 'px;top:' + i.y + 'px;width:' + i.w + 'px;height:' + i.h + 'px;' + i.css
   },
+  selRect: function (hl, r) {
+    return 'left:' + r[0] + 'px;top:' + r[1] + 'px;width:' + r[2] + 'px;height:' + r[3] + 'px;background-color:' + hl.c + ';'
+  },
+  selHandle: function (h) {
+    return 'left:' + (h[0] - 14) + 'px;top:' + (h[1] - 14) + 'px;width:28px;height:' + (h[2] + 28) + 'px;'
+  },
+  selBar: function (sh, h) {
+    return 'height:' + h[2] + 'px;background-color:' + sh.c + ';'
+  },
+  selKnob: function (sh) {
+    return 'background-color:' + sh.c + ';'
+  },
 }

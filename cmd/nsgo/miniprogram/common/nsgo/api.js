@@ -107,11 +107,20 @@ function alipay(api, my) {
   }
   api.setStorageSync = (key, data) => my.setStorageSync({ key, data })
   api.removeStorageSync = (key) => my.removeStorageSync({ key })
+  api.loadFontFace = (o) =>
+    call('loadFontFace', {
+      family: o.family,
+      source: o.source,
+      desc: o.desc,
+      success: o.success,
+      fail: o.fail,
+    })
+  api.createVideoContext = (id) => (typeof my.createVideoContext === 'function' ? my.createVideoContext(id) : null)
   api.getFileSystemManager = () => {
     const fs = my.getFileSystemManager()
     return {
-      readFileSync(filePath) {
-        const r = fs.readFileSync({ filePath })
+      readFileSync(filePath, encoding) {
+        const r = fs.readFileSync(encoding ? { filePath, encoding } : { filePath })
         return r && r.data !== undefined ? r.data : r
       },
       writeFileSync(filePath, data) {

@@ -111,6 +111,16 @@ function mpHost(platform = config.platform || 'wechat') {
       if ('lang' in context) context.lang = lang || 'inherit'
       return context.measureText(text).width
     },
+    measureMetrics(font, lang) {
+      context.font = font
+      if ('lang' in context) context.lang = lang || 'inherit'
+      const cap = context.measureText('H')
+      const small = context.measureText('x')
+      const asc = cap && cap.fontBoundingBoxAscent
+      const desc = cap && cap.fontBoundingBoxDescent
+      if (!(asc > 0) || !(desc >= 0)) return null
+      return [asc, desc, (small && small.actualBoundingBoxAscent) || 0, (cap && cap.actualBoundingBoxAscent) || 0]
+    },
     device: () => device(api),
     now: () => Date.now(),
     setTimeout: (f, ms) => setTimeout(f, ms),
@@ -289,6 +299,7 @@ function start(page, host = mpHost()) {
     ready: () => ready(),
     device: () => host.device(),
     measure: (font, text, lang) => host.measure(font, text, lang),
+    measureMetrics: (font, lang) => (typeof host.measureMetrics === 'function' ? host.measureMetrics(font, lang) : null),
     submit(json) {
       tree.add(JSON.parse(json))
       queueFlush()
