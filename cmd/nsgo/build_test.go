@@ -461,3 +461,30 @@ func TestWindowsCommandLineBuilds(t *testing.T) {
 		}
 	}
 }
+
+func TestPageCSSOverscrollBehavior(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		appearance string
+		wantBg     string
+	}{
+		{"default", "", ""},
+		{"dark", "dark", "background: #000000;"},
+		{"light", "light", "background: #ffffff;"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &project{}
+			p.Appearance = tc.appearance
+			css := string(pageCSS(p))
+			if !strings.Contains(css, "* { touch-action: pan-x pan-y; }") {
+				t.Errorf("pageCSS missing global touch-action rule:\n%s", css)
+			}
+			if !strings.Contains(css, "html, body { margin: 0; height: 100%; overscroll-behavior: none;") {
+				t.Errorf("pageCSS missing overscroll-behavior: none on html, body:\n%s", css)
+			}
+			if tc.wantBg != "" && !strings.Contains(css, tc.wantBg) {
+				t.Errorf("pageCSS missing %q:\n%s", tc.wantBg, css)
+			}
+		})
+	}
+}

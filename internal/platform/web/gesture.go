@@ -430,26 +430,33 @@ func (s *surface) safariGesture(e js.Value, phase driver.GesturePhase) {
 	s.sendPinch(w.view, phase, w.scale, w.rotation, &w.rate, e.Get("clientX").Float(), e.Get("clientY").Float())
 }
 
-// touchAction is what touches on a view with gestures leave to the
-// browser: nothing on views that pinch, rotate or pan freely; a pan
-// activated along one axis only leaves scrolling along the other, so a
-// scroll view can still take the drag while the pan is undecided.
+// touchAction is what touches on a view with gestures or touch handlers leave
+// to the browser: nothing on views that pinch, rotate, handle touches or pan
+// freely; a pan activated along one axis only leaves scrolling along the other,
+// so a scroll view can still take the drag while the pan is undecided. Scroll
+// views keep their own touch-action from configureScroll.
 func (v *view) touchAction() string {
+	if v.kind == driver.KindScroll {
+		return ""
+	}
 	m := v.events
 	if m.Has(driver.EventPinch) || m.Has(driver.EventRotation) {
 		return "none"
 	}
-	if !m.Has(driver.EventPan) {
-		return ""
+	if m.Has(driver.EventPan) {
+		a := v.panActivation
+		switch {
+		case a.ActiveOffsetX != 0 && a.ActiveOffsetY == 0:
+			return "pan-y"
+		case a.ActiveOffsetY != 0 && a.ActiveOffsetX == 0:
+			return "pan-x"
+		}
+		return "none"
 	}
-	a := v.panActivation
-	switch {
-	case a.ActiveOffsetX != 0 && a.ActiveOffsetY == 0:
-		return "pan-y"
-	case a.ActiveOffsetY != 0 && a.ActiveOffsetX == 0:
-		return "pan-x"
+	if m.Has(driver.EventTouch) {
+		return "none"
 	}
-	return "none"
+	return ""
 }
 
 // hasGestures reports whether v follows a pan, pinch or rotation.

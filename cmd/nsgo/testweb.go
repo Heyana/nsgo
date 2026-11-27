@@ -402,6 +402,41 @@ func (p *webPage) pinch(op webOp) error {
 	return send("touchEnd", []touchPoint{})
 }
 
+// touchDrag sends a single trusted touch dragged along op.Path so the browser
+// runs its touch-action checks, touchmove listeners and native scroll handling.
+func (p *webPage) touchDrag(op webOp) error {
+	if len(op.Path) < 2 {
+		return fmt.Errorf("a touch drag needs at least two points")
+	}
+	type touchPoint struct {
+		X  float64 `json:"x"`
+		Y  float64 `json:"y"`
+		ID int     `json:"id"`
+	}
+	send := func(kind string, points []touchPoint) error {
+		_, err := p.call("Input.dispatchTouchEvent", map[string]any{"type": kind, "touchPoints": points})
+		return err
+	}
+	x, y := op.Path[0].X, op.Path[0].Y
+	if err := send("touchStart", []touchPoint{{X: x, Y: y, ID: 0}}); err != nil {
+		return err
+	}
+	for _, to := range op.Path[1:] {
+		n := int(math.Max(math.Abs(to.X-x), math.Abs(to.Y-y))/10) + 1
+		for i := 1; i <= n; i++ {
+			time.Sleep(16 * time.Millisecond)
+			f := float64(i) / float64(n)
+			if err := send("touchMove", []touchPoint{{X: x + (to.X-x)*f, Y: y + (to.Y-y)*f, ID: 0}}); err != nil {
+				_ = send("touchCancel", []touchPoint{})
+				return err
+			}
+		}
+		x, y = to.X, to.Y
+	}
+	time.Sleep(16 * time.Millisecond)
+	return send("touchEnd", []touchPoint{})
+}
+
 func (p *webPage) do(op webOp, data *any) error {
 	switch op.Op {
 	case "viewport":
@@ -472,6 +507,8 @@ func (p *webPage) do(op webOp, data *any) error {
 		return p.mouse("mouseReleased", x, y, "left", 0, 1)
 	case "pinch":
 		return p.pinch(op)
+	case "touchDrag":
+		return p.touchDrag(op)
 	case "scroll":
 		p.mouse("mouseMoved", op.X, op.Y, "none", 0, 0)
 		n := int(math.Max(math.Abs(op.DX), math.Abs(op.DY))/20) + 1

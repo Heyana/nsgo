@@ -1607,11 +1607,11 @@ func (p *project) webHost() ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-// pageCSS is the page's style: the app fills the window, and the page
-// never zooms, as an app's window does not; views that zoom take pinches
-// themselves.
+// pageCSS is the page's style: the app fills the window, never zooms, and
+// disables page overscroll so pull-to-refresh and rubber-banding do not
+// interrupt drags; views that zoom or bounce handle them themselves.
 func pageCSS(p *project) []byte {
-	css := "* { touch-action: pan-x pan-y; }\nhtml, body { margin: 0; height: 100%;"
+	css := "* { touch-action: pan-x pan-y; }\nhtml, body { margin: 0; height: 100%; overscroll-behavior: none;"
 	if color := appearanceColor(p.Appearance); color != "" {
 		css += " background: " + color + ";"
 	}

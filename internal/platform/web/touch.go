@@ -18,7 +18,8 @@ import (
 type fingers struct {
 	geometry driver.TouchTracker
 	down     []driver.Touch
-	blocked  bool // the responder stops the browser's scrolling
+	blocked  bool  // the responder stops the browser's scrolling
+	handled  []int // touch identifiers started in a touch-handling view
 }
 
 func (s *surface) listenTouches(ls *listeners) {
@@ -30,16 +31,111 @@ func (s *surface) listenTouches(ls *listeners) {
 		*ls = append(*ls, listener{s.host, name, fn})
 		s.host.Call("addEventListener", name, fn, true)
 	}
-	// A touchmove the page ignores scrolls it, so one is cancelled while
-	// the touch responder holds the touches.
+	passive := map[string]any{"passive": true}
+	start := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		s.touchStart(args[0])
+		return nil
+	})
+	*ls = append(*ls, listener{s.host, "touchstart", start})
+	s.host.Call("addEventListener", "touchstart", start, passive)
+	for _, name := range []string{"touchend", "touchcancel"} {
+		end := js.FuncOf(func(_ js.Value, args []js.Value) any {
+			s.touchEnd(args[0])
+			return nil
+		})
+		*ls = append(*ls, listener{s.host, name, end})
+		s.host.Call("addEventListener", name, end, passive)
+	}
+	// A touchmove the page ignores scrolls it, so one is cancelled synchronously
+	// when a touch started in a touch-handling view or while the touch responder
+	// blocks native scrolling.
 	block := js.FuncOf(func(_ js.Value, args []js.Value) any {
-		if s.touch.blocked && args[0].Get("cancelable").Bool() {
+		if args[0].Get("cancelable").Bool() && s.shouldPreventTouchMove(args[0]) {
 			args[0].Call("preventDefault")
 		}
 		return nil
 	})
 	*ls = append(*ls, listener{s.host, "touchmove", block})
 	s.host.Call("addEventListener", "touchmove", block, map[string]any{"passive": false})
+}
+
+func (s *surface) touchStart(e js.Value) {
+	changed := e.Get("changedTouches")
+	if !changed.Truthy() {
+		return
+	}
+	for i := range changed.Length() {
+		t := changed.Index(i)
+		if s.touchBlocksScroll(t.Get("target")) {
+			id := t.Get("identifier").Int()
+			if !slices.Contains(s.touch.handled, id) {
+				s.touch.handled = append(s.touch.handled, id)
+			}
+		}
+	}
+}
+
+func (s *surface) touchEnd(e js.Value) {
+	if touches := e.Get("touches"); touches.Truthy() && touches.Length() == 0 {
+		s.touch.handled = s.touch.handled[:0]
+		return
+	}
+	changed := e.Get("changedTouches")
+	if !changed.Truthy() {
+		return
+	}
+	for i := range changed.Length() {
+		id := changed.Index(i).Get("identifier").Int()
+		if idx := slices.Index(s.touch.handled, id); idx >= 0 {
+			s.touch.handled = slices.Delete(s.touch.handled, idx, idx+1)
+		}
+	}
+}
+
+func (s *surface) shouldPreventTouchMove(e js.Value) bool {
+	if s.touch.blocked || len(s.touch.handled) > 0 {
+		return true
+	}
+	if touches := e.Get("touches"); touches.Truthy() && touches.Length() > 0 {
+		for i := range touches.Length() {
+			if s.touchBlocksScroll(touches.Index(i).Get("target")) {
+				return true
+			}
+		}
+		return false
+	}
+	return s.touchBlocksScroll(e.Get("target"))
+}
+
+// touchBlocksScroll reports whether a touch starting at target lands in a
+// touch-handling view that takes drags directly, before reaching a scrollable
+// view or an editable input.
+func (s *surface) touchBlocksScroll(target js.Value) bool {
+	if !target.Truthy() || !s.host.Call("contains", target).Bool() {
+		return false
+	}
+	for el := target; el.Truthy() && !el.Equal(s.host); el = el.Get("parentElement") {
+		if editing(el) {
+			return false
+		}
+		v := s.viewOf(el)
+		if v == nil {
+			continue
+		}
+		if v.kind == driver.KindInput {
+			return false
+		}
+		if v.kind == driver.KindScroll {
+			if v.sc == nil || !v.sc.config.Behavior.NoScroll {
+				return false
+			}
+			continue
+		}
+		if v.events.Has(driver.EventTouch) {
+			return v.touchAction() == "none"
+		}
+	}
+	return false
 }
 
 // finger reports pointer event e as a finger, while a view listens.
