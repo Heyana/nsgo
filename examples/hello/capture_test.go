@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/gpu"
 	"github.com/nsgo-dev/nsgo/nsgotest"
 )
 
 // TestRuntimeCapture checks the runtime service on displayed pixels, including
-// a Canvas, shader and native input, and reuses the result in an Image.
+// a Canvas, shader effect, native input and GPU view, and reuses the result in an Image.
 func TestRuntimeCapture(t *testing.T) {
 	target := nsgotest.Target()
 	switch target {
@@ -25,15 +26,18 @@ func TestRuntimeCapture(t *testing.T) {
 	}
 	const w, row = 120, 28
 	style := core.Style{Width: core.Pt(w), Height: core.Pt(row)}
-	red, green := core.RGB(0xff0000), core.RGB(0x00ff00)
+	red, green, yellow := core.RGB(0xff0000), core.RGB(0x00ff00), core.RGB(0xffff00)
 	var scope *core.Scope
-	var subtree, copyRef core.Ref
+	var subtree, copyRef, gpuRef core.Ref
 	var result *core.Signal[[]byte]
+	var hasGPU bool
 	loaded := make(chan struct{}, 1)
+	gpuRendered := make(chan struct{}, 1)
 	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
 		scope = cx
+		hasGPU = cx.Env().SupportsGPU()
 		result = core.NewSignalFunc(cx, nil, bytes.Equal)
-		var shader core.Node = core.ShaderEffect{
+		shader := core.ShaderEffect{
 			Style: style,
 			Program: core.MustCompileWGSL(`
 fn shade(uv: vec2f) -> vec4f {
@@ -43,24 +47,43 @@ fn shade(uv: vec2f) -> vec4f {
 `),
 			Children: []core.Node{core.View{Style: core.Style{Width: core.Pt(w), Height: core.Pt(row), Background: red}}},
 		}
-		if target == "android" {
-			// A shader fill is available before view effects land in the Android runtime.
-			shader = core.Shader{Style: style, Program: core.MustCompileWGSL(`
-fn shade(uv: vec2f) -> vec4f {
-	return vec4f(0.0, 0.0, 1.0, 1.0);
-}
-`)}
+		rows := []core.Node{
+			core.Canvas{Style: style, Draw: func(d *core.Drawing, size core.Size) {
+				d.SetFillColor(red).FillRect(0, 0, float32(size.Width), float32(size.Height))
+			}},
+			shader,
+			core.Input{Style: core.Style{Width: core.Pt(w), Height: core.Pt(row), Background: green}},
 		}
+		if hasGPU {
+			var drawn bool
+			rows = append(rows, gpu.View(cx, gpu.ViewProps{
+				Ref:    &gpuRef,
+				TestID: "capture-gpu",
+				Style:  style,
+				OnError: func(err gpu.Error) {
+					t.Errorf("gpu.View OnError: %v", err)
+				},
+				OnFrame: func(frame *gpu.Frame) {
+					if drawn {
+						return
+					}
+					drawn = true
+					pass := frame.BeginRenderPass(gpu.RenderPassDesc{})
+					pass.ClearColor(yellow)
+					pass.End()
+					frame.Submit()
+					select {
+					case gpuRendered <- struct{}{}:
+					default:
+					}
+				},
+			}))
+		}
+		boxHeight := core.Pt(core.Points(len(rows) * row))
 		return core.View{Style: core.Style{FlexGrow: 1, Padding: core.All(16), Gap: 4}, Children: []core.Node{
-			core.View{Ref: &subtree, TestID: "capture-source", Style: core.Style{Width: core.Pt(w), Height: core.Pt(3 * row)},
-				Children: []core.Node{
-					core.Canvas{Style: style, Draw: func(d *core.Drawing, size core.Size) {
-						d.SetFillColor(red).FillRect(0, 0, float32(size.Width), float32(size.Height))
-					}},
-					shader,
-					core.Input{Style: core.Style{Width: core.Pt(w), Height: core.Pt(row), Background: green}},
-				}},
-			core.Image{Ref: &copyRef, TestID: "capture-result", Style: core.Style{Width: core.Pt(w), Height: core.Pt(3 * row)},
+			core.View{Ref: &subtree, TestID: "capture-source", Style: core.Style{Width: core.Pt(w), Height: boxHeight},
+				Children: rows},
+			core.Image{Ref: &copyRef, TestID: "capture-result", Style: core.Style{Width: core.Pt(w), Height: boxHeight},
 				SourceFunc:   func() core.ImageSource { return core.ImageSource{Data: result.Get()} },
 				FadeDuration: time.Nanosecond,
 				OnLoad: func(core.Size) {
@@ -70,8 +93,33 @@ fn shade(uv: vec2f) -> vec4f {
 					}
 				}},
 		}}
-	}, nsgotest.Size(280, 260))
+	}, nsgotest.Size(280, 300))
 	app.Find("id:capture-source")
+	if target == "macos" {
+		// On a locked-screen macOS host AppKit reports the window occluded
+		// (LifecycleBackground), which pauses Metal shader effects and gpu.View.
+		var bg bool
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for {
+			done := make(chan bool, 1)
+			scope.Post(func() { done <- scope.Env().Lifecycle() == core.LifecycleBackground })
+			bg = <-done
+			if !bg || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if bg {
+			t.Skip("macOS window is occluded (locked screen); Metal shader effects and GPU views are suspended")
+		}
+	}
+	if hasGPU {
+		select {
+		case <-gpuRendered:
+		case <-time.After(10 * time.Second):
+			t.Fatal("gpu.View did not render its initial frame")
+		}
+	}
 
 	type capture struct {
 		png []byte
@@ -81,13 +129,18 @@ fn shade(uv: vec2f) -> vec4f {
 		t.Helper()
 		reply := make(chan capture, 1)
 		scope.Post(func() {
+			syncCalled := false
 			scope.Capture(ref, func(data []byte, err error) {
+				syncCalled = true
 				if show && err == nil {
 					// The callback can update the reactive graph as an ordinary handler.
 					result.Set(data)
 				}
 				reply <- capture{data, err}
 			})
+			if syncCalled {
+				t.Errorf("Capture invoked its callback synchronously")
+			}
 		})
 		select {
 		case got := <-reply:
@@ -105,34 +158,52 @@ fn shade(uv: vec2f) -> vec4f {
 		}
 	}
 	want := []color.RGBA{{R: 255, A: 255}, {B: 255, A: 255}, {G: 255, A: 255}}
+	if hasGPU {
+		want = append(want, color.RGBA{R: 255, G: 255, A: 255})
+	}
+	numRows := len(want)
 	check := func(img image.Image) {
 		t.Helper()
 		s := img.Bounds().Size()
-		if s.X < w || s.Y < 3*row || absCapture(s.X*3*row-s.Y*w) > w*2 {
-			t.Errorf("capture size %v does not match the view", s)
+		if s.X < w || s.Y < numRows*row || absCapture(s.X*numRows*row-s.Y*w) > w*2 {
+			t.Errorf("capture size %v does not match the view (%dx%d)", s, w, numRows*row)
 		}
 		for i, expect := range want {
-			x, y := img.Bounds().Min.X+s.X*3/4, img.Bounds().Min.Y+s.Y*(2*i+1)/6
+			x, y := img.Bounds().Min.X+s.X*3/4, img.Bounds().Min.Y+s.Y*(2*i+1)/(2*numRows)
 			got := color.RGBAModel.Convert(img.At(x, y)).(color.RGBA)
 			if !closeCaptureColor(got, expect) {
 				t.Errorf("view pixel %d at %d,%d is %v, want %v", i, x, y, got, expect)
 			}
 		}
 	}
-	// Apple compiles the effect asynchronously. Allow its first displayed
-	// frame to arrive before using its pixels for the comparison.
-	if target == "macos" || target == "ios" || target == "ios_simulator" {
-		deadline := time.Now().Add(4 * time.Second)
-		for {
-			img := read(&subtree, false)
-			s := img.Bounds().Size()
-			if closeCaptureColor(color.RGBAModel.Convert(img.At(s.X*3/4, s.Y/2)).(color.RGBA), want[1]) || time.Now().After(deadline) {
+	// Shader effects and GPU layers present asynchronously on Apple/Android/Web.
+	// Poll briefly until both the effect row and GPU row have landed on screen.
+	deadline := time.Now().Add(4 * time.Second)
+	for {
+		img := read(&subtree, false)
+		s := img.Bounds().Size()
+		ready := true
+		for i, expect := range want {
+			x, y := img.Bounds().Min.X+s.X*3/4, img.Bounds().Min.Y+s.Y*(2*i+1)/(2*numRows)
+			if !closeCaptureColor(color.RGBAModel.Convert(img.At(x, y)).(color.RGBA), expect) {
+				ready = false
 				break
 			}
-			time.Sleep(60 * time.Millisecond)
 		}
+		if ready || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(60 * time.Millisecond)
 	}
 	check(read(&subtree, true))
+	if hasGPU {
+		gpuImg := read(&gpuRef, false)
+		s := gpuImg.Bounds().Size()
+		got := color.RGBAModel.Convert(gpuImg.At(gpuImg.Bounds().Min.X+s.X/2, gpuImg.Bounds().Min.Y+s.Y/2)).(color.RGBA)
+		if !closeCaptureColor(got, color.RGBA{R: 255, G: 255, A: 255}) {
+			t.Errorf("direct gpu.View capture center pixel is %v, want yellow", got)
+		}
+	}
 	select {
 	case <-loaded:
 	case <-time.After(10 * time.Second):

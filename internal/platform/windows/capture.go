@@ -36,7 +36,7 @@ func (w *window) capture(id driver.NodeID, count uint32) {
 			dispatch(driver.CaptureResult(count, nil, errors.New("windows: capture has no client area")))
 			return
 		}
-		region := image.Rect(0, 0, int(client.Right), int(client.Bottom))
+		clientRegion := image.Rect(0, 0, int(client.Right), int(client.Bottom))
 		if id != 0 {
 			view := w.view(id)
 			if view == nil {
@@ -53,27 +53,41 @@ func (w *window) capture(id driver.NodeID, count uint32) {
 				Min: image.Pt(int(math.Floor(pixels(b.Origin.X))), int(math.Floor(pixels(b.Origin.Y)))),
 				Max: image.Pt(int(math.Ceil(pixels(b.Origin.X+b.Size.Width))), int(math.Ceil(pixels(b.Origin.Y+b.Size.Height)))),
 			}
-			region = region.Intersect(r)
+			clientRegion = clientRegion.Intersect(r)
+		}
+		if clientRegion.Empty() {
+			dispatch(driver.CaptureResult(count, nil, errors.New("windows: capture has no visible pixels")))
+			return
 		}
 		embedded := w.embedded
-		if !embedded {
+		windowRegion := clientRegion
+		useComposited := !embedded
+		if useComposited {
 			var frame rect
 			var origin point
 			const extendedFrameBounds = 9
 			hr, _, _ := dwmGetWindowAttribute.Call(hwnd, extendedFrameBounds, uintptr(unsafe.Pointer(&frame)), unsafe.Sizeof(frame))
 			if ok, _, _ := clientToScreen.Call(hwnd, uintptr(unsafe.Pointer(&origin))); failed(hr) || ok == 0 {
-				dispatch(driver.CaptureResult(count, nil, errors.New("windows: capture has no window bounds")))
-				return
+				useComposited = false
+			} else {
+				windowRegion = clientRegion.Add(image.Pt(int(origin.X-frame.Left), int(origin.Y-frame.Top)))
 			}
-			region = region.Add(image.Pt(int(origin.X-frame.Left), int(origin.Y-frame.Top)))
 		}
 		go func() {
 			var img *image.RGBA
 			var err error
-			if embedded {
-				img, err = captureClient(hwnd)
-			} else {
+			region := clientRegion
+			if useComposited {
 				img, err = captureCompositedWindow(hwnd)
+				if err == nil {
+					region = windowRegion
+				} else {
+					// Fall back to PrintWindow (which still composites Direct2D, shaders and GPU views)
+					// when Windows Graphics Capture is unavailable on the host or session.
+					img, err = captureClient(hwnd)
+				}
+			} else {
+				img, err = captureClient(hwnd)
 			}
 			var data []byte
 			if err == nil {

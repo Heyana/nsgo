@@ -61,6 +61,9 @@ func (s *surface) captureFrame(id driver.NodeID, answer func([]byte, error)) {
 		if sh := shaders.Load(); sh != nil && v.gl != nil && v.gl.shader != nil {
 			sh.draw(s, v)
 		}
+		if v.gpu != nil {
+			v.gpu.prepareCapture()
+		}
 		if im := v.image; im != nil && im.tint == 0 {
 			for _, picture := range []*picture{&im.placeholder, &im.source} {
 				if picture.loaded && sameOrigin(picture.img) {

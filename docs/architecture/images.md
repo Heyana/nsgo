@@ -54,14 +54,14 @@ On a Pixel 3 XL running Android 12, a 960 × 540 image view rewrote 2,073,600 by
 
 | Target | Capture |
 | --- | --- |
-| macOS | ScreenCaptureKit enumerates this process’s windows and captures the owning window without the pointer or its shadow, then crops to the surface or view. Older systems use `CGWindowListCreateImage` with the owning window ID. |
-| iOS and tvOS | UIKit draws the owning window into a `UIGraphicsImageRenderer` clipped to the surface or view. |
-| Windows | Windows Graphics Capture targets the app's window, including its DirectComposition layers, and copies a frame to a CPU-readable texture on a worker. Embedded child windows use `PrintWindow`. |
-| Linux | A GTK widget paintable and the surface's GSK renderer render the region to a `GdkTexture`. |
-| Android | `PixelCopy` copies the region from the activity window. The Java runtime encodes it and returns the PNG over the pipe. |
-| Web | The DOM painter used by shader effects paints into a canvas after the surface redraws its shaders in the same animation callback. Canvas, shader output, readable images and ordinary fields render. Embedded frames, unreadable images and CSS effects outside the painter's coverage are omitted. |
+| macOS | ScreenCaptureKit enumerates this process’s windows and captures the owning window without the pointer or its shadow, including Metal `gpu.View` layers, then crops to the surface or view. Older systems use `CGWindowListCreateImage` with the owning window ID. |
+| iOS and tvOS | UIKit draws the owning window into a `UIGraphicsImageRenderer` clipped to the surface or view, including Metal `gpu.View` layers (`framebufferOnly: false`). |
+| Windows | Windows Graphics Capture targets the app's window, including its DirectComposition layers and Direct3D 11 `gpu.View` surfaces, and copies a frame to a CPU-readable texture on a worker (falling back to WARP D3D11 when hardware is absent, and to `PrintWindow` when WGC is unavailable). Embedded child windows use `PrintWindow`. |
+| Linux | A GTK widget paintable and the surface's GSK renderer render the region (including `GtkGLArea` shaders and `gpu.View`s) to a `GdkTexture` and download its pixels on the GTK loop before swizzling and PNG encoding on a worker. |
+| Android | `PixelCopy` copies the region from the activity window (or via `PixelCopy.Request.Builder.ofWindow(View)` on API 34+ for overlay windows, with a `Canvas` + `TextureView.getBitmap()` fallback on API < 34), including `ShaderEffect` and `GpuView` surfaces. The Java runtime encodes it off the UI thread and returns the PNG over the pipe. |
+| Web | Before painting, WebGPU `gpu.View`s copy their retained last-presented swapchain texture into the canvas's current drawing buffer (WebGL 2 keeps `preserveDrawingBuffer: true`) and the surface redraws its shaders in the same animation callback. The DOM painter paints into a 2D canvas and encodes via asynchronous `toBlob`. Canvas, shader output, GPU views, readable images and ordinary fields render. Embedded frames, unreadable images and CSS effects outside the painter's coverage are omitted. |
 
-PNG encoding runs on a worker or via the browser's asynchronous `toBlob`. The platform thread still computes geometry and, on some backends, paints or copies the frame.
+PNG encoding runs on a worker or via the browser's asynchronous `toBlob`. The platform thread still computes geometry and, on some backends, snapshots or copies the frame. Headless `nsgotest` answers `Scope.Capture` through `App.CaptureSurface`, reporting `CodeUnavailable` when nil.
 
 ## Size, prefetch and keeping
 

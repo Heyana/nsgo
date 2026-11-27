@@ -1144,7 +1144,16 @@ func (a *App) apply(b *driver.MountBatch) {
 			a.ReviewRequests++
 		case driver.ItemCapture:
 			if a.target == nil {
-				a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoCapture})
+				if a.CaptureSurface != nil {
+					var target *View
+					if it.ID != 0 {
+						target = a.views[it.ID]
+					}
+					data, err := a.CaptureSurface(target)
+					a.post(driver.CaptureResult(it.Count, data, err))
+				} else {
+					a.post(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoCapture})
+				}
 			}
 		case driver.ItemShare:
 			a.Shares = append(a.Shares, Share{Files: slices.Clone(it.Share.Files), Text: it.Share.Text, From: it.Share.From})

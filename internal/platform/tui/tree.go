@@ -142,6 +142,8 @@ func (t *tree) apply(b *driver.MountBatch) {
 			if it.Alert != nil {
 				t.emit(driver.Event{Kind: driver.EventAlert, Count: it.Alert.ID, Index: -1})
 			}
+		case driver.ItemCapture:
+			t.emit(driver.Event{Kind: driver.EventFiles, Count: it.Count, Text: driver.NoCapture})
 		case driver.ItemPickFiles, driver.ItemPickDirectories, driver.ItemSaveFile, driver.ItemShare:
 			t.emit(driver.Event{Kind: driver.EventFiles, Count: it.Count})
 		case driver.ItemOpenDirectory, driver.ItemReleaseDirectory:

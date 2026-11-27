@@ -157,6 +157,11 @@ func (s *surface) paintPicture(pic *fxPicture, host *view, ov float64, backdrop 
 	if hidden {
 		list.Call("remove", "nsgo-fx")
 	}
+	for _, v := range s.views {
+		if v != nil && v.gpu != nil {
+			v.gpu.prepareCapture()
+		}
+	}
 	p := painter{ctx: ctx, x0: x0, y0: y0}
 	if backdrop {
 		p.stop = host.el

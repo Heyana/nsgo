@@ -54,7 +54,7 @@ Apple 平台、Android、Windows、Linux 和 Web 直接更新像素图片，微�
 
 用已挂载视图的 `core.Ref` 调用 `cx.Capture(&ref, done)`，传入 `nil` 则截取当前表面。回调在引擎 goroutine 中收到按表面像素比例生成的 PNG 字节或错误。用 `core.ImageSource{Data: png}` 显示结果。要分享截图，可把字节写成应用缓存目录中的 `.png` 文件，再把路径传给 `core.ShareOptions.Files`。[分享文件](services.md#打开链接与文件)
 
-截图取视图边界内可见的表面像素。macOS、iOS、tvOS、Windows、Linux、Android 和 Web 支持截图。Android 截取活动窗口。Web 将应用 DOM 绘制到画布中，包含 NSGo 着色器的输出，省略嵌入的框架、无法读取的图片和部分 CSS 效果。
+截图取视图边界内可见的表面像素，包含 `core.Canvas`、`core.ShaderEffect`、原生视图和 `gpu.View` 内容。macOS、iOS、tvOS、Windows、Linux、Android（活动窗口与悬浮窗）和 Web 支持截图。Web 将应用 DOM 绘制到画布中，包含 NSGo 着色器与 GPU 视图的输出，省略嵌入的框架、无法读取的图片和部分 CSS 效果。
 
 ## 资源与像素密度
 

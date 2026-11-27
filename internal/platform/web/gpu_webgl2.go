@@ -242,6 +242,8 @@ func (b *webgl2Backend) resize(width, height int) {
 	b.height = max(height, 1)
 }
 
+func (b *webgl2Backend) prepareCapture() {}
+
 func (b *webgl2Backend) ensurePassFBO() js.Value {
 	if !b.passFBO.Truthy() {
 		b.passFBO = b.gl.Call("createFramebuffer")

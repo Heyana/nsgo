@@ -370,6 +370,10 @@ type App struct {
 	// Shares are the shares the app asked for, oldest first; each sheet
 	// shows.
 	Shares []Share
+	// CaptureSurface answers headless core.Scope.Capture requests with PNG bytes
+	// or an error. target is the captured *View, or nil for the whole surface.
+	// When nil, headless capture answers core.CodeUnavailable.
+	CaptureSurface func(target *View) ([]byte, error)
 	// LookUps are the dictionary panels the app showed (desktop.LookUp), oldest first, where the environment sets CanLookUp.
 	LookUps []LookUp
 	// ReviewRequests counts the in-app store rating prompts the app asked for (core.Scope.RequestReview), where the environment sets CanRequestReview.

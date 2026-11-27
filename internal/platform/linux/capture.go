@@ -20,7 +20,7 @@ func (w *window) capture(id driver.NodeID, count uint32) {
 	dispatch := w.engine.Dispatch
 	var take func(bool)
 	take = func(retry bool) {
-		tex, err := w.captureTexture(id)
+		img, err := w.capturePixels(id)
 		if err == captureNeedsFrame && retry {
 			// A batch that changes an image can invalidate the widget's
 			// render node until GTK has painted its next frame.
@@ -31,17 +31,9 @@ func (w *window) capture(id driver.NodeID, count uint32) {
 			dispatch(driver.CaptureResult(count, nil, err))
 			return
 		}
-		// A GdkTexture is immutable. Download and encode its pixels off
-		// the GTK loop, retaining it until the download finishes.
+		// Swizzle BGRA to RGBA and encode PNG off the GTK loop so capture
+		// never blocks frames.
 		go func() {
-			defer gObjectUnref(tex)
-			width, height := int(gdkTextureGetWidth(tex)), int(gdkTextureGetHeight(tex))
-			if width <= 0 || height <= 0 {
-				dispatch(driver.CaptureResult(count, nil, errors.New("linux: capture has no pixels")))
-				return
-			}
-			img := image.NewRGBA(image.Rect(0, 0, width, height))
-			gdkTextureDownload(tex, unsafe.Pointer(&img.Pix[0]), uintptr(img.Stride))
 			// GDK's download uses Cairo's native-endian premultiplied ARGB.
 			for i := 0; i < len(img.Pix); i += 4 {
 				img.Pix[i], img.Pix[i+2] = img.Pix[i+2], img.Pix[i]
@@ -52,6 +44,25 @@ func (w *window) capture(id driver.NodeID, count uint32) {
 		}()
 	}
 	w.post(func() { take(true) })
+}
+
+// capturePixels snapshots the GTK surface, including its native children,
+// shader widgets and GtkGLArea GPU views, crops to the requested widget's
+// presentation bounds, and downloads the GdkTexture on the GTK main loop
+// (required for GL/Vulkan-backed textures) before returning the raw BGRA image.
+func (w *window) capturePixels(id driver.NodeID) (*image.RGBA, error) {
+	tex, err := w.captureTexture(id)
+	if err != nil {
+		return nil, err
+	}
+	defer gObjectUnref(tex)
+	width, height := int(gdkTextureGetWidth(tex)), int(gdkTextureGetHeight(tex))
+	if width <= 0 || height <= 0 {
+		return nil, errors.New("linux: capture has no pixels")
+	}
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	gdkTextureDownload(tex, unsafe.Pointer(&img.Pix[0]), uintptr(img.Stride))
+	return img, nil
 }
 
 // captureTexture snapshots the GTK surface, including its native children

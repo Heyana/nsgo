@@ -54,7 +54,7 @@ Apple platforms, Android, Windows, Linux and the web update pixel images directl
 
 Call `cx.Capture(&ref, done)` with a mounted view's `core.Ref`, or `cx.Capture(nil, done)` for the current surface. The callback receives PNG bytes at the surface's pixel scale or an error on the engine goroutine. Use `core.ImageSource{Data: png}` to display the result. To share it, write the bytes to a `.png` file in the app's cache directory and pass its path in `core.ShareOptions.Files`. [Sharing files](services.md#opening-links-and-files)
 
-Capture takes the visible surface pixels within the view's bounds. It is available on macOS, iOS, tvOS, Windows, Linux, Android and the web. Android captures the activity's window. Web capture paints the app's DOM into a canvas, including NSGo shader output, and omits embedded frames, images it cannot read and some CSS effects.
+Capture takes the visible surface pixels within the view's bounds, including `core.Canvas`, `core.ShaderEffect`, native views and `gpu.View` content. It is available on macOS, iOS, tvOS, Windows, Linux, Android (activity and overlay windows) and the web. Web capture paints the app's DOM into a canvas, including NSGo shader and GPU view output, and omits embedded frames, images it cannot read and some CSS effects.
 
 ## Resources and scales
 

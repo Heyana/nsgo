@@ -57,10 +57,12 @@ type webgpuBackend struct {
 	sampleCount      int
 	width, height    int
 
-	depthTex      js.Value
-	depthView     js.Value
-	msaaColorTex  js.Value
-	msaaColorView js.Value
+	depthTex       js.Value
+	depthView      js.Value
+	msaaColorTex   js.Value
+	msaaColorView  js.Value
+	lastSurfaceTex js.Value
+	hasPresented   bool
 
 	buffers    map[driver.GPUID]*webgpuBuffer
 	textures   map[driver.GPUID]*webgpuTexture
@@ -134,7 +136,7 @@ func (g *gpuView) finishWebGPUInit(navGPU, device, ctx js.Value) {
 		"device":    device,
 		"format":    prefStr,
 		"alphaMode": "premultiplied",
-		"usage":     int(webgpuTexRenderAttachment | webgpuTexCopySrc),
+		"usage":     int(webgpuTexRenderAttachment | webgpuTexCopySrc | webgpuTexCopyDst),
 	}
 	ctx.Call("configure", cfgObj)
 
@@ -274,6 +276,11 @@ func (b *webgpuBackend) destroySwapchainAttachments() {
 		b.msaaColorTex = js.Undefined()
 		b.msaaColorView = js.Undefined()
 	}
+	if b.lastSurfaceTex.Truthy() {
+		b.lastSurfaceTex.Call("destroy")
+		b.lastSurfaceTex = js.Undefined()
+	}
+	b.hasPresented = false
 }
 
 func (b *webgpuBackend) recreateSwapchainAttachments() {
@@ -281,6 +288,11 @@ func (b *webgpuBackend) recreateSwapchainAttachments() {
 	if b.destroyed || !b.device.Truthy() || b.width <= 0 || b.height <= 0 {
 		return
 	}
+	b.lastSurfaceTex = b.device.Call("createTexture", map[string]any{
+		"size":   []any{b.width, b.height, 1},
+		"format": b.surfaceFormatStr,
+		"usage":  int(webgpuTexCopySrc | webgpuTexCopyDst | webgpuTexRenderAttachment),
+	})
 	if b.depthFormatStr != "" {
 		b.depthTex = b.device.Call("createTexture", map[string]any{
 			"size":        []any{b.width, b.height, 1},
@@ -345,8 +357,19 @@ func (b *webgpuBackend) submit(frame driver.GPUFrame) {
 		for _, cp := range frame.Copies {
 			b.execCopy(enc, cp)
 		}
+		var swapTex js.Value
 		for _, pass := range frame.Passes {
-			b.execPass(enc, pass)
+			if b.execPass(enc, pass, &swapTex) && swapTex.Truthy() {
+				// swapTex holds the frame's swapchain texture for copy-out below.
+			}
+		}
+		if swapTex.Truthy() && b.lastSurfaceTex.Truthy() && b.width > 0 && b.height > 0 {
+			enc.Call("copyTextureToTexture",
+				map[string]any{"texture": swapTex},
+				map[string]any{"texture": b.lastSurfaceTex},
+				[]any{b.width, b.height, 1},
+			)
+			b.hasPresented = true
 		}
 		cmdBuf := enc.Call("finish")
 		b.queue.Call("submit", []any{cmdBuf})
@@ -355,6 +378,26 @@ func (b *webgpuBackend) submit(frame driver.GPUFrame) {
 	for _, rb := range readbacks {
 		b.execReadTexture(rb)
 	}
+}
+
+// prepareCapture copies the retained swapchain texture back into the WebGPU
+// canvas's current drawing buffer so CanvasRenderingContext2D.drawImage reads
+// the rendered frame even after the browser compositor has consumed an earlier presentation.
+func (b *webgpuBackend) prepareCapture() {
+	if b.destroyed || !b.hasPresented || !b.device.Truthy() || !b.ctx.Truthy() || !b.lastSurfaceTex.Truthy() || b.width <= 0 || b.height <= 0 {
+		return
+	}
+	swapTex := b.ctx.Call("getCurrentTexture")
+	if !swapTex.Truthy() {
+		return
+	}
+	enc := b.device.Call("createCommandEncoder")
+	enc.Call("copyTextureToTexture",
+		map[string]any{"texture": b.lastSurfaceTex},
+		map[string]any{"texture": swapTex},
+		[]any{b.width, b.height, 1},
+	)
+	b.queue.Call("submit", []any{enc.Call("finish")})
 }
 
 func (b *webgpuBackend) execOp(op driver.GPUResourceOp) {
@@ -869,12 +912,17 @@ func (b *webgpuBackend) execCopy(enc js.Value, cp driver.GPUCopyOp) {
 	}
 }
 
-func (b *webgpuBackend) execPass(enc js.Value, pass driver.GPUPass) {
+func (b *webgpuBackend) execPass(enc js.Value, pass driver.GPUPass, swapTex *js.Value) bool {
+	touchedSwap := false
 	colorAtts := make([]any, 0, len(pass.ColorAttachments))
 	for _, ca := range pass.ColorAttachments {
 		var view, resolveView js.Value
 		if ca.Texture == 0 {
-			swapView := b.ctx.Call("getCurrentTexture").Call("createView")
+			if !swapTex.Truthy() {
+				*swapTex = b.ctx.Call("getCurrentTexture")
+			}
+			swapView := swapTex.Call("createView")
+			touchedSwap = true
 			if b.sampleCount > 1 && b.msaaColorView.Truthy() {
 				view = b.msaaColorView
 				resolveView = swapView
@@ -1000,6 +1048,7 @@ func (b *webgpuBackend) execPass(enc js.Value, pass driver.GPUPass) {
 		}
 	}
 	rp.Call("end")
+	return touchedSwap
 }
 
 func (b *webgpuBackend) execReadTexture(op driver.GPUResourceOp) {
@@ -1013,7 +1062,11 @@ func (b *webgpuBackend) execReadTexture(op driver.GPUResourceOp) {
 		readbackG = b.g.ctrl.generation
 	)
 	if op.ReadbackSurface {
-		srcTex = b.ctx.Call("getCurrentTexture")
+		if b.hasPresented && b.lastSurfaceTex.Truthy() {
+			srcTex = b.lastSurfaceTex
+		} else {
+			srcTex = b.ctx.Call("getCurrentTexture")
+		}
 		fmtKind = b.surfaceFormat
 		rw, rh = uint32(max(b.width, 1)), uint32(max(b.height, 1))
 	} else {

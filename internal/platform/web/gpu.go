@@ -74,6 +74,7 @@ func probeWebGL2(g js.Value) bool {
 type gpuBackend interface {
 	resize(width, height int)
 	submit(frame driver.GPUFrame)
+	prepareCapture()
 	destroy()
 }
 
@@ -203,6 +204,13 @@ func (g *gpuView) submit(frame driver.GPUFrame) {
 		return
 	}
 	g.backend.submit(frame)
+}
+
+func (g *gpuView) prepareCapture() {
+	if g == nil || g.backend == nil || g.ctrl.state != gpuStateReady {
+		return
+	}
+	g.backend.prepareCapture()
 }
 
 func (g *gpuView) emitEvent(ev *driver.GPUEvent) {

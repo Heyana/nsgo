@@ -70,7 +70,9 @@ func captureCompositedWindow(hwnd uintptr) (*image.RGBA, error) {
 
 	device, err := createD3D(d3dDriverHardware)
 	if err != nil {
-		return nil, err
+		if device, err = createD3D(d3dDriverWARP); err != nil {
+			return nil, err
+		}
 	}
 	defer device.release()
 	dxgi := device.query(&iidDXGIDevice)
