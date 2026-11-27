@@ -220,9 +220,37 @@ func TestManageSubscriptionsAndRefund(t *testing.T) {
 	app.ManageSubscriptionsError = core.PurchaseCancelled
 	var cancelled error
 	scope.ManageSubscriptions(func(err error) { cancelled = err })
+	app.RefundStatus = core.RefundCancelled
+	var cancelledStatus core.RefundStatus
+	var cancelledRefundErr error
+	scope.RequestRefund("42", func(s core.RefundStatus, err error) { cancelledStatus, cancelledRefundErr = s, err })
 	app.Settle()
 	if !errors.Is(cancelled, core.PurchaseCancelled) {
 		t.Fatalf("cancelled manage error %v", cancelled)
+	}
+	if cancelledRefundErr != nil || cancelledStatus != core.RefundCancelled {
+		t.Fatalf("cancelled refund=%q/%v", cancelledStatus, cancelledRefundErr)
+	}
+	app.ManageSubscriptionsError = errors.New("could not open subscriptions")
+	var manageFailed error
+	scope.ManageSubscriptions(func(err error) { manageFailed = err })
+	app.RefundError = errors.New("duplicate request")
+	var failedStatus core.RefundStatus
+	var failedRefundErr error
+	scope.RequestRefund("42", func(s core.RefundStatus, err error) { failedStatus, failedRefundErr = s, err })
+	var emptyIDStatus core.RefundStatus
+	var emptyIDErr error
+	scope.RequestRefund("", func(s core.RefundStatus, err error) { emptyIDStatus, emptyIDErr = s, err })
+	app.Settle()
+	if !errors.Is(manageFailed, core.PurchaseFailed) || manageFailed.Error() != "nsgo: purchase: failed: could not open subscriptions" {
+		t.Fatalf("failed manage error %v", manageFailed)
+	}
+	if failedStatus != "" || !errors.Is(failedRefundErr, core.PurchaseFailed) || failedRefundErr.Error() != "nsgo: purchase: failed: duplicate request" {
+		t.Fatalf("failed refund=%q/%v", failedStatus, failedRefundErr)
+	}
+	// An empty transaction ID fails locally without reaching the store.
+	if emptyIDStatus != "" || !errors.Is(emptyIDErr, core.PurchaseFailed) || len(app.PurchaseRequests) != 6 {
+		t.Fatalf("empty transaction refund=%q/%v, requests=%d", emptyIDStatus, emptyIDErr, len(app.PurchaseRequests))
 	}
 }
 
@@ -235,8 +263,10 @@ func TestPurchasesUnavailableWithoutAStore(t *testing.T) {
 	scope.FinishTransaction("1", func(err error) { errs = append(errs, err) })
 	scope.CurrentEntitlements(func(_ []core.Transaction, err error) { errs = append(errs, err) })
 	scope.SyncPurchases(func(err error) { errs = append(errs, err) })
+	scope.ManageSubscriptions(func(err error) { errs = append(errs, err) })
+	scope.RequestRefund("42", func(_ core.RefundStatus, err error) { errs = append(errs, err) })
 	app.Settle()
-	if len(errs) != 5 || len(app.PurchaseRequests) != 0 {
+	if len(errs) != 7 || len(app.PurchaseRequests) != 0 {
 		t.Fatalf("answers %v, requests %v", errs, app.PurchaseRequests)
 	}
 	for _, err := range errs {
@@ -260,10 +290,12 @@ func TestPurchasesHeldToAccess(t *testing.T) {
 	scope.FinishTransaction("1", func(err error) { errs = append(errs, err) })
 	scope.CurrentEntitlements(func(_ []core.Transaction, err error) { errs = append(errs, err) })
 	scope.SyncPurchases(func(err error) { errs = append(errs, err) })
+	scope.ManageSubscriptions(func(err error) { errs = append(errs, err) })
+	scope.RequestRefund("42", func(_ core.RefundStatus, err error) { errs = append(errs, err) })
 	heard := false
 	scope.OnPurchaseUpdate(func(core.Transaction) { heard = true })
 	app.UpdatePurchase(core.Transaction{ID: "9", ProductID: "coins.100"})
-	if len(errs) != 5 || len(app.PurchaseRequests) != 0 || heard {
+	if len(errs) != 7 || len(app.PurchaseRequests) != 0 || heard {
 		t.Fatalf("answers %v, requests %v, heard %v", errs, app.PurchaseRequests, heard)
 	}
 	for _, err := range errs {

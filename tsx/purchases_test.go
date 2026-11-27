@@ -1,6 +1,7 @@
 package tsx_test
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -22,6 +23,8 @@ function App() {
 		<View testID="buy" style={{ height: 20 }} onPress={buy} />
 		<View testID="entitlements" style={{ height: 20 }} onPress={() => Purchases.currentEntitlements().then((ts) => said.set("entitled " + ts.map((t) => t.productId).join()))} />
 		<View testID="sync" style={{ height: 20 }} onPress={() => Purchases.sync().then((ok) => said.set("synced " + ok))} />
+		<View testID="manage" style={{ height: 20 }} onPress={() => Purchases.manageSubscriptions().then(() => said.set("managed"), (e) => said.set("manage-err " + e.message))} />
+		<View testID="refund" style={{ height: 20 }} onPress={() => Purchases.requestRefund("42").then((status) => said.set("refund " + status), (e) => said.set("refund-err " + e.message))} />
 		<Text>{said()}</Text>
 		<Text>{"updates " + updates()}</Text>
 	</View>;
@@ -60,8 +63,35 @@ mount(App);`, nsgotest.Environment(core.Environment{OS: core.OSIOS, Purchases: t
 	if !slices.Contains(app.Texts(), "synced false") {
 		t.Fatalf("a declined sync: %q", app.Texts())
 	}
+	app.Press("id:manage")
+	if !slices.Contains(app.Texts(), "managed") {
+		t.Fatalf("manageSubscriptions: %q", app.Texts())
+	}
+	app.ManageSubscriptionsError = errors.New("could not open subscriptions")
+	app.Press("id:manage")
+	if !slices.Contains(app.Texts(), "manage-err nsgo: purchase: failed: could not open subscriptions") {
+		t.Fatalf("manageSubscriptions error: %q", app.Texts())
+	}
+	app.Press("id:refund")
+	if !slices.Contains(app.Texts(), "refund success") {
+		t.Fatalf("requestRefund success: %q", app.Texts())
+	}
+	app.RefundStatus = core.RefundCancelled
+	app.Press("id:refund")
+	if !slices.Contains(app.Texts(), "refund cancelled") {
+		t.Fatalf("requestRefund cancelled: %q", app.Texts())
+	}
+	app.RefundError = errors.New("duplicate request")
+	app.Press("id:refund")
+	if !slices.Contains(app.Texts(), "refund-err nsgo: purchase: failed: duplicate request") {
+		t.Fatalf("requestRefund error: %q", app.Texts())
+	}
 	if r := app.PurchaseRequests[1]; r.Action != nsgotest.PurchaseBuy || r.AccountToken != "6f9619ff-8b86-d011-b42d-00c04fc964ff" {
 		t.Fatalf("request %+v", r)
+	}
+	last := app.PurchaseRequests[len(app.PurchaseRequests)-1]
+	if last.Action != nsgotest.PurchaseRefund || last.Transaction != "42" {
+		t.Fatalf("last request %+v", last)
 	}
 }
 
@@ -71,6 +101,8 @@ function App() {
 	const said = signal("idle");
 	return <View>
 		<View testID="buy" style={{ height: 20 }} onPress={() => Purchases.available().then((on) => Purchases.purchase("coins").then(() => said.set("bought"), (e) => said.set(on + " " + e.code)))} />
+		<View testID="manage" style={{ height: 20 }} onPress={() => Purchases.manageSubscriptions().then(() => said.set("managed"), (e) => said.set("manage " + e.code))} />
+		<View testID="refund" style={{ height: 20 }} onPress={() => Purchases.requestRefund("42").then((s) => said.set(s), (e) => said.set("refund " + e.code))} />
 		<Text>{said()}</Text>
 	</View>;
 }
@@ -78,5 +110,13 @@ mount(App);`)
 	app.Press("id:buy")
 	if !slices.Contains(app.Texts(), "false "+core.CodeUnavailable) {
 		t.Fatalf("texts %q", app.Texts())
+	}
+	app.Press("id:manage")
+	if !slices.Contains(app.Texts(), "manage "+core.CodeUnavailable) {
+		t.Fatalf("manage texts %q", app.Texts())
+	}
+	app.Press("id:refund")
+	if !slices.Contains(app.Texts(), "refund "+core.CodeUnavailable) {
+		t.Fatalf("refund texts %q", app.Texts())
 	}
 }

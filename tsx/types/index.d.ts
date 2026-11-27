@@ -420,6 +420,7 @@ export interface PurchaseOptions {
   offer?: { id: string; keyId: string; nonce: string; signature: string; timestamp: number };
 }
 export type PurchaseResult = { status: "purchased"; transaction: Transaction } | { status: "pending" } | { status: "cancelled" };
+export type RefundStatus = "success" | "cancelled";
 export interface PurchasesModule {
   /** Whether this build reaches a store: macOS, iOS and tvOS packages built with `apple.purchases`. */
   available(): Promise<boolean>;
@@ -433,6 +434,10 @@ export interface PurchasesModule {
   currentEntitlements(): Promise<Transaction[]>;
   /** Brings the user's transactions up to date, from a Restore Purchases button; false when the user declines to sign in. */
   sync(): Promise<boolean>;
+  /** Opens the store's subscription-management UI: the system sheet on iOS, or the App Store subscriptions page on macOS and tvOS. */
+  manageSubscriptions(): Promise<void>;
+  /** Begins a refund request for `transactionId`, resolving with `"success"` or `"cancelled"`. */
+  requestRefund(transactionId: string): Promise<RefundStatus>;
   /** A transaction made or changed outside `purchase`, those unfinished at launch included. Returns a function that stops listening. */
   on(event: "update", listener: (transaction: Transaction) => void): () => void;
 }

@@ -124,10 +124,13 @@ public func nsgoStoreKitStart(_ fn: NsgoStoreKitAnswer) {
 @_cdecl("nsgo_storekit_call")
 public func nsgoStoreKitCall(_ id: UInt32, _ request: UnsafePointer<CChar>) {
     let data = Data(String(cString: request).utf8)
+    let decoded = Result { try JSONDecoder().decode(Request.self, from: data) }
+    // Retain the caller's window or scene synchronously while the caller still holds it, before crossing into the async Task.
+    let presentation: AnyObject? = (try? decoded.get()).flatMap { presentationObject($0.presentation) }
     Task {
         var out = Answer()
         do {
-            out = try await handle(try JSONDecoder().decode(Request.self, from: data))
+            out = try await handle(try decoded.get(), presentation: presentation)
         } catch let f as Failure {
             out.error = f.code
             out.message = f.message
@@ -141,7 +144,7 @@ public func nsgoStoreKitCall(_ id: UInt32, _ request: UnsafePointer<CChar>) {
     }
 }
 
-private func handle(_ r: Request) async throws -> Answer {
+private func handle(_ r: Request, presentation: AnyObject?) async throws -> Answer {
     switch r.command {
     case "products":
         let found = try await Product.products(for: r.ids ?? [])
@@ -205,12 +208,12 @@ private func handle(_ r: Request) async throws -> Answer {
         return Answer()
     case "manageSubscriptions":
 #if os(iOS)
-        guard let scene = presentationObject(r.presentation) as? UIWindowScene else {
+        guard let scene = presentation as? UIWindowScene else {
             throw Failure(code: "failed", message: "no active window scene")
         }
         try await AppStore.showManageSubscriptions(in: scene)
 #elseif os(macOS)
-        guard let url = URL(string: "https://apps.apple.com/account/subscriptions"), NSWorkspace.shared.open(url) else {
+        guard let url = URL(string: "https://apps.apple.com/account/subscriptions"), await MainActor.run(body: { NSWorkspace.shared.open(url) }) else {
             throw Failure(code: "failed", message: "could not open subscriptions")
         }
 #else
@@ -222,12 +225,12 @@ private func handle(_ r: Request) async throws -> Answer {
     case "refund":
         guard let id = UInt64(r.transaction ?? "") else { throw Failure(code: "failed", message: "invalid transaction") }
 #if os(iOS)
-        guard let scene = presentationObject(r.presentation) as? UIWindowScene else {
+        guard let scene = presentation as? UIWindowScene else {
             throw Failure(code: "failed", message: "no active window scene")
         }
         let status = try await Transaction.beginRefundRequest(for: id, in: scene)
 #elseif os(macOS)
-        guard let window = presentationObject(r.presentation) as? NSWindow else {
+        guard let window = presentation as? NSWindow else {
             throw Failure(code: "failed", message: "no active window")
         }
         let status = try await beginRefundRequest(for: id, from: window)

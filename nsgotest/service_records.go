@@ -35,7 +35,7 @@ const (
 )
 
 // PurchaseRequest records a store operation and its options. IDs are the
-// products to look up. Transaction is the ID of a purchase to finish.
+// products to look up. Transaction is the ID of a purchase to finish or refund.
 type PurchaseRequest struct {
 	Action       PurchaseAction
 	IDs          []string

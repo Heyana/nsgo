@@ -409,7 +409,7 @@ type App struct {
 	AppleSignIns          []AppleSignInRequest
 	AppleSignIn           func(r AppleSignInRequest) (core.AppleCredential, error)
 	AppleCredentialStates map[string]core.AppleCredentialState
-	// Products are what the store sells where the environment says Purchases. PurchaseRequests are the in-app purchase requests the app made, oldest first. PurchaseAnswer answers each purchase with the transaction the user buys, or an error, core.PurchaseCancelled for a user who closes the sheet and core.PurchasePending for one waiting for approval; without it a product among Products is bought and any other fails. A transaction bought joins Unfinished, and Entitlements unless consumable; FinishTransaction takes it out of Unfinished into Finished, by ID, and CurrentEntitlements answers Entitlements. SyncAnswer is what SyncPurchases answers, nil by default. UpdatePurchase delivers a transaction as the store does one made outside the app, and UnfinishedTransactions those the store hands the app as it starts.
+	// Products are what the store sells where the environment says Purchases. PurchaseRequests are the in-app purchase requests the app made, oldest first. PurchaseAnswer answers each purchase with the transaction the user buys, or an error, core.PurchaseCancelled for a user who closes the sheet and core.PurchasePending for one waiting for approval; without it a product among Products is bought and any other fails. A transaction bought joins Unfinished, and Entitlements unless consumable; FinishTransaction takes it out of Unfinished into Finished, by ID, and CurrentEntitlements answers Entitlements. SyncAnswer is what SyncPurchases answers, nil by default; ManageSubscriptionsError answers ManageSubscriptions, nil by default; RefundError fails RequestRefund and otherwise RefundStatus answers it, core.RefundSuccess by default. UpdatePurchase delivers a transaction as the store does one made outside the app, and UnfinishedTransactions those the store hands the app as it starts.
 	Products                 []core.Product
 	PurchaseRequests         []PurchaseRequest
 	PurchaseAnswer           func(r PurchaseRequest) (core.Transaction, error)
@@ -419,6 +419,7 @@ type App struct {
 	SyncAnswer               error
 	ManageSubscriptionsError error
 	RefundStatus             core.RefundStatus
+	RefundError              error
 	// transactions numbers the transactions the model's store makes.
 	transactions int
 	// Permissions is each permission's status as the platform answers it, PermissionNotAsked for one it does not hold; a request while not asked makes it PermissionAnswers' for it, the user granting it when that has none. Start makes both maps. PermissionSettings are the permissions whose settings the app opened, oldest first, and Guide the permission a guide shows, "" for none: GrantPermission and CloseGuide end it.

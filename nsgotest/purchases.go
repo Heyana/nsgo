@@ -73,6 +73,10 @@ func (a *App) purchase(id uint32, r driver.PurchaseRequest) {
 			answer.Error, answer.Message = purchaseErrorCode(a.ManageSubscriptionsError)
 		}
 	case driver.PurchaseRefund:
+		if a.RefundError != nil {
+			answer.Error, answer.Message = purchaseErrorCode(a.RefundError)
+			break
+		}
 		answer.RefundStatus = string(a.RefundStatus)
 		if answer.RefundStatus == "" {
 			answer.RefundStatus = driver.RefundSuccess

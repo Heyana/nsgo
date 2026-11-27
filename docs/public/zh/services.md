@@ -582,7 +582,7 @@ apple:
 
 显示商店给出的价格 `DisplayPrice`，不要显示应用自己定的价格：商店按各地区自行定价。一次购买只回答一次，给出交易或错误：用户关闭面板时是 `core.PurchaseCancelled`，等待批准（如「询问购买」）时是 `core.PurchasePending`，其余是附带商店原话的 `core.PurchaseFailed`，其他平台上是 `PurchasesUnavailable`。把交易的 `Signed`（商店签名的 JWS）交给应用的服务器验证，交付所购内容，再完成这笔交易；未完成的交易每次启动时商店都会再次交给应用。
 
-`cx.ManageSubscriptions` 打开 Apple 的订阅管理界面（iOS 为系统面板，macOS 和 tvOS 为 App Store 订阅页面）。`cx.RequestRefund` 为交易发起退款请求，并回答 `core.RefundSuccess` 或 `core.RefundCancelled`。
+`cx.ManageSubscriptions` 打开 Apple 的订阅管理界面（iOS 为系统面板，macOS 和 tvOS 为 App Store 订阅页面）。`cx.RequestRefund` 在 iOS 和 macOS 上为交易发起退款请求，并回答 `core.RefundSuccess` 或 `core.RefundCancelled`（tvOS 回答 `core.PurchaseFailed`）。
 
 ```go
 cx.OnPurchaseUpdate(func(t core.Transaction) { // 续订、获批的购买、其他设备上的购买、退款，以及启动时未完成的交易
@@ -608,7 +608,7 @@ cx.Purchase("com.example.pro.monthly", core.PurchaseOptions{AccountToken: userUU
 
 `FinishTransaction` 对已完成的交易返回 `PurchaseNotFound`，即使它仍由 `CurrentEntitlements` 返回；已完成的非消耗型商品仍归用户所有。
 
-在应用启动时注册 `OnPurchaseUpdate`：在任何处理函数之前到达的更新会留给第一个注册的。`cx.CurrentEntitlements` 回答用户当前拥有的内容，供启动时解锁；「恢复购买」按钮调用 `cx.SyncPurchases`，它可能要求用户登录。`AccountToken` 是应用自己的 UUID，交易和 App Store 发给服务器的通知都会带上它。macOS 只有 Mac App Store 构建能销售，App Clip 不销售任何东西；Android、watchOS、Windows、Linux、Web 和小程序目前回答 `PurchasesUnavailable`。用 `nsgotest` 测试购买，它的 `Products`、`PurchaseAnswer`、`UpdatePurchase` 和 `UnfinishedTransactions` 代替商店。`app.PurchaseRequests` 以 `nsgotest.PurchaseRequest` 记录商店操作。在 TSX 中，`Purchases` 模块需要 `purchases` 能力：`purchase` 解析为 `{ status: "purchased", transaction }`、`"pending"` 或 `"cancelled"`，`on("update", listener)` 接收更新。
+在应用启动时注册 `OnPurchaseUpdate`：在任何处理函数之前到达的更新会留给第一个注册的。`cx.CurrentEntitlements` 回答用户当前拥有的内容，供启动时解锁；「恢复购买」按钮调用 `cx.SyncPurchases`，它可能要求用户登录。`AccountToken` 是应用自己的 UUID，交易和 App Store 发给服务器的通知都会带上它。macOS 只有 Mac App Store 构建能销售，App Clip 不销售任何东西；Android、watchOS、Windows、Linux、Web 和小程序目前回答 `PurchasesUnavailable`。用 `nsgotest` 测试购买，它的 `Products`、`PurchaseAnswer`、`ManageSubscriptionsError`、`RefundStatus`、`RefundError`、`UpdatePurchase` 和 `UnfinishedTransactions` 代替商店。`app.PurchaseRequests` 以 `nsgotest.PurchaseRequest` 记录商店操作。在 TSX 中，`Purchases` 模块需要 `purchases` 能力：`purchase` 解析为 `{ status: "purchased", transaction }`、`"pending"` 或 `"cancelled"`，`manageSubscriptions()` 打开订阅管理，`requestRefund(transactionId)` 解析为 `"success"` 或 `"cancelled"`，`on("update", listener)` 接收更新。
 
 ## 指针锁定
 

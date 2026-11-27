@@ -9,7 +9,7 @@ import (
 	"github.com/nsgo-dev/nsgo/core"
 )
 
-// purchases is nsgo's Purchases, NSGo's own, on core's in-app purchase services: available(), products(ids), purchase(productId, { accountToken, quantity, offer }), resolving with { status, transaction }, finish(id), currentEntitlements(), sync() and on("update", listener). All but available are held to the purchases capability, rejecting or throwing without it.
+// purchases is nsgo's Purchases, NSGo's own, on core's in-app purchase services: available(), products(ids), purchase(productId, { accountToken, quantity, offer }), resolving with { status, transaction }, finish(id), currentEntitlements(), sync(), manageSubscriptions(), requestRefund(id) and on("update", listener). All but available are held to the purchases capability, rejecting or throwing without it.
 func (r *runtime) purchases() js.Value {
 	o := r.vm.NewObject()
 	set := func(name string, f func(call js.FunctionCall) js.Value) {
@@ -133,6 +133,36 @@ func (r *runtime) purchases() js.Value {
 				default:
 					_ = reject(r.goError(purchaseFailure(err)))
 				}
+			})
+		})
+		return r.vm.ToValue(p)
+	})
+	set("manageSubscriptions", func(js.FunctionCall) js.Value {
+		p, resolve, reject := r.newPromise()
+		r.cx.ManageSubscriptions(func(err error) {
+			r.inJS(func() {
+				if err != nil {
+					_ = reject(r.goError(purchaseFailure(err)))
+					return
+				}
+				_ = resolve(js.Undefined())
+			})
+		})
+		return r.vm.ToValue(p)
+	})
+	set("requestRefund", func(call js.FunctionCall) js.Value {
+		id := ""
+		if v := arg(call, 0); defined(v) {
+			id = v.String()
+		}
+		p, resolve, reject := r.newPromise()
+		r.cx.RequestRefund(id, func(status core.RefundStatus, err error) {
+			r.inJS(func() {
+				if err != nil {
+					_ = reject(r.goError(purchaseFailure(err)))
+					return
+				}
+				_ = resolve(string(status))
 			})
 		})
 		return r.vm.ToValue(p)

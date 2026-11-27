@@ -87,9 +87,11 @@ nsgo.Purchases
 nsgo.Purchases.available
 nsgo.Purchases.currentEntitlements
 nsgo.Purchases.finish
+nsgo.Purchases.manageSubscriptions
 nsgo.Purchases.on
 nsgo.Purchases.products
 nsgo.Purchases.purchase
+nsgo.Purchases.requestRefund
 nsgo.Purchases.sync
 nsgo.ScreenEffect
 nsgo.ScreenTransition
