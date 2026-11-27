@@ -241,12 +241,12 @@ A Pixel 3 XL on Android 12 found a Mac's Bonjour advertisement, read its binary 
 
 | Target | Synthesizer | Voices | Notes |
 | --- | --- | --- | --- |
-| macOS, iOS, tvOS | `AVSpeechSynthesizer`, one per process (`apple/speak.go`), its delegate's finish and cancel ending the utterance; the rate on its 0 to 1 scale around `AVSpeechUtteranceDefaultSpeechRate`'s 0.5, the pitch as `pitchMultiplier` | `AVSpeechSynthesisVoice.speechVoices`, by `identifier`; a bare language takes the first voice of a tag under it | iOS and tvOS hold the audio session at `Playback` while one speaks (`internal/audiosession`), so it pauses other apps' audio and speaks with the Ring/Silent switch on silent |
+| macOS, iOS, tvOS, watchOS | `AVSpeechSynthesizer`, one per process (`apple/speak.go`), its delegate's finish and cancel ending the utterance; the rate on its 0 to 1 scale around `AVSpeechUtteranceDefaultSpeechRate`'s 0.5, the pitch as `pitchMultiplier` | `AVSpeechSynthesisVoice.speechVoices`, by `identifier`; a bare language takes the first voice of a tag under it | iOS, tvOS and watchOS set `usesApplicationAudioSession` and hold the audio session at `Playback` while one speaks (`internal/audiosession`), so it pauses other apps' audio and speaks with the Ring/Silent switch on silent |
 | Android | `TextToSpeech` in `Speaker.java`, one per process, made at the first request, which waits for the engine to bind; `QUEUE_FLUSH`, `USAGE_MEDIA` and `CONTENT_TYPE_SPEECH` | `getVoices` without those not installed, by name | The runtime's manifest and the AAR's a host merges query `TTS_SERVICE`, without which API 30 and later find no engine; `Env.CanSpeak` says an engine is installed. Text over `getMaxSpeechInputLength` fails `text-too-long` |
 | Windows | WinRT's `SpeechSynthesizer` writes the speech to a stream a `MediaPlayer` plays, one of each per process (`windows/speak.go`), its `MediaEnded` and `MediaFailed` ending the utterance; rate and pitch from Windows 10 1709 | `AllVoices`, by `Id`; the default voice where it speaks the language | The parameterized interfaces' IDs are derived from their signatures, as the toasts' handler's is |
 | Linux | speech-dispatcher over its SSIP socket (`internal/platform/speechd`), Go speaking the protocol's lines, started with `--spawn` where it does not listen, as libspeechd starts it; rate and pitch on its -100 to 100 | The output module's `LIST SYNTHESIS_VOICES` | `Env.CanSpeak` says the daemon listens or is installed |
 | Web | `speechSynthesis`, the utterance held until it ends, as Chrome drops the events of one nothing holds | `getVoices`, waiting up to 1.5 s for `voiceschanged` where the browser loads them later | Chrome refuses to speak before the page's first user activation, which fails `not-allowed` |
-| watchOS, mini programs | None ([roadmap](../roadmap.md#apple-watch)) | None | |
+| Mini programs | None ([roadmap](../roadmap.md#mini-programs)) | None | |
 
 ## Biometrics
 

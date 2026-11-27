@@ -102,7 +102,8 @@ func TestSecondaryTargetEnvCapabilities(t *testing.T) {
 		},
 		{
 			name:          "watchOS",
-			in:            Environment{OS: OSIOS, Idiom: IdiomWatch},
+			in:            Environment{OS: OSIOS, Idiom: IdiomWatch, Speak: true},
+			wantSpeak:     true,
 			wantAppleKeys: true,
 		},
 		{

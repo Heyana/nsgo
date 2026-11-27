@@ -13,7 +13,7 @@ import (
 	"github.com/nsgo-dev/nsgo/internal/driver"
 )
 
-// Speaking speaks text for macOS, iOS and tvOS with AVSpeechSynthesizer: one synthesizer in the process, as there is one audio output, which speaks one utterance at a time, a new one stopping the one before. Its state is the main thread's; the delegate's reports hop there.
+// Speaking speaks text for macOS, iOS, tvOS and watchOS with AVSpeechSynthesizer: one synthesizer in the process, as there is one audio output, which speaks one utterance at a time, a new one stopping the one before. Its state is the main thread's; the delegate's reports hop there.
 var speaking struct {
 	synthesizer objc.ID
 	// run is the utterance being spoken, nil for none.
@@ -28,19 +28,37 @@ type speakRun struct {
 	leave     func()
 }
 
-// avSpeechDefaultRate is AVSpeechUtteranceDefaultSpeechRate, between AVSpeechUtteranceMinimumSpeechRate's 0 and Maximum's 1.
-const avSpeechDefaultRate = 0.5
+const (
+	// avSpeechDefaultRate is AVSpeechUtteranceDefaultSpeechRate, between AVSpeechUtteranceMinimumSpeechRate's 0 and Maximum's 1.
+	avSpeechDefaultRate = 0.5
+	avfaudioPath        = "/System/Library/Frameworks/AVFAudio.framework/AVFAudio"
+)
 
-// SpeakAvailable is Environment.Speak: every macOS, iOS and tvOS NSGo runs on has AVSpeechSynthesizer, which loads only once the app speaks.
+// Test seams for verifying session acquisition and synthesizer lifecycle without playing audio on test runners.
+var (
+	ensureSpeakLoaded   = func() bool { return loadSpeak() }
+	acquireSpeakSession = holdSpeakSession
+	synthSpeak          = func(u objc.ID) { speaking.synthesizer.Send(sel("speakUtterance:"), u) }
+	synthStop           = func() { speaking.synthesizer.Send(sel("stopSpeakingAtBoundary:"), 0) } // AVSpeechBoundaryImmediate
+)
+
+// SpeakAvailable is Environment.Speak: every macOS, iOS, tvOS and watchOS NSGo runs on has AVSpeechSynthesizer, which loads only once the app speaks.
 func SpeakAvailable() bool { return true }
 
-// loadSpeak loads AVFoundation and makes the synthesizer and its delegate, reporting whether it could.
+// loadSpeak loads AVFoundation/AVFAudio and makes the synthesizer and its delegate, reporting whether it could.
 var loadSpeak = sync.OnceValue(func() bool {
 	if _, err := purego.Dlopen(avPath, purego.RTLD_NOW|purego.RTLD_GLOBAL); err != nil {
-		return false
+		if _, err := purego.Dlopen(avfaudioPath, purego.RTLD_NOW|purego.RTLD_GLOBAL); err != nil {
+			return false
+		}
 	}
-	if Class("AVSpeechSynthesizer") == 0 || Class("AVSpeechUtterance") == 0 {
-		return false
+	if Class("AVSpeechSynthesizer") == 0 || Class("AVSpeechUtterance") == 0 || Class("AVSpeechSynthesisVoice") == 0 {
+		if _, err := purego.Dlopen(avfaudioPath, purego.RTLD_NOW|purego.RTLD_GLOBAL); err != nil {
+			return false
+		}
+		if Class("AVSpeechSynthesizer") == 0 || Class("AVSpeechUtterance") == 0 || Class("AVSpeechSynthesisVoice") == 0 {
+			return false
+		}
 	}
 	var protocols []*objc.Protocol
 	if p := objc.GetProtocol("AVSpeechSynthesizerDelegate"); p != nil {
@@ -56,14 +74,20 @@ var loadSpeak = sync.OnceValue(func() bool {
 		{Cmd: sel("speechSynthesizer:didCancelSpeechUtterance:"), Fn: ended(true)},
 	})).Send(sel("new"))
 	speaking.synthesizer = objc.ID(Class("AVSpeechSynthesizer")).Send(sel("new"))
+	if speaking.synthesizer == 0 {
+		return false
+	}
+	if objc.Send[bool](speaking.synthesizer, sel("respondsToSelector:"), sel("setUsesApplicationAudioSession:")) {
+		speaking.synthesizer.Send(sel("setUsesApplicationAudioSession:"), true)
+	}
 	speaking.synthesizer.Send(sel("setDelegate:"), delegate)
-	return speaking.synthesizer != 0
+	return true
 })
 
 // HandleSpeak carries out an ItemSpeak of utterance or request id, on the main thread, reporting EventSpeak through dispatch.
 func HandleSpeak(id uint32, r driver.SpeakRequest, dispatch func(driver.Event)) {
 	report := func(e driver.SpeakEvent) { dispatch(driver.Event{Kind: driver.EventSpeak, Count: id, Data: &e}) }
-	if !loadSpeak() {
+	if !ensureSpeakLoaded() {
 		if r.Command != driver.SpeakStop {
 			// No synthesizer: an utterance fails, and there are no voices.
 			report(driver.SpeakEvent{Error: driver.SpeakUnavailable})
@@ -78,17 +102,24 @@ func HandleSpeak(id uint32, r driver.SpeakRequest, dispatch func(driver.Event)) 
 			report(driver.SpeakEvent{Error: code})
 			return
 		}
-		leave, err := holdSpeakSession()
+		leave, err := acquireSpeakSession()
 		if err != nil {
 			report(driver.SpeakEvent{Error: driver.SpeakAudioBusy})
 			return
 		}
 		u := objc.ID(Class("AVSpeechUtterance")).Send(sel("speechUtteranceWithString:"), NSString(r.Text)).Send(sel("retain"))
+		if u == 0 {
+			if leave != nil {
+				leave()
+			}
+			report(driver.SpeakEvent{Error: driver.SpeakFailed})
+			return
+		}
 		u.Send(sel("setVoice:"), voice)
 		u.Send(sel("setRate:"), driver.SpeakScale(r.Rate, avSpeechDefaultRate/2, avSpeechDefaultRate, 1))
 		u.Send(sel("setPitchMultiplier:"), driver.SpeakScale(r.Pitch, 0.5, 1, 2))
 		speaking.run = &speakRun{id: id, dispatch: dispatch, utterance: u, leave: leave}
-		speaking.synthesizer.Send(sel("speakUtterance:"), u)
+		synthSpeak(u)
 	case driver.SpeakStop:
 		if run := speaking.run; run != nil && run.id == id {
 			stopSpeaking()
@@ -106,7 +137,7 @@ func stopSpeaking() {
 	}
 	// The delegate hears the cancel later, of an utterance no longer the one running: the run ends here.
 	speaking.run = nil
-	speaking.synthesizer.Send(sel("stopSpeakingAtBoundary:"), 0) // AVSpeechBoundaryImmediate
+	synthStop()
 	run.end(driver.SpeakEvent{Stopped: true})
 }
 

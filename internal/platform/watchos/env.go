@@ -26,6 +26,7 @@ func buildEnvironment(scale float64, safe driver.Edges, flags uint32, locale str
 		OSVersion:        version,
 		Idiom:            driver.IdiomWatch,
 		Lifecycle:        lifecycle,
+		Speak:            true,
 	}
 }
 

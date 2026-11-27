@@ -308,6 +308,7 @@ func (s *surface) environment(scale float64, safe driver.Edges, flags uint32) dr
 	env.LowPowerMode = lowPower
 	// watchOS's notification center schedules once, daily and weekly notifications natively.
 	env.ScheduledNotifications = apple.NotificationsAvailable()
+	env.Speak = apple.SpeakAvailable()
 	return env
 }
 
@@ -514,6 +515,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			// watchOS has no Speech framework: the session reports it
 			// unavailable.
 			apple.HandleSpeech(it.Count, *it.Speech, s.engine.Dispatch)
+			continue
+		case driver.ItemSpeak:
+			dispatchWatchSpeak(it, apple.HandleSpeak, s.engine.Dispatch)
 			continue
 		case driver.ItemBiometricAvailability, driver.ItemBiometricAuthenticate:
 			// LocalAuthentication's biometric policy is not on watchOS.

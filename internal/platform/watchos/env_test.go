@@ -27,8 +27,11 @@ func TestBuildEnvironmentWatchOSCapabilities(t *testing.T) {
 	if env.PixelRatio != 2 || env.SafeArea != safe || env.Locale != "en-US" {
 		t.Errorf("display/locale = ratio:%v safe:%+v locale:%q", env.PixelRatio, env.SafeArea, env.Locale)
 	}
-	// watchOS has no audio playback, speech/TTS, camera, code scanner, WebKit, StoreKit/Apple sign-in bridge, scheduled notifications, or custom cursors.
-	if env.Audio || env.Speak || env.Speech || env.Camera || env.ScanCode ||
+	if !env.Speak {
+		t.Errorf("watchOS Speak = false, want true")
+	}
+	// watchOS has no audio playback, speech recognition, camera, code scanner, WebKit, StoreKit/Apple sign-in bridge, scheduled notifications, or custom cursors.
+	if env.Audio || env.Speech || env.Camera || env.ScanCode ||
 		env.HasWebView || env.SignInWithApple || env.Purchases || env.ScheduledNotifications ||
 		env.CustomCursor || env.ScreenColor || env.CanSendInput ||
 		env.CanSetWindowLevel || env.CanPlaceWindows || env.CanSetWindowWorkspaces {

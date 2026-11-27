@@ -455,7 +455,7 @@ func (e *Env) CanPlayHapticPattern() bool { return e.hapticPatterns.Get() }
 // CanShowNowPlaying reports whether the system presents the app's Now Playing information.
 func (e *Env) CanShowNowPlaying() bool { return e.nowPlaying.Get() }
 
-// CanSpeak reports whether Scope.Speak speaks text here: macOS, iOS, tvOS, Android, Windows, the web where the browser has speechSynthesis, and Linux where speech-dispatcher is installed. Elsewhere an utterance fails with SpeakUnavailable without asking the platform.
+// CanSpeak reports whether Scope.Speak speaks text here: macOS, iOS, tvOS, watchOS, Android, Windows, the web where the browser has speechSynthesis, and Linux where speech-dispatcher is installed. Elsewhere an utterance fails with SpeakUnavailable without asking the platform.
 func (e *Env) CanSpeak() bool { return e.speak.Get() }
 
 // SupportsGamepads reports whether package gamepad reads game controllers here: macOS, iOS, Windows, Linux, Android and the web.

@@ -49,7 +49,7 @@ type utterance struct {
 	ended bool
 }
 
-// Speak speaks text aloud in voice, one utterance at a time in an engine: a new one stops the one speaking, and so do StopSpeaking and the end of the scope that spoke it. done, which may be nil, runs once, after Speak returns, when the utterance finished, with stopped when it was stopped first, or with a SpeakError when it failed. macOS, iOS and tvOS speak with AVSpeechSynthesizer, Android with TextToSpeech, Windows with SpeechSynthesizer, Linux with speech-dispatcher and the web with speechSynthesis; elsewhere it fails with SpeakUnavailable (Env.CanSpeak). It returns an error only for a voice's Lang that is no language tag, without calling done.
+// Speak speaks text aloud in voice, one utterance at a time in an engine: a new one stops the one speaking, and so do StopSpeaking and the end of the scope that spoke it. done, which may be nil, runs once, after Speak returns, when the utterance finished, with stopped when it was stopped first, or with a SpeakError when it failed. macOS, iOS, tvOS and watchOS speak with AVSpeechSynthesizer, Android with TextToSpeech, Windows with SpeechSynthesizer, Linux with speech-dispatcher and the web with speechSynthesis; elsewhere it fails with SpeakUnavailable (Env.CanSpeak). It returns an error only for a voice's Lang that is no language tag, without calling done.
 func (cx *Scope) Speak(text string, voice Voice, done func(stopped bool, err error)) error {
 	if voice.Lang != "" && !languageTag(voice.Lang) {
 		return fmt.Errorf("nsgo: speak: %q is no language tag", voice.Lang)
