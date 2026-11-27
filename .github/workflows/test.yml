@@ -448,7 +448,7 @@ jobs:
           - name: app
             packages: ". ./cmd/... ./examples/... ./ui/... ./tsx/... ./web/... ./automation/... ./microphone/..."
           - name: core
-            packages: "./internal/... ./base/... ./core/... ./gpu/... ./nsgotest/... ./tools/... ./cloud/... ./audio/... ./desktop/... ./gamepad/... ./i18n/... ./icons/... ./widget/... ./mobile/... ./targets/... ./updater/... ./gameservices/..."
+            packages: "./internal/... ./base/... ./core/... ./gpu/... ./nsgotest/... ./tools/... ./cloud/... ./audio/... ./desktop/... ./gamepad/... ./i18n/... ./icons/... ./widget/... ./mobile/... ./project/... ./targets/... ./updater/... ./gameservices/..."
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

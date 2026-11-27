@@ -27,111 +27,6 @@ import (
 // packages do not carry, such as the icons they are made from.
 const assetsDir = "assets"
 
-// resolveIcons makes nsgo.yaml's icon paths absolute, or finds the
-// defaults in assets: AppIcon.icon, AppIcon.icns and Icon.png, and the
-// Apple TV's and Apple Watch's own, AppIconTV.* and AppIconWatch.*; for
-// dev.icon the same names ending in -dev. A path nsgo.yaml names must
-// exist; a missing default only leaves the app without that icon.
-func (p *project) resolveIcons() error {
-	if err := p.resolveIconSet(&p.Icon, "icon", ""); err != nil {
-		return err
-	}
-	return p.resolveIconSet(&p.Dev.Icon, "dev.icon", "-dev")
-}
-
-func (p *project) resolveIconSet(set *icons, key, suffix string) error {
-	var err error
-	if set.Apple, err = p.iconPath(key, set.Apple, "AppIcon"+suffix+".icon", "AppIcon"+suffix+".icns"); err != nil {
-		return err
-	}
-	if ext := filepath.Ext(set.Apple); set.Apple != "" && ext != ".icon" && ext != ".icns" {
-		return fmt.Errorf("%s.apple: %s is neither an .icon nor an .icns", key, rel(set.Apple))
-	}
-	if set.PNG, err = p.iconPath(key, set.PNG, "Icon"+suffix+".png"); err != nil {
-		return err
-	}
-	if set.TVOS, err = p.iconPath(key, set.TVOS, "AppIconTV"+suffix+".brandassets", "AppIconTV"+suffix+".png"); err != nil {
-		return err
-	}
-	switch ext := filepath.Ext(set.TVOS); ext {
-	case "", ".png":
-	case ".brandassets":
-		if info, err := os.Stat(set.TVOS); err != nil || !info.IsDir() {
-			return fmt.Errorf("%s.tvos: %s is not a .brandassets folder", key, rel(set.TVOS))
-		}
-	default:
-		return fmt.Errorf("%s.tvos: %s is neither a .brandassets nor a .png", key, rel(set.TVOS))
-	}
-	if set.WatchOS, err = p.iconPath(key, set.WatchOS, "AppIconWatch"+suffix+".icon", "AppIconWatch"+suffix+".png"); err != nil {
-		return err
-	}
-	if ext := filepath.Ext(set.WatchOS); set.WatchOS != "" && ext != ".icon" && ext != ".png" {
-		return fmt.Errorf("%s.watchos: %s is neither an .icon nor a .png", key, rel(set.WatchOS))
-	}
-	if set.Windows, err = p.iconPath(key+".windows", set.Windows, "IconWindows"+suffix+".png"); err != nil {
-		return err
-	}
-	if set.Linux, err = p.iconPath(key+".linux", set.Linux, "IconLinux"+suffix+".png"); err != nil {
-		return err
-	}
-	if set.Android != nil {
-		if set.Android.PNG != "" {
-			if set.Android.PNG, err = p.iconPath(key+".android.png", set.Android.PNG); err != nil {
-				return err
-			}
-		}
-		adaptive := set.Android.Foreground != "" || set.Android.Background != "" || set.Android.Monochrome != ""
-		if adaptive && (set.Android.Foreground == "" || set.Android.Background == "") {
-			return fmt.Errorf("%s.android needs foreground and background", key)
-		}
-		if !adaptive {
-			if set.Android.PNG == "" {
-				return fmt.Errorf("%s.android needs png or foreground and background", key)
-			}
-			return nil
-		}
-		if strings.HasPrefix(set.Android.Background, "#") {
-			if _, err := androidIconLayer(set.Android.Background); err != nil {
-				return err
-			}
-		} else {
-			resolved := p.resolve(set.Android.Background)
-			if _, err := os.Stat(resolved); err != nil {
-				return fmt.Errorf("%s.android.background: %w", key, err)
-			}
-			set.Android.Background = resolved
-		}
-		for name, path := range map[string]*string{"foreground": &set.Android.Foreground, "monochrome": &set.Android.Monochrome} {
-			if *path == "" {
-				continue
-			}
-			resolved := p.resolve(*path)
-			if _, err := os.Stat(resolved); err != nil {
-				return fmt.Errorf("%s.android.%s: %w", key, name, err)
-			}
-			*path = resolved
-		}
-	}
-	return nil
-}
-
-func (p *project) iconPath(key, path string, defaults ...string) (string, error) {
-	if path != "" {
-		path = p.resolve(path)
-		if _, err := os.Stat(path); err != nil {
-			return "", fmt.Errorf("%s: %w", key, err)
-		}
-		return path, nil
-	}
-	for _, name := range defaults {
-		path := filepath.Join(p.Dir, assetsDir, name)
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
-	}
-	return "", nil
-}
-
 // useDevIcons points icon at the files dev.icon has, for nsgo dev's
 // builds.
 func (p *project) useDevIcons() {
@@ -413,7 +308,7 @@ func writeIOSAssets(ctx context.Context, p *project, sys *appleOS, app string, s
 		}
 	}
 	if p.LaunchScreen != nil {
-		if err := p.LaunchScreen.writeIOSCatalog(catalog); err != nil {
+		if err := writeIOSLaunchCatalog(p.LaunchScreen, catalog); err != nil {
 			return "", err
 		}
 	}

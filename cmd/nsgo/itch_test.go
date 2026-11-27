@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,7 +13,7 @@ import (
 
 func TestItchPreflightsAllTargets(t *testing.T) {
 	dir := t.TempDir()
-	p := &project{Name: "TestGame", Version: "1.2.3"}
+	p := &project{Config: projectcfg.Config{Name: "TestGame", Version: "1.2.3"}}
 	p.Build.Output = dir
 	p.Itch.Project = "example/test-game"
 	p.Itch.Channels = map[string]string{"macos_arm64": "HTML5"}

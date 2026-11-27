@@ -61,12 +61,7 @@ func githubFromRemote(url string) string {
 }
 
 // tagPrefix is what a release's tag adds before the version, v by default.
-func (p *project) tagPrefix() string {
-	if p.Releases.TagPrefix != nil {
-		return *p.Releases.TagPrefix
-	}
-	return "v"
-}
+func (p *project) tagPrefix() string { return p.Config.TagPrefix() }
 
 // releaseVersionFile records which version the releases directory holds.
 const releaseVersionFile = ".version"

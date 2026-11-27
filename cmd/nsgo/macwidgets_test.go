@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,7 +43,7 @@ func TestMacStoreWidgetsProvisionBothBundles(t *testing.T) {
 					},
 				})
 			}
-			p := &project{ID: "dev.example.app", Widgets: []widgetKind{{Kind: "counter"}}}
+			p := &project{Config: projectcfg.Config{ID: "dev.example.app", Widgets: []widgetKind{{Kind: "counter"}}}}
 			p.Updates.Channel = channelStore
 			p.Release = true
 			p.Apple.AppGroup = "group.shared"
@@ -122,7 +123,7 @@ func TestMacStoreWidgetsProvisionBothBundles(t *testing.T) {
 }
 
 func TestMacStoreWidgetsRequireProfiles(t *testing.T) {
-	p := &project{Widgets: []widgetKind{{Kind: "counter"}}}
+	p := &project{Config: projectcfg.Config{Widgets: []widgetKind{{Kind: "counter"}}}}
 	for _, missing := range []string{"both", "app", "extension"} {
 		p.Sign.MacOSProfile, p.Sign.WidgetsProfile = "app.profile", "widget.profile"
 		if missing != "extension" {

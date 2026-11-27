@@ -56,6 +56,8 @@ While `nsgo dev` owns the terminal, tool and application diagnostics go to `.nsg
 
 `nsgo` refuses unknown keys in this file, including misspellings nested under a section. Free-form maps such as `apple.info` and `macos.entitlements` remain open for platform-specific keys.
 
+Tools written in Go can read `nsgo.yaml` with the same schema, validation and defaults as `nsgo build` through `github.com/nsgo-dev/nsgo/project`: `project.Load(dir)` decodes the file strictly into a `*project.Config` and resolves paths such as `Build.Output` (defaulting to `dist`) against `dir` without making network or Git calls, and `(*project.Config).Channel()` returns the effective distribution channel (`updates.channel`, else `direct` when `updates.key` is set, else `none`).
+
 ```yaml
 name: Hello
 id: dev.example.hello   # the bundle ID; without it, dev.nsgo. and the name's letters and digits

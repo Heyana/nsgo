@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 // Linux packages are written in Go, as no Mac has dpkg or makepkg: a
@@ -36,33 +38,9 @@ type linuxPackageEntry struct {
 	dir  bool
 }
 
-// linuxDeps lists packages for each Linux package format, each entry as that format writes it: Debian's alternatives and version constraints ("a | b", "foo (>= 1.2)") or Arch's "name: reason" optional dependencies.
-type linuxDeps struct {
-	Deb  []string `yaml:"deb"`
-	Arch []string `yaml:"arch"`
-}
-
 // validateLinuxDeps rejects a blank entry of depends or recommends, which would leave an empty item in a Debian list or an empty Arch line, and one holding a line break, which would add fields to the packages' metadata, naming it under field: linux for nsgo.yaml's, linux.<target> for an nsgo-natives.yaml's.
 func validateLinuxDeps(field string, depends, recommends linuxDeps) error {
-	for _, key := range []struct {
-		name   string
-		values []string
-	}{
-		{"depends.deb", depends.Deb},
-		{"depends.arch", depends.Arch},
-		{"recommends.deb", recommends.Deb},
-		{"recommends.arch", recommends.Arch},
-	} {
-		for i, value := range key.values {
-			if strings.TrimSpace(value) == "" {
-				return fmt.Errorf("%s.%s entry %d is empty", field, key.name, i+1)
-			}
-			if strings.ContainsAny(value, "\r\n") {
-				return fmt.Errorf("%s.%s entry %d contains a line break", field, key.name, i+1)
-			}
-		}
-	}
-	return nil
+	return projectcfg.ValidateLinuxDeps(field, depends, recommends)
 }
 
 // linuxRequirements are the entries of the Debian and Arch packages' dependency fields for arch: NSGo's own, GTK 4 and, recommended as only web views load it, WebKitGTK; then the app's linux.depends and linux.recommends; then those that the packages its build links declare for the target in nsgo-natives.yaml (addPackageNatives), leaving out any entry the field holds already and any recommended one that a depend names, since a package one linked package needs is no longer optional because another only recommends it.
@@ -71,16 +49,16 @@ func (p *project) linuxRequirements(arch string) (depends, recommends linuxDeps)
 	recommends = linuxDeps{Deb: append([]string{"libwebkitgtk-6.0-4"}, p.Linux.Recommends.Deb...), Arch: append([]string{"webkitgtk-6.0: web views"}, p.Linux.Recommends.Arch...)}
 	linked := p.nativeLinuxDeps["linux_"+goArchName(arch)]
 	for _, deps := range linked {
-		depends.add(deps.Depends, linuxDeps{})
+		addLinuxDeps(&depends, deps.Depends, linuxDeps{})
 	}
 	for _, deps := range linked {
-		recommends.add(deps.Recommends, depends)
+		addLinuxDeps(&recommends, deps.Recommends, depends)
 	}
 	return depends, recommends
 }
 
-// add appends each entry of extra that neither deps nor skip holds yet. An Arch entry is compared without the ": description" an optdepend carries, so libpulse in skip leaves out "libpulse: sound".
-func (deps *linuxDeps) add(extra, skip linuxDeps) {
+// addLinuxDeps appends each entry of extra that neither deps nor skip holds yet. An Arch entry is compared without the ": description" an optdepend carries, so libpulse in skip leaves out "libpulse: sound".
+func addLinuxDeps(deps *linuxDeps, extra, skip linuxDeps) {
 	for _, entry := range extra.Deb {
 		if !slices.Contains(deps.Deb, entry) && !slices.Contains(skip.Deb, entry) {
 			deps.Deb = append(deps.Deb, entry)
@@ -92,59 +70,6 @@ func (deps *linuxDeps) add(extra, skip linuxDeps) {
 			deps.Arch = append(deps.Arch, entry)
 		}
 	}
-}
-
-// linuxMainCategories are the freedesktop Desktop Menu Specification's main categories, by which menus file an app; an entry naming none of them lands under Other.
-var linuxMainCategories = []string{"AudioVideo", "Audio", "Video", "Development", "Education", "Game", "Graphics", "Network", "Office", "Science", "Settings", "System", "Utility"}
-
-// linuxAdditionalCategories are the specification's additional categories, which refine a main one.
-var linuxAdditionalCategories = []string{
-	"Building", "Debugger", "IDE", "GUIDesigner", "Profiling", "RevisionControl", "Translation",
-	"Calendar", "ContactManagement", "Database", "Dictionary", "Chart", "Email", "Finance", "FlowChart", "PDA", "ProjectManagement", "Presentation", "Spreadsheet", "WordProcessor",
-	"2DGraphics", "VectorGraphics", "RasterGraphics", "3DGraphics", "Scanning", "OCR", "Photography", "Publishing", "Viewer",
-	"TextTools", "DesktopSettings", "HardwareSettings", "Printing", "PackageManager",
-	"Dialup", "InstantMessaging", "Chat", "IRCClient", "Feed", "FileTransfer", "HamRadio", "News", "P2P", "RemoteAccess", "Telephony", "TelephonyTools", "VideoConference", "WebBrowser", "WebDevelopment",
-	"Midi", "Mixer", "Sequencer", "Tuner", "TV", "AudioVideoEditing", "Player", "Recorder", "DiscBurning",
-	"ActionGame", "AdventureGame", "ArcadeGame", "BoardGame", "BlocksGame", "CardGame", "KidsGame", "LogicGame", "RolePlaying", "Shooter", "Simulation", "SportsGame", "StrategyGame",
-	"Art", "Construction", "Music", "Languages", "ArtificialIntelligence", "Astronomy", "Biology", "Chemistry", "ComputerScience", "DataVisualization", "Economy", "Electricity", "Geography", "Geology", "Geoscience", "History", "Humanities", "ImageProcessing", "Literature", "Maps", "Math", "NumericalAnalysis", "MedicalSoftware", "Physics", "Robotics", "Spirituality", "Sports", "ParallelComputing",
-	"Amusement", "Archiving", "Compression", "Electronics", "Emulator", "Engineering", "FileTools", "FileManager", "TerminalEmulator", "Filesystem", "Monitor", "Security", "Accessibility", "Calculator", "Clock", "TextEditor", "Documentation", "Adult",
-	"Core", "KDE", "GNOME", "XFCE", "DDE", "LXQt", "GTK", "Qt", "Motif", "Java", "ConsoleOnly",
-}
-
-// linuxReservedCategories are for desktop components, and desktop-file-validate accepts them only beside an OnlyShowIn key, which an app's entry does not have.
-var linuxReservedCategories = []string{"Screensaver", "TrayIcon", "Applet", "Shell"}
-
-// validateLinuxCategories accepts the desktop entry's categories that desktop-file-validate does: each registered, or an extension starting with X- of letters, digits, '-', '_' and '.', once each, with AudioVideo beside Audio or Video. It also asks for a main category, without which menus file the app under Other, the case the setting exists to avoid.
-func (p *project) validateLinuxCategories() error {
-	categories := p.linuxCategories()
-	if len(categories) == 0 {
-		return nil
-	}
-	main := false
-	for i, c := range categories {
-		switch {
-		case slices.Contains(linuxMainCategories, c):
-			main = true
-		case slices.Contains(linuxAdditionalCategories, c):
-		case slices.Contains(linuxReservedCategories, c):
-			return fmt.Errorf("linux.categories entry %d, %q, is reserved for desktop components", i+1, c)
-		case strings.HasPrefix(c, "X-") && len(c) > 2 && strings.Trim(c[2:], "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.") == "":
-		default:
-			return fmt.Errorf("linux.categories entry %d, %q, is not a freedesktop category; an extension starts with X- and holds letters, digits, '-', '_' and '.'", i+1, c)
-		}
-		if slices.Index(categories, c) < i {
-			return fmt.Errorf("linux.categories names %q twice", c)
-		}
-	}
-	for _, c := range []string{"Audio", "Video"} {
-		if slices.Contains(categories, c) && !slices.Contains(categories, "AudioVideo") {
-			return fmt.Errorf("linux.categories names %s without AudioVideo, which it belongs to", c)
-		}
-	}
-	if !main {
-		return fmt.Errorf("linux.categories names no main category, so menus would file the app under Other; add one of %s", strings.Join(linuxMainCategories, ", "))
-	}
-	return nil
 }
 
 // buildLinuxPackages writes the Debian and Arch packages of the Linux

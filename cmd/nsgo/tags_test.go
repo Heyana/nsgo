@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,7 +49,7 @@ func TestGoFlagTagsMatchTheGoCommand(t *testing.T) {
 
 func TestGoTagsMergeEnvironmentAndProject(t *testing.T) {
 	t.Setenv("GOFLAGS", "-mod=mod -tags=demo_lite,netgo")
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	p.Build.Tags = []string{"demo_lite", "timetzdata"}
 	tags, err := goTags(t.Context(), p, nil, "nsgodev", "timetzdata")
 	if err != nil {
@@ -71,7 +72,7 @@ func TestGoTagsMergeEnvironmentAndProject(t *testing.T) {
 	if err := os.WriteFile(env, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if tags, err := goTags(t.Context(), &project{Dir: t.TempDir()}, nil); err != nil || tagsArgs(tags) != nil {
+	if tags, err := goTags(t.Context(), &project{Config: projectcfg.Config{Dir: t.TempDir()}}, nil); err != nil || tagsArgs(tags) != nil {
 		t.Fatalf("without tags, goTags = %v, %v", tags, err)
 	}
 }
@@ -141,7 +142,7 @@ func tagsApp(t *testing.T) *project {
 			t.Fatal(err)
 		}
 	}
-	p := &project{Dir: dir, Name: "Tags", ID: "com.example.tags", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Tags", ID: "com.example.tags", Version: "1.0.0"}}
 	p.Build.Tags = []string{"demo_lite"}
 	return p
 }
@@ -155,7 +156,7 @@ func TestBuildTagsReachEveryGoCommand(t *testing.T) {
 	p := tagsApp(t)
 	ctx := t.Context()
 
-	p.Dev.Client = true
+	p.devClient = true
 	cmd, done, err := goBuildCommand(ctx, p, filepath.Join(t.TempDir(), "app"), nil, buildExtra{tags: []string{"nsgowatch"}})
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +165,7 @@ func TestBuildTagsReachEveryGoCommand(t *testing.T) {
 	if i := slices.Index(cmd.Args, "-tags"); i < 0 || cmd.Args[i+1] != "from_env,demo_lite,nsgowatch,nsgodev" {
 		t.Errorf("go build's arguments %q, want -tags from_env,demo_lite,nsgowatch,nsgodev", cmd.Args)
 	}
-	p.Dev.Client = false
+	p.devClient = false
 
 	if err := goToolWithTags(ctx, p, nil, nil, "vet", "."); err != nil {
 		t.Errorf("vet with build.tags: %v", err)

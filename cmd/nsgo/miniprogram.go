@@ -108,9 +108,9 @@ func miniProgramJSONEnv(ctx context.Context, dir string, env []string) ([]string
 // still too large for its package, again without inlining.
 func buildMiniProgram(ctx context.Context, p *project, mp miniProgramPlatform, dir string) error {
 	// Release builds (nsgo build, or nsgo dev -release) omit the dev client; dev builds keep it so DevTools, -highlight, -layout and -trace reach mini programs, still stripped with -s -w to fit the 2 MB package cap.
-	if p.Release && p.Dev.Client {
-		p.Dev.Client = false
-		defer func() { p.Dev.Client = true }()
+	if p.Release && p.devClient {
+		p.devClient = false
+		defer func() { p.devClient = true }()
 	}
 	tmp, err := os.MkdirTemp("", "nsgo-miniprogram")
 	if err != nil {
@@ -143,7 +143,7 @@ func buildMiniProgram(ctx context.Context, p *project, mp miniProgramPlatform, d
 	}
 	if len(module) > packageLimit {
 		// nsgo dev -automation links its agent, which the developer tool's simulator may still load past the limit; builds without it leave it out.
-		if !p.Dev.Automation || p.Release {
+		if !p.devAutomation || p.Release {
 			return fmt.Errorf("the module is %s compressed, past the %s a mini program's package holds; "+
 				"leave out what the app does not show on phones, such as the editor, the terminal or TSX",
 				formatSize(int64(len(module))), formatSize(packageLimit))
@@ -406,7 +406,7 @@ func configureMiniProgramDev(p *project, opts devOptions) {
 		p.devURL, p.devToken = "", ""
 	}
 	if opts.release {
-		p.Dev.Client = false
+		p.devClient = false
 	}
 }
 

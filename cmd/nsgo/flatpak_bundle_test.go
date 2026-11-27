@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,7 @@ func TestFlatpakBundleAndBuilderManifest(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p := &project{Dir: dir, Name: "fixture", ID: "dev.nsgo.BundleFixture", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "fixture", ID: "dev.nsgo.BundleFixture", Version: "1.0.0"}}
 	p.Build.Output = filepath.Join(dir, "out")
 	p.Updates.Channel = channelStore
 	stage := filepath.Join(dir, "stage")

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/xml"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,14 +44,14 @@ func TestURLSchemesRegisterInThePlist(t *testing.T) {
 
 // The iOS app registers the schemes too, its App Clip and an Apple TV's app none (#909).
 func TestURLSchemesRegisterInTheIOSPlist(t *testing.T) {
-	p := &project{Name: "Umapp", ID: "me.oneo.umapp", URLSchemes: []string{"umapp"}}
+	p := &project{Config: projectcfg.Config{Name: "Umapp", ID: "me.oneo.umapp", URLSchemes: []string{"umapp"}}}
 	if got := p.iosURLSchemesPlist(iOS); got != p.urlSchemesPlist() || got == "" {
 		t.Errorf("the iOS app registers %q", got)
 	}
 	if got := p.iosURLSchemesPlist(tvOS); got != "" {
 		t.Errorf("the Apple TV app registers %q", got)
 	}
-	clip := &project{Name: "Umapp Clip", ID: "me.oneo.umapp.Clip", URLSchemes: []string{"umapp"}, clipParent: "me.oneo.umapp"}
+	clip := &project{Config: projectcfg.Config{Name: "Umapp Clip", ID: "me.oneo.umapp.Clip", URLSchemes: []string{"umapp"}}, clipParent: "me.oneo.umapp"}
 	if got := clip.iosURLSchemesPlist(iOS); got != "" {
 		t.Errorf("the App Clip registers %q", got)
 	}
@@ -70,7 +71,7 @@ func TestURLSchemesRegisterInTheIOSPlist(t *testing.T) {
 }
 
 func TestNoURLSchemesWriteNothing(t *testing.T) {
-	if got := (&project{ID: "me.oneo.umapp"}).urlSchemesPlist(); got != "" {
+	if got := (&project{Config: projectcfg.Config{ID: "me.oneo.umapp"}}).urlSchemesPlist(); got != "" {
 		t.Errorf("an app without schemes registers %q", got)
 	}
 }
@@ -95,7 +96,7 @@ func TestURLSchemesAreChecked(t *testing.T) {
 // The Windows installer registers each scheme under HKCU\Software\Classes, opening the app with the link after "--", records it with the uninstall entry, and removes what it recorded, unless another app took the scheme since.
 func TestURLSchemesRegisterInTheInstaller(t *testing.T) {
 	dir := t.TempDir()
-	p := &project{Dir: dir, Name: "My App", ID: "me.oneo.umapp", Version: "1.0.0", URLSchemes: []string{"umapp", "umapp-dev"}}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "My App", ID: "me.oneo.umapp", Version: "1.0.0", URLSchemes: []string{"umapp", "umapp-dev"}}}
 	writeFiles(t, dir, map[string]string{p.Name + ".exe": "exe"})
 	d, err := windowsInstallerPlan(t.Context(), p, dir, "x64")
 	if err != nil {
@@ -107,7 +108,7 @@ func TestURLSchemesRegisterInTheInstaller(t *testing.T) {
 }
 
 func TestURLSchemesRegisterInTheMSIX(t *testing.T) {
-	p := &project{Name: "My App", ID: "me.oneo.umapp", Version: "1.0.0", URLSchemes: []string{"umapp"}}
+	p := &project{Config: projectcfg.Config{Name: "My App", ID: "me.oneo.umapp", Version: "1.0.0", URLSchemes: []string{"umapp"}}}
 	data, err := msixManifest(p, "amd64")
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +143,7 @@ func TestURLSchemesRegisterInTheMSIX(t *testing.T) {
 
 // The Linux desktop entry registers each scheme as an x-scheme-handler type beside the file types, with %U, which passes links and files alike, and the packages refresh the desktop database for them.
 func TestURLSchemesRegisterInTheDesktopEntry(t *testing.T) {
-	p := &project{Name: "Umapp", ID: "me.oneo.umapp", Version: "1.0.0", URLSchemes: []string{"umapp", "umapp-dev"}}
+	p := &project{Config: projectcfg.Config{Name: "Umapp", ID: "me.oneo.umapp", Version: "1.0.0", URLSchemes: []string{"umapp", "umapp-dev"}}}
 	stage := t.TempDir()
 	writeFiles(t, stage, map[string]string{p.Name: "binary"})
 	if err := writeLinuxIcon(p, stage); err != nil {
@@ -181,7 +182,7 @@ func TestURLSchemesRegisterInTheDesktopEntry(t *testing.T) {
 
 	// With file types too, %U passes their files as file URLs, which the backend takes as files.
 	p.FileTypes = []fileType{{Name: "Flow", ID: p.ID + ".flow", Extensions: []string{"flow"}}}
-	if err := p.validateFileTypes(); err != nil {
+	if err := p.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeLinuxIcon(p, stage); err != nil {

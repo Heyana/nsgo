@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -52,7 +53,7 @@ func TestWebReleasesNameFilesByContent(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644)
 	}
 	write("resources/fonts/a.ttf", "font")
-	p := &project{Dir: dir, Name: "Site", ID: "dev.example.site"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Site", ID: "dev.example.site"}}
 	got, err := copyHashedResources(p, filepath.Join(dir, "out"))
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +115,7 @@ func TestTVSimulatorsArePickedApart(t *testing.T) {
 }
 
 func TestIdentityAloneLeavesIOSUnsigned(t *testing.T) {
-	p := &project{Sign: signing{Identity: "Apple Development: someone"}}
+	p := &project{Config: projectcfg.Config{Sign: signing{Identity: "Apple Development: someone"}}}
 	if err := signForStore(t.Context(), p, iOS, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,7 +11,7 @@ import (
 )
 
 func TestSteamLinuxDepotLaunch(t *testing.T) {
-	p, dir := &project{Name: "Cave Run's Probe"}, t.TempDir()
+	p, dir := &project{Config: projectcfg.Config{Name: "Cave Run's Probe"}}, t.TempDir()
 	if err := addSteamLinuxRuntime(p, dir); err != nil {
 		t.Fatal(err)
 	}

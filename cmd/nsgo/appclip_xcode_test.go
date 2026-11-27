@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"debug/macho"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,9 +14,9 @@ import (
 
 func TestIOSAppClipSigningProject(t *testing.T) {
 	dir := t.TempDir()
-	p := &project{Name: "Parent", ID: "dev.example.parent", Dir: dir,
+	p := &project{Config: projectcfg.Config{Name: "Parent", ID: "dev.example.parent", Dir: dir,
 		AppClip: &appClip{Name: "Quick Clip", ID: "dev.example.parent.Clip", Main: "clip", Minimum: "17.0", Domains: []string{"example.com"}},
-		Widgets: []widgetKind{{Kind: "counter"}}}
+		Widgets: []widgetKind{{Kind: "counter"}}}}
 	unsigned := filepath.Join(dir, "unsigned.app")
 	for path, value := range map[string]map[string]any{
 		"Info.plist":                         {"CFBundleIdentifier": p.ID},

@@ -5,6 +5,7 @@ import (
 	"context"
 	"debug/elf"
 	"encoding/binary"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestAppImageUpdateLocator(t *testing.T) {
-	p := &project{Name: "Hello World", Version: "1.2.0", Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Name: "Hello World", Version: "1.2.0", Dir: t.TempDir()}}
 	p.Releases.GitHub = "example/hello"
 	for _, arch := range []string{"amd64", "arm64"} {
 		got, err := p.appImageUpdate(context.Background(), arch)

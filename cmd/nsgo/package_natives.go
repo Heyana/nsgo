@@ -294,7 +294,7 @@ func (p *project) addPackageNatives(pkg licensePackage, target string, sources m
 		p.nativeLinuxDeps[target] = append(p.nativeLinuxDeps[target], deps)
 	}
 	// An XCFramework for a host app has nowhere to carry a package's frameworks yet.
-	if p.Build.embed && slices.Contains(appleNativeTargets, target) && len(libraries) > 0 {
+	if p.buildEmbed && slices.Contains(appleNativeTargets, target) && len(libraries) > 0 {
 		return fmt.Errorf("-embed cannot carry the %s frameworks that %s declares in %s", target, pkg.ImportPath, nativeManifestName)
 	}
 	for _, library := range libraries {

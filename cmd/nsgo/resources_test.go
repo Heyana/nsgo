@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,7 +19,7 @@ func TestWalkMobileResourcesLeavesOutExcludedPaths(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p := &project{Dir: dir}
+	p := &project{Config: projectcfg.Config{Dir: dir}}
 	p.Mobile.ExcludeResources = []string{"servers/"}
 	var got []string
 	if err := walkMobileResources(p, func(rel string, _ []byte) error { got = append(got, rel); return nil }); err != nil {

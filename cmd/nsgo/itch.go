@@ -15,11 +15,6 @@ import (
 	"strings"
 )
 
-type itchConfig struct {
-	Project  string            `yaml:"project"`
-	Channels map[string]string `yaml:"channels"`
-}
-
 type itchBuild struct {
 	dir, destination string
 }

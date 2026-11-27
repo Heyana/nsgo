@@ -19,6 +19,8 @@ import (
 	"slices"
 	"strings"
 	"text/template"
+
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 const previewTag = "nsgopreview"
@@ -96,9 +98,11 @@ func (ps *previewSession) project() (*project, error) {
 	}
 	sum := sha256.Sum256([]byte(ps.source))
 	p := &project{
-		Dir: ps.host, resourceDir: filepath.Join(config.Dir, resourcesDir),
-		Name: "Component Previews", ID: fmt.Sprintf("dev.nsgo.preview.p%x", sum[:8]),
-		Version: "0.0.0", Appearance: config.Appearance, I18n: config.I18n,
+		Config: projectcfg.Config{
+			Dir: ps.host, Name: "Component Previews", ID: fmt.Sprintf("dev.nsgo.preview.p%x", sum[:8]),
+			Version: "0.0.0", Appearance: config.Appearance, I18n: config.I18n,
+		},
+		resourceDir: filepath.Join(config.Dir, resourcesDir),
 	}
 	p.Dev.Target, p.Dev.HotReload = config.Dev.Target, config.Dev.HotReload
 	if p.Dev.Target == "" {

@@ -17,7 +17,7 @@ var assetDownloaderSwift []byte
 const assetDownloaderName = "NSGoAssetDownloader"
 
 func (p *project) iosAssetPacks() bool {
-	return len(p.Mobile.AssetPacks) > 0 && p.Release && !p.Dev.Client && !p.testBinary && p.clipParent == ""
+	return len(p.Mobile.AssetPacks) > 0 && p.Release && !p.devClient && !p.testBinary && p.clipParent == ""
 }
 
 func (p *project) assetPacksPlist() string {

@@ -241,8 +241,8 @@ func runHarmony(ctx context.Context, p *project, dir string, flags []string) err
 		return err
 	}
 	device := []string(nil)
-	if p.Build.device != "" {
-		device = []string{"-t", p.Build.device}
+	if p.buildDevice != "" {
+		device = []string{"-t", p.buildDevice}
 	}
 	// A running install keeps its page: replacing the HAP under it leaves the
 	// old process drawing a page that no longer loads, and aa start brings that
@@ -285,11 +285,11 @@ func runPackage(ctx context.Context, p *project, target, dir string) error {
 		return run(ctx, "open", "-n", filepath.Join(dir, p.Name+".app"))
 	case target == "ios" || target == "tvos" || target == "watchos":
 		sys, _, _ := appleOSOf(target)
-		device, err := selectIOSDevice(ctx, sys, p.Build.device)
+		device, err := selectIOSDevice(ctx, sys, p.buildDevice)
 		if err != nil {
 			return err
 		}
-		team, err := iosTeam(ctx, p.Build.team)
+		team, err := iosTeam(ctx, p.buildTeam)
 		if err != nil {
 			return err
 		}
@@ -299,7 +299,7 @@ func runPackage(ctx context.Context, p *project, target, dir string) error {
 		return run(ctx, "xcrun", "devicectl", "device", "process", "launch", "--terminate-existing", "--device", device.UDID, p.ID)
 	case target == "ios_simulator" || target == "tvos_simulator" || target == "watchos_simulator":
 		sys, _, _ := appleOSOf(target)
-		udid, err := bootSimulator(ctx, sys, p.Build.device)
+		udid, err := bootSimulator(ctx, sys, p.buildDevice)
 		if err != nil {
 			return err
 		}
@@ -308,7 +308,7 @@ func runPackage(ctx context.Context, p *project, target, dir string) error {
 		}
 		return run(ctx, "xcrun", "simctl", "launch", "--terminate-running-process", udid, p.ID)
 	case strings.HasPrefix(target, "android_"):
-		d, err := adbDevice(ctx, p.Build.device)
+		d, err := adbDevice(ctx, p.buildDevice)
 		if err != nil {
 			return err
 		}

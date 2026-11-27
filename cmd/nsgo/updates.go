@@ -22,6 +22,7 @@ import (
 
 	"github.com/yuin/goldmark"
 
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"github.com/nsgo-dev/nsgo/tsx/pkg"
 )
 
@@ -39,47 +40,18 @@ import (
 // update themselves; a store, or a package manager, that updates them;
 // Steam, which updates depot builds; and none, which checks nothing.
 const (
-	channelDirect = "direct"
-	channelStore  = "store"
-	channelSteam  = "steam"
-	channelNone   = "none"
+	channelDirect = projectcfg.ChannelDirect
+	channelStore  = projectcfg.ChannelStore
+	channelSteam  = projectcfg.ChannelSteam
+	channelNone   = projectcfg.ChannelNone
 )
-
-// updatesConfig is nsgo.yaml's updates.
-type updatesConfig struct {
-	// Key is the public key nsgo keygen printed, in base64, whose secret
-	// key, NSGO_UPDATES_KEY's, signs each release's installers.
-	Key string `yaml:"key"`
-	// Feed is the URL the release's appcasts and installers are under; by
-	// default the GitHub repository's latest release (release.github).
-	Feed string `yaml:"feed"`
-	// Automatic has the app check on its own, daily: on Sparkle's and
-	// WinSparkle's schedule, and as it starts elsewhere; true by default.
-	// The user's choice in Sparkle's and WinSparkle's settings wins.
-	Automatic *bool `yaml:"automatic"`
-	// AutomaticDownloads is Sparkle's first-install default; false elsewhere.
-	AutomaticDownloads bool `yaml:"automatic_downloads"`
-	// Channel is what the builds are handed out through, which build's
-	// -channel replaces: direct, store, steam or none; by default direct with a
-	// key and none without.
-	Channel string `yaml:"channel"`
-
-	// public is Key's key, and repo the GitHub repository the feed is in
-	// without a Feed of its own.
-	public ed25519.PublicKey
-	repo   string
-	// notes is build's -release-notes file, and notesHTML its Markdown as the HTML the appcasts describe the release with.
-	notes     string
-	notesHTML string
-}
 
 // readReleaseNotes renders -release-notes' Markdown, if any, into the HTML each appcast's item carries as its description, which Sparkle and WinSparkle show in their update dialogs and the other backends' updater shows as text.
 func (p *project) readReleaseNotes() error {
-	u := &p.Updates
-	if u.notes == "" {
+	if p.updatesNotes == "" {
 		return nil
 	}
-	data, err := os.ReadFile(u.notes)
+	data, err := os.ReadFile(p.updatesNotes)
 	if err != nil {
 		return fmt.Errorf("-release-notes: %w", err)
 	}
@@ -87,65 +59,42 @@ func (p *project) readReleaseNotes() error {
 	if err := goldmark.Convert(data, &b); err != nil {
 		return fmt.Errorf("-release-notes: %w", err)
 	}
-	u.notesHTML = strings.TrimSpace(b.String())
+	p.updatesNotesHTML = strings.TrimSpace(b.String())
 	return nil
 }
 
-// validateUpdates reads updates' key and makes its feed whole.
-func (p *project) validateUpdates() error {
-	u := &p.Updates
-	if err := checkChannel(u.Channel); err != nil {
-		return err
-	}
-	if u.Key == "" {
-		if u.Channel == "" && (u.Feed != "" || u.Automatic != nil || u.AutomaticDownloads) {
-			return errors.New("updates: key holds no public key; make one with nsgo keygen, or set channel to store")
-		}
+// resolveUpdatesRuntime decodes updates.key and resolves the GitHub repository
+// fallback when updates.feed is unset. Keeping this in cmd/nsgo leaves
+// project.Load free of Git and network calls.
+func (p *project) resolveUpdatesRuntime(ctx context.Context) error {
+	if p.Updates.Key == "" {
 		return nil
 	}
-	key, err := pkg.DecodePublicKey(u.Key)
+	key, err := pkg.DecodePublicKey(p.Updates.Key)
 	if err != nil {
 		return fmt.Errorf("updates: key: %w; set it to the public key nsgo keygen prints", err)
 	}
-	u.public = key
-	if u.Feed == "" {
-		u.repo = p.githubRepository(context.Background())
-		return nil
-	}
-	f, err := url.Parse(u.Feed)
-	if err != nil || f.Scheme != "https" || f.Host == "" || strings.ContainsAny(u.Feed, "'\"") {
-		return fmt.Errorf("updates: feed %q is not an https URL", u.Feed)
-	}
-	if !strings.HasSuffix(u.Feed, "/") {
-		u.Feed += "/"
+	p.updatesPublic = key
+	if p.Updates.Feed == "" {
+		p.updatesRepo = p.githubRepository(ctx)
 	}
 	return nil
 }
 
 // checkChannel refuses a channel updates.channel or -channel cannot name.
 func checkChannel(channel string) error {
-	switch channel {
-	case "", channelDirect, channelStore, channelSteam, channelNone:
-		return nil
-	}
-	return fmt.Errorf("updates: channel %q is not direct, store, steam or none", channel)
+	return projectcfg.ValidateChannel(channel)
 }
 
 // channel is the channel the builds are handed out through.
 func (p *project) channel() string {
-	switch {
-	case p.Updates.Channel != "":
-		return p.Updates.Channel
-	case p.Updates.Key != "":
-		return channelDirect
-	}
-	return channelNone
+	return p.Config.Channel()
 }
 
 // updatesOn reports whether the app's release builds check for updates.
 func (p *project) updatesOn() bool {
 	channel := p.channel()
-	return !p.Dev.Client && (channel == channelDirect || channel == channelStore)
+	return !p.devClient && (channel == channelDirect || channel == channelStore)
 }
 
 // updates reports whether the app's builds update themselves, on the
@@ -153,7 +102,7 @@ func (p *project) updatesOn() bool {
 func (p *project) updates() bool { return p.updatesOn() && p.channel() == channelDirect }
 
 // updatesAutomatic reports whether the app checks on its own.
-func (p *project) updatesAutomatic() bool { return p.Updates.Automatic == nil || *p.Updates.Automatic }
+func (p *project) updatesAutomatic() bool { return p.Config.UpdatesAutomatic() }
 
 // feedTarget reports whether target's releases have an appcast.
 func feedTarget(target string) bool {
@@ -174,8 +123,8 @@ func (p *project) feedBase() string {
 	if p.Updates.Feed != "" {
 		return p.Updates.Feed
 	}
-	if p.Updates.repo != "" {
-		return "https://github.com/" + p.Updates.repo + "/releases/latest/download/"
+	if p.updatesRepo != "" {
+		return "https://github.com/" + p.updatesRepo + "/releases/latest/download/"
 	}
 	return ""
 }
@@ -196,7 +145,7 @@ func (p *project) checkUpdateFeed(target string) error {
 	if err := checkChannel(p.Updates.Channel); err != nil {
 		return err
 	}
-	if p.updates() && p.Updates.public == nil {
+	if p.updates() && p.updatesPublic == nil {
 		return errors.New("updates: the direct channel signs its installers: set updates.key to the public key nsgo keygen prints")
 	}
 	if p.updates() && feedTarget(target) && p.feedBase() == "" {
@@ -211,15 +160,15 @@ func (p *project) downloadURL(file string) string {
 	if p.Updates.Feed != "" {
 		return p.Updates.Feed + url.PathEscape(file)
 	}
-	return "https://github.com/" + p.Updates.repo + "/releases/download/" + url.PathEscape(p.tagPrefix()+p.Version) + "/" + url.PathEscape(file)
+	return "https://github.com/" + p.updatesRepo + "/releases/download/" + url.PathEscape(p.tagPrefix()+p.Version) + "/" + url.PathEscape(file)
 }
 
 // releasePage is this version's GitHub release, "" with a feed of its own.
 func (p *project) releasePage() string {
-	if p.Updates.Feed != "" || p.Updates.repo == "" {
+	if p.Updates.Feed != "" || p.updatesRepo == "" {
 		return ""
 	}
-	return "https://github.com/" + p.Updates.repo + "/releases/tag/" + url.PathEscape(p.tagPrefix()+p.Version)
+	return "https://github.com/" + p.updatesRepo + "/releases/tag/" + url.PathEscape(p.tagPrefix()+p.Version)
 }
 
 // envTarget names the target a go build's environment builds for.
@@ -243,7 +192,7 @@ func envTarget(env []string) string {
 // on the direct channel its appcast and key, where the backend reads one
 // rather than Sparkle, and whether it checks on its own.
 func (p *project) updateLdflags(env []string) []string {
-	if p.Dev.Client {
+	if p.devClient {
 		return nil
 	}
 	// The backend, which nsgo.Run runs the app with, reads them.
@@ -254,7 +203,7 @@ func (p *project) updateLdflags(env []string) []string {
 	}
 	if feed := p.appcastURL(envTarget(env)); feed != "" && p.updates() {
 		flags = append(flags, fmt.Sprintf("-X '%s.updateFeed=%s'", pkgPath, feed),
-			fmt.Sprintf("-X %s.updateKey=%s", pkgPath, pkg.EncodePublicKey(p.Updates.public)))
+			fmt.Sprintf("-X %s.updateKey=%s", pkgPath, pkg.EncodePublicKey(p.updatesPublic)))
 	}
 	if p.updatesAutomatic() {
 		flags = append(flags, fmt.Sprintf("-X %s.updateAutomatic=1", pkgPath))
@@ -278,7 +227,7 @@ func (p *project) sparklePlist(target string) string {
 		downloads = "<true/>"
 	}
 	return fmt.Sprintf("\t<key>SUAutomaticallyUpdate</key>%s\n\t<key>SUFeedURL</key><string>%s</string>\n\t<key>SUPublicEDKey</key><string>%s</string>\n\t<key>SUEnableAutomaticChecks</key>%s",
-		downloads, xmlText(p.appcastURL(target)), pkg.EncodePublicKey(p.Updates.public), automatic)
+		downloads, xmlText(p.appcastURL(target)), pkg.EncodePublicKey(p.updatesPublic), automatic)
 }
 
 // pinned is a release of an updater nsgo bundles, by its SHA-256.
@@ -484,7 +433,7 @@ func (p *project) updatesSecretKey() (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("NSGO_UPDATES_KEY: %w", err)
 	}
-	if !key.Public().(ed25519.PublicKey).Equal(p.Updates.public) {
+	if !key.Public().(ed25519.PublicKey).Equal(p.updatesPublic) {
 		return nil, errors.New("NSGO_UPDATES_KEY: the secret key is not the one of updates.key")
 	}
 	return key, nil
@@ -539,7 +488,7 @@ func (p *project) writeAppcast(target string, installers ...string) error {
 		if err != nil {
 			return err
 		}
-		item := appcastItem{name: name, version: p.Version, build: p.BundleVersion(), page: p.releasePage(), notes: p.Updates.notesHTML,
+		item := appcastItem{name: name, version: p.Version, build: p.BundleVersion(), page: p.releasePage(), notes: p.updatesNotesHTML,
 			url: p.downloadURL(filepath.Base(installer)), os: system, length: len(data), sha256: fmt.Sprintf("%x", sha256.Sum256(data)), published: now}
 		if key != nil {
 			item.signature = base64.StdEncoding.EncodeToString(ed25519.Sign(key, data))

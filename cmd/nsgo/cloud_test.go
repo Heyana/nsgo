@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"slices"
@@ -72,7 +73,7 @@ apple:
 }
 
 func TestCloudEntitlementsPlistGeneration(t *testing.T) {
-	p := &project{Name: "Quest", ID: "com.example.quest"}
+	p := &project{Config: projectcfg.Config{Name: "Quest", ID: "com.example.quest"}}
 	p.Cloud = cloudConfig{
 		KVStore:    true,
 		Containers: []string{"iCloud.com.example.quest"},
@@ -137,7 +138,7 @@ func TestCloudEntitlementsPlistGeneration(t *testing.T) {
 	}
 
 	// 4. Project without cloud config strips iCloud entitlements from profile.
-	plain := &project{Name: "Plain", ID: "com.example.plain"}
+	plain := &project{Config: projectcfg.Config{Name: "Plain", ID: "com.example.plain"}}
 	ents := map[string]any{
 		kvStoreEntitlement:          "ABCDE12345.*",
 		icloudContainersEntitlement: []any{"iCloud.com.example.plain"},

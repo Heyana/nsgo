@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ func TestAppNames(t *testing.T) {
 		"locales/zh-Hans.yaml": "appName: 画廊\nNSCameraUsageDescription: 使用相机\n",
 		"locales/pt-BR.yaml":   "appName: \"Galeria \\\"Nova\\\"\"\n",
 	})
-	p := &project{Dir: dir, Name: "gallery", ID: "dev.oneo.gallery"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "gallery", ID: "dev.oneo.gallery"}}
 	p.I18n.Dir, p.I18n.Source = filepath.Join(dir, "locales"), "en"
 	p.Apple.Info = map[string]any{
 		"NSCameraUsageDescription": "Camera access",
@@ -91,7 +92,7 @@ func TestAppNames(t *testing.T) {
 }
 
 func TestApplePlistTakesTheProjectsEntries(t *testing.T) {
-	p := &project{Name: "App", ID: "dev.oneo.app"}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "dev.oneo.app"}}
 	p.Apple.Info = map[string]any{"NSMicrophoneUsageDescription": "Dictate & send"}
 	path := filepath.Join(t.TempDir(), "Info.plist")
 	if err := writePlist(path, p, macPlist, ""); err != nil {
@@ -132,7 +133,7 @@ func TestAppleInfoLocalizationWithoutAppName(t *testing.T) {
 		"locales/zh-Hans.yaml": "NSCameraUsageDescription: 用相机扫码\nNSMicrophoneUsageDescription: 录制你的声音\n",
 		"locales/de.yaml":      "hello: Hallo\n",
 	})
-	p := &project{Dir: dir}
+	p := &project{Config: projectcfg.Config{Dir: dir}}
 	p.I18n.Dir, p.I18n.Source = filepath.Join(dir, "locales"), "ja"
 	p.Apple.Info = map[string]any{
 		"NSCameraUsageDescription":     "Scans codes",
@@ -184,7 +185,7 @@ func TestAppleInfoLocalizationRejectsArguments(t *testing.T) {
 	writeFiles(t, dir, map[string]string{
 		"locales/en.yaml": "NSCameraUsageDescription: \"Camera for {name}\"\n",
 	})
-	p := &project{Dir: dir}
+	p := &project{Config: projectcfg.Config{Dir: dir}}
 	p.I18n.Dir, p.I18n.Source = filepath.Join(dir, "locales"), "en"
 	p.Apple.Info = map[string]any{"NSCameraUsageDescription": "Camera access"}
 	if _, err := writeAppleNames(p, filepath.Join(dir, "Resources")); err == nil || !strings.Contains(err.Error(), "takes no arguments") {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +19,7 @@ func TestMacStoreWidgetBundleUsesSharedContainer(t *testing.T) {
 	if err := exec.Command("xcrun", "--find", "swiftc").Run(); err != nil {
 		t.Skip("needs Xcode's Swift compiler")
 	}
-	p := &project{ID: "dev.example.sandboxwidgets", Version: "1.0", Release: true, Widgets: []widgetKind{{Kind: "counter"}}}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.sandboxwidgets", Version: "1.0", Widgets: []widgetKind{{Kind: "counter"}}}, Release: true}
 	p.Updates.Channel = channelStore
 	p.Apple.AppGroup = "group.dev.example.sharedwidgets"
 	app := filepath.Join(t.TempDir(), "Fixture.app")

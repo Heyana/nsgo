@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 func TestEmbedOnly(t *testing.T) {
@@ -106,8 +108,8 @@ func TestWriteTVOSFrameworkBundle(t *testing.T) {
 }
 
 func TestEmbedTVOSMinimumValidation(t *testing.T) {
-	p := &project{Name: "SampleTV", ID: "dev.nsgo.sampletv", Version: "1.0.0"}
-	p.Build.embed = true
+	p := &project{Config: projectcfg.Config{Name: "SampleTV", ID: "dev.nsgo.sampletv", Version: "1.0.0"}}
+	p.buildEmbed = true
 	p.Apple.Info = map[string]any{"MinimumOSVersion": "16.0"}
 	if err := buildTarget(t.Context(), p, "tvos", t.TempDir()); err == nil || !strings.Contains(err.Error(), "17.0") {
 		t.Fatalf("tvos -embed with MinimumOSVersion 16.0 = %v, want error naming 17.0", err)
@@ -192,8 +194,8 @@ func TestEmbedTVOSXCFramework(t *testing.T) {
 			p := ghosttyProject(t, tc.linked)
 			p.Name = "TVEmbed"
 			p.ID = "dev.nsgo.test.tvembed"
-			p.Build.embed = true
-			p.Build.dynamic = tc.dynamic
+			p.buildEmbed = true
+			p.buildDynamic = tc.dynamic
 			p.packageLicenses = false
 			writeFiles(t, p.Dir, map[string]string{
 				"resources/hello.txt": "tvos-resource",

@@ -46,7 +46,7 @@ func TestLaunchScreenConfig(t *testing.T) {
 			continue
 		}
 		s := p.LaunchScreen
-		if s.color != 0xff14a7cd || s.Dark.color != 0xff000000 || s.Image != filepath.Join(dir, "art", "logo.png") || s.Dark.Image != "" {
+		if s.Color() != 0xff14a7cd || s.Dark.Color() != 0xff000000 || s.Image != filepath.Join(dir, "art", "logo.png") || s.Dark.Image != "" {
 			t.Errorf("launch screen = %+v", s)
 		}
 		var plist bytes.Buffer

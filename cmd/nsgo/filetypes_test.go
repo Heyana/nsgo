@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,10 +87,10 @@ func yamlItems(s string) string {
 }
 
 func TestFileTypesRegisterInTheIOSPlist(t *testing.T) {
-	p := &project{Name: "Documents", ID: "dev.nsgo.documents", FileTypes: []fileType{
+	p := &project{Config: projectcfg.Config{Name: "Documents", ID: "dev.nsgo.documents", FileTypes: []fileType{
 		{Name: "Document & Notes", ID: "dev.nsgo.documents.note", Extensions: []string{"note"}, MIME: []string{"application/x-nsgo-note"}, Icon: "note.icns"},
 		{Name: "Plain text", ID: "public.plain-text", Extensions: []string{"txt"}, Role: "viewer", Conforms: []string{"public.text"}},
-	}}
+	}}}
 	extra := p.iosFileTypesPlist(iOS)
 	for _, want := range []string{
 		"<key>CFBundleDocumentTypes</key>",

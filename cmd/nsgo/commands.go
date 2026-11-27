@@ -8,9 +8,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
+
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
+
+func validCommandName(name string) bool { return projectcfg.ValidCommandName(name) }
 
 // Commands are command-line programs an app ships beside its desktop
 // executable, such as a CLI working on the app's data: nsgo.yaml's
@@ -23,70 +26,6 @@ import (
 // with windows.path. Store packages leave them out: the Mac App Store's
 // sandbox, the MSIX and the Flatpak each run only the app's own
 // executable.
-
-// command is one of nsgo.yaml's commands: Name is its file's name, with
-// .exe on Windows, and Package the Go main package built for it with the
-// app's GOOS and GOARCH and CGO_ENABLED=0. LDFlags are the package's own
-// linker flags, each as go build's -ldflags takes it, after the app's
-// build.ldflags (commandLdflags).
-type command struct {
-	Name    string   `yaml:"name"`
-	Package string   `yaml:"package"`
-	LDFlags []string `yaml:"ldflags"`
-}
-
-// validateCommands checks commands' names, which become file names in
-// every desktop package and links in /usr/bin, and their packages.
-func (p *project) validateCommands() error {
-	for i, c := range p.Commands {
-		if !validCommandName(c.Name) {
-			return fmt.Errorf("commands entry %d: name %q must be letters, digits, '-' and '_', starting with a letter or a digit", i+1, c.Name)
-		}
-		base := strings.ToUpper(c.Name)
-		if slices.Contains([]string{"CON", "PRN", "AUX", "NUL"}, base) || len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9' {
-			return fmt.Errorf("commands: %s is a reserved Windows file name", c.Name)
-		}
-		// The app's executable, its Linux command, the Windows uninstaller and the AppImage's entry point are files of the same names.
-		for _, taken := range []string{p.Name, p.packageSlug(), "Uninstall", "AppRun"} {
-			if strings.EqualFold(c.Name, taken) {
-				return fmt.Errorf("commands: %s is the name of the app's own %s; name the command another way", c.Name, takenFile(p, taken))
-			}
-		}
-		for _, other := range p.Commands[:i] {
-			// macOS and Windows file systems ignore case.
-			if strings.EqualFold(c.Name, other.Name) {
-				return fmt.Errorf("commands: %s and %s name the same file", other.Name, c.Name)
-			}
-		}
-		if c.Package == "" || strings.HasPrefix(c.Package, "-") || strings.Contains(c.Package, "...") || strings.ContainsAny(c.Package, " \t\r\n") {
-			return fmt.Errorf("commands: %s's package %q is not one Go package's path", c.Name, c.Package)
-		}
-	}
-	return nil
-}
-
-// validCommandName reports whether name is letters, digits, '-' and '_' and starts with a letter or a digit, so it is a file name on every system, without an extension any package treats as its own.
-func validCommandName(name string) bool {
-	for i, r := range name {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || i > 0 && (r == '-' || r == '_')) {
-			return false
-		}
-	}
-	return name != ""
-}
-
-// takenFile says what of the app's is named taken.
-func takenFile(p *project, taken string) string {
-	switch taken {
-	case p.Name:
-		return "executable"
-	case p.packageSlug():
-		return "command in /usr/bin"
-	case "Uninstall":
-		return "Windows uninstaller"
-	}
-	return "AppImage entry point"
-}
 
 // commandsIncluded reports whether the target's packages hold the app's commands: every build but a store's.
 func (p *project) commandsIncluded() bool {

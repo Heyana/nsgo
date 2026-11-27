@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/licenseclassifier/v2/assets"
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/authenticode"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 func nativeELF(arm bool) []byte {
@@ -77,7 +78,7 @@ func nativeFixture(t *testing.T, target, name string, data []byte) *project {
 		"dep/lib/" + name:           string(data),
 		"dep/" + nativeManifestName: fmt.Sprintf("version: 1\nlibraries:\n  %s:\n    - name: %s\n      path: lib/%s\n      sha256: %s\n      licenses: [legal/native.txt]\n", target, name, name, nativeDigest(data)),
 	})
-	return &project{Dir: app, Name: "Fixture", ID: "dev.example.fixture", Version: "1.0.0", packageLicenses: true}
+	return &project{Config: projectcfg.Config{Dir: app, Name: "Fixture", ID: "dev.example.fixture", Version: "1.0.0"}, packageLicenses: true}
 }
 
 func TestPackageNativesFollowBuildTagsAndLicenses(t *testing.T) {
@@ -186,7 +187,7 @@ func TestPackageNativesLinuxPackageDependencies(t *testing.T) {
 		files[name+"/LICENSE"] = string(license)
 	}
 	writeFiles(t, dir, files)
-	p := &project{Dir: filepath.Join(dir, "app"), Name: "Fixture", ID: "dev.example.fixture", Version: "1.0.0", packageLicenses: true}
+	p := &project{Config: projectcfg.Config{Dir: filepath.Join(dir, "app"), Name: "Fixture", ID: "dev.example.fixture", Version: "1.0.0"}, packageLicenses: true}
 	p.Linux.Depends = linuxDeps{Deb: []string{"gstreamer1.0-plugins-good", "libva2"}, Arch: []string{"gst-plugins-good"}}
 	p.Linux.Recommends = linuxDeps{Deb: []string{"gstreamer1.0-libav"}, Arch: []string{"gst-libav: H.264 and AAC video"}}
 	arm := [4]string{

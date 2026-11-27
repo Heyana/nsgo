@@ -134,10 +134,12 @@ var layers = []struct {
 	// Apps use the public packages only, and the hosts that embed an
 	// example app its package.
 	{"examples/", []string{"", "audio", "cloud", "automation", "core", "base/", "ui/", "gpu", "mobile", "desktop", "desktop/locales", "web", "gamepad", "gameservices", "i18n", "icons/", "nsgotest", "tsx/", "updater", "widget", "examples/"}},
+	{"project", []string{"targets", "tsx/pkg"}},
+	{"targets", nil},
 	// The nsgo tool links no component or runtime, so changing them does
 	// not build it again; it writes TSX declarations by running the app.
 	{"cmd/nsgo/shareextension", []string{"internal/platform/objcblock", "internal/platform/shareinbox"}},
-	{"cmd/", []string{"core", "cmd/", "i18n", "targets", "internal/automation", "internal/appstartup", "internal/mimeinfo", "internal/platform/android/runtime", "tsx/bundler", "tsx/pkg", "tsx/websrc"}},
+	{"cmd/", []string{"core", "cmd/", "i18n", "project", "targets", "internal/automation", "internal/appstartup", "internal/mimeinfo", "internal/platform/android/runtime", "tsx/bundler", "tsx/pkg", "tsx/websrc"}},
 	{"tools/", []string{"core"}},
 }
 
@@ -163,7 +165,7 @@ var owned = map[string][]string{
 // portable lists the packages that build unchanged for every target: no
 // purego, syscall or unsafe.
 var portable = []string{"core", "internal/automation", "internal/appstartup", "internal/dev/locales", "internal/driver", "internal/mimeinfo", "internal/layout", "internal/shader", "internal/shader/wgsl", "internal/shaderir/", "internal/engine",
-	"internal/testhost", "internal/cldr", "targets", "base/", "ui/", "i18n", "mobile", "web", "audio", "gpu", "desktop", "desktop/locales", "icons/", "nsgotest", "tsx", "tsx/websrc", "updater", "updater/locales"}
+	"internal/testhost", "internal/cldr", "project", "targets", "base/", "ui/", "i18n", "mobile", "web", "audio", "gpu", "desktop", "desktop/locales", "icons/", "nsgotest", "tsx", "tsx/websrc", "updater", "updater/locales"}
 
 // unportable are the packages among portable's that reach the system: the
 // terminal loads libghostty-vt and runs programs, on macOS, Linux and

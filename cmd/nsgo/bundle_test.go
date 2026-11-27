@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"slices"
@@ -40,7 +41,7 @@ mount(() => <Text>Hi</Text>);
 	if err != nil || !slices.Equal(entries, []string{"App.tsx"}) {
 		t.Fatalf("entries %q, %v", entries, err)
 	}
-	p := &project{Dir: dir}
+	p := &project{Config: projectcfg.Config{Dir: dir}}
 	file, err := p.bundleFile()
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +58,7 @@ mount(() => <Text>Hi</Text>);
 	if !strings.Contains(string(o), filepath.Join(dir, "zz_nsgo_bundle.go")) {
 		t.Errorf("the overlay %s", o)
 	}
-	none := &project{Dir: t.TempDir()}
+	none := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	if f, err := none.bundleFile(); f != "" || err != nil {
 		t.Errorf("an app without TSX has a bundle %q, %v", f, err)
 	}

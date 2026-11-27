@@ -13,16 +13,11 @@ const (
 	steamBuildTag  = "nsgo_steam"
 )
 
-type steamConfig struct {
-	// AppID is the Steamworks App ID for native development outside Steam.
-	AppID uint32 `yaml:"app_id"`
-}
-
 func (p *project) checkSteamTargets(targets []string) error {
 	if p.channel() != channelSteam {
 		return nil
 	}
-	if p.Build.embed {
+	if p.buildEmbed {
 		return errors.New("-channel steam makes desktop depots and cannot be combined with -embed")
 	}
 	for _, target := range targets {
@@ -34,7 +29,7 @@ func (p *project) checkSteamTargets(targets []string) error {
 }
 
 func (p *project) steamDevelopment() bool {
-	return p.Dev.Client && p.Dev.Target == "native" && p.Steam.AppID != 0
+	return p.devClient && p.Dev.Target == "native" && p.Steam.AppID != 0
 }
 
 func (p *project) steamBuild(target string) bool {

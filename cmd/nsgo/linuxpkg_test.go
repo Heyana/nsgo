@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"io"
 	"strconv"
 	"strings"
@@ -14,7 +15,7 @@ import (
 
 // TestArchMtreeMatchesArchive compares the manifest with the actual tar metadata and bytes, including metadata files, directories, Unicode, whitespace, backslashes and symbolic links.
 func TestArchMtreeMatchesArchive(t *testing.T) {
-	p := &project{Name: "App", ID: "dev.nsgo.test.mtree", Version: "1.0.0", URLSchemes: []string{"nsgo1410"}}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "dev.nsgo.test.mtree", Version: "1.0.0", URLSchemes: []string{"nsgo1410"}}}
 	files := []linuxPackageEntry{
 		{name: "opt", mode: 0o755, dir: true},
 		{name: "opt/app", mode: 0o755, dir: true},
@@ -144,7 +145,7 @@ func TestDebPackageAcceptsUnicodeAndLongPaths(t *testing.T) {
 		{name: name, data: []byte("asset"), mode: 0o644},
 		{name: "opt/app/alias", link: target, mode: 0o777},
 	}
-	p := &project{Name: "App", ID: "dev.nsgo.test.deb", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "dev.nsgo.test.deb", Version: "1.0.0"}}
 	data, err := debPackage(p, files, "amd64")
 	if err != nil {
 		t.Fatal(err)

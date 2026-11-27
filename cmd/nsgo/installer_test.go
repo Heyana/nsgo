@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/binary"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"image"
 	"image/color"
 	"image/png"
@@ -27,7 +28,7 @@ func TestPackageSlugs(t *testing.T) {
 		{"画廊", "dev.oneo.Gallery", "gallery"},
 		{"画廊", "画廊", "app"},
 	} {
-		p := &project{Name: c.name, ID: c.id}
+		p := &project{Config: projectcfg.Config{Name: c.name, ID: c.id}}
 		if got := p.packageSlug(); got != c.want {
 			t.Errorf("packageSlug(%q, %q) = %q, want %q", c.name, c.id, got, c.want)
 		}
@@ -55,7 +56,7 @@ func TestWindowsInstallerPlan(t *testing.T) {
 	writeFiles(t, dir, map[string]string{"locales/en.yaml": "appName: My App\n"})
 	pkg := filepath.Join(dir, "pkg")
 	writeFiles(t, pkg, map[string]string{"MyApp.exe": "exe", "fonts/a$b.ttf": "font", "MyApp.nsi": "old", "myapp-0.9-windows-x64-setup.exe": "old", "helper-setup.exe": "a program of the app's"})
-	p := &project{Dir: dir, Name: "MyApp", ID: "dev.example.app", Version: "1.2.0-beta.1"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "MyApp", ID: "dev.example.app", Version: "1.2.0-beta.1"}}
 	p.I18n.Dir, p.I18n.Source = filepath.Join(dir, "locales"), "en"
 	d, err := windowsInstallerPlan(t.Context(), p, pkg, "arm64")
 	if err != nil {
@@ -84,7 +85,7 @@ func TestWindowsInstallerBuildsWithoutMakensis(t *testing.T) {
 	writeFiles(t, dir, map[string]string{"App.exe": "exe", "fonts/a.ttf": "font"})
 	locales := t.TempDir()
 	writeFiles(t, locales, map[string]string{"en.yaml": "appName: \"Bob's `Notes`\"\n"})
-	p := &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0", Release: true}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0"}, Release: true}
 	p.I18n.Dir, p.I18n.Source = locales, "en"
 	if _, err := buildWindowsInstaller(t.Context(), p, dir, "x64"); err != nil {
 		t.Fatal(err)
@@ -151,7 +152,7 @@ func TestLinuxPackages(t *testing.T) {
 		"app-0.9.0-linux-x64.AppImage.zsync": "old-control",
 	})
 	os.Chmod(filepath.Join(dir, "App"), 0o755)
-	p := &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0-rc.1"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0-rc.1"}}
 	files, err := linuxPackageFiles(p, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -315,7 +316,7 @@ func TestDiskImageLayout(t *testing.T) {
 // packages' files and directories are copied, with checksums for files.
 func TestReleaseDirectory(t *testing.T) {
 	dir := t.TempDir()
-	p := &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.1.0"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.1.0"}}
 	p.Build.Output = filepath.Join(dir, "dist")
 	writeFiles(t, p.releaseDir(), map[string]string{".version": "1.0.0\n", "app-1.0.0-macos-arm64.dmg": "old"})
 	if err := p.cleanReleaseDir(); err != nil {
@@ -386,7 +387,7 @@ func TestMiniProgramTargetGroup(t *testing.T) {
 // the shell one parses; builds with no desktop package write none.
 func TestInstallScripts(t *testing.T) {
 	dir := t.TempDir()
-	p := &project{Dir: dir, Name: "My App", ID: "dev.example.app", Version: "1.2.0-beta.1"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "My App", ID: "dev.example.app", Version: "1.2.0-beta.1"}}
 	p.Build.Output = filepath.Join(dir, "dist")
 	if err := p.writeInstallScripts(t.Context(), []string{"macos_arm64"}); err != nil {
 		t.Fatal(err)
@@ -552,10 +553,10 @@ func TestInstallerFiles(t *testing.T) {
 	var b bytes.Buffer
 	png.Encode(&b, icon)
 	writeFiles(t, dir, map[string]string{"assets/Icon.png": b.String(), "assets/Setup.ico": "ico", "assets/bg.jpg": "jpg"})
-	p := &project{Dir: dir}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "App"}}
 	p.Icon.PNG = filepath.Join(dir, "assets/Icon.png")
 	p.Windows.InstallerIcon = "assets/Setup.ico"
-	if err := p.resolveInstallerFiles(); err != nil {
+	if err := p.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	if data, _ := p.iconFile(p.Windows.InstallerIcon, ".ico"); string(data) != "ico" {
@@ -568,11 +569,11 @@ func TestInstallerFiles(t *testing.T) {
 		t.Error("no .icns of a PNG")
 	}
 	p.MacOS.DMGBackground = "assets/bg.jpg"
-	if err := p.resolveInstallerFiles(); err == nil || !strings.Contains(err.Error(), "macos.dmg_background") {
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "macos.dmg_background") {
 		t.Errorf("a JPEG background: %v", err)
 	}
 	p.MacOS.DMGBackground = "assets/missing.png"
-	if err := p.resolveInstallerFiles(); err == nil {
+	if err := p.Validate(); err == nil {
 		t.Error("a missing background")
 	}
 }

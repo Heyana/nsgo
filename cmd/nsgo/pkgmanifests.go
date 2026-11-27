@@ -42,7 +42,7 @@ const (
 // writePackageManifests writes Homebrew cask and winget manifests for a
 // direct release's macOS and Windows installers.
 func (p *project) writePackageManifests(ctx context.Context, targets []string) error {
-	if p.Build.embed || !p.updates() {
+	if p.buildEmbed || !p.updates() {
 		return nil
 	}
 	hasMac := p.installers("macos") && slices.ContainsFunc(targets, func(t string) bool { return strings.HasPrefix(t, "macos_") })
@@ -88,8 +88,8 @@ func (p *project) releaseGitHubRepo(ctx context.Context) string {
 	if p.Releases.GitHub != "" {
 		return p.Releases.GitHub
 	}
-	if p.Updates.repo != "" {
-		return p.Updates.repo
+	if p.updatesRepo != "" {
+		return p.updatesRepo
 	}
 	return p.githubRepository(ctx)
 }

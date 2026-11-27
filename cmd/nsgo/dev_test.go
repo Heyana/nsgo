@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"net"
 	"net/http"
 	"os"
@@ -177,7 +178,7 @@ func TestDevDebugKeepsSymbols(t *testing.T) {
 		"go.mod":  "module debugprobe\n\ngo 1.26\n",
 		"main.go": "package main\nfunc main() {}\n",
 	})
-	p := &project{Dir: dir, Name: "Debug probe", ID: "dev.nsgo.debugprobe"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Debug probe", ID: "dev.nsgo.debugprobe"}}
 	p.Build.LDFlags = []string{"-s -w"}
 	p.prepareDev(devOptions{debug: true})
 	cmd, done, err := goBuildCommand(t.Context(), p, filepath.Join(dir, "app"), nil, buildExtra{})
@@ -219,7 +220,7 @@ func TestWindowsDevBuildKeepsThePreviousExecutable(t *testing.T) {
 		"go.mod":  "module windowsdevprobe\n\ngo 1.26\n",
 		"main.go": "package main\nfunc main() {}\n",
 	})
-	p := &project{Dir: dir, Name: "Windows dev probe", ID: "dev.nsgo.windowsprobe", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Windows dev probe", ID: "dev.nsgo.windowsprobe", Version: "1.0.0"}}
 	p.Dev.Target = "native"
 	opts := devOptions{nativeDir: t.TempDir()}
 	p.prepareDev(opts)

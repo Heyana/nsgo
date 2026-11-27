@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestAndroidClassFiles(t *testing.T) {
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	first, second, third, raw := classTestDex(1), classTestDex(2), classTestDex(3), classTestDex(4)
 	jar := filepath.Join(p.Dir, "widget.jar")
 	writeClassTestJar(t, jar, []classTestEntry{
@@ -42,7 +43,7 @@ func TestAndroidClassFiles(t *testing.T) {
 }
 
 func TestAndroidClassFilesRejectInvalidInputs(t *testing.T) {
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	writeClassTestJar(t, filepath.Join(p.Dir, "java.jar"), []classTestEntry{{"Badge.class", []byte{0xca, 0xfe, 0xba, 0xbe}}})
 	writeClassTestJar(t, filepath.Join(p.Dir, "duplicate.jar"), []classTestEntry{
 		{"classes.dex", classTestDex(1)}, {"classes.dex", classTestDex(2)},

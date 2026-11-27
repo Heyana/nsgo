@@ -10,6 +10,7 @@ import (
 	"text/template"
 
 	"github.com/nsgo-dev/nsgo/internal/appstartup"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 // TestAppleBuildInfoDeviceAndSimulator writes the SDK and Xcode an iOS device bundle is built with into its Info.plist, as App Store Connect requires (#889), leaves them out of a simulator's, and leaves a key apple.info sets to it.
@@ -79,7 +80,7 @@ func TestLocalNetworkProbeInBonjourServices(t *testing.T) {
 			plist *template.Template
 		}{{"macos", macPlist}, {"ios", iosPlist}, {"tvos", tvosPlist}} {
 			t.Run(tc.name+"/"+target.name, func(t *testing.T) {
-				p := &project{Name: "Probe", ID: "dev.nsgo.probe", Version: "1.0.0"}
+				p := &project{Config: projectcfg.Config{Name: "Probe", ID: "dev.nsgo.probe", Version: "1.0.0"}}
 				p.Apple.Info = tc.info
 				own, _ := tc.info["NSBonjourServices"].([]any)
 				own = slices.Clone(own)
@@ -105,7 +106,7 @@ func TestLocalNetworkProbeInBonjourServices(t *testing.T) {
 			})
 		}
 	}
-	p := &project{Name: "Probe", ID: "dev.nsgo.probe", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Name: "Probe", ID: "dev.nsgo.probe", Version: "1.0.0"}}
 	p.Apple.Info = map[string]any{"NSLocalNetworkUsageDescription": "Finds your desktop.", "NSBonjourServices": "_example._tcp"}
 	if err := writePlist(filepath.Join(t.TempDir(), "Info.plist"), p, iosPlist, ""); err == nil || !strings.Contains(err.Error(), "NSBonjourServices must be a list") {
 		t.Errorf("a string NSBonjourServices: %v", err)

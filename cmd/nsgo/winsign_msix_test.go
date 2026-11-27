@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/authenticode"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 // TestSignsMSIXWithCertificate goes through the same PKCS#12 certificate loading and file signing as a store build. The block map and payload must survive byte for byte.
@@ -19,7 +20,7 @@ func TestSignsMSIXWithCertificate(t *testing.T) {
 	key := testWindowsKey(t)
 	certificate := filepath.Join(dir, "fixture.pfx")
 	writeTestCertificate(t, certificate, key)
-	p := &project{Dir: dir, Name: "MSIXFixture", ID: "dev.nsgo.test.msix1414", Version: "1.0.0", Release: true}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "MSIXFixture", ID: "dev.nsgo.test.msix1414", Version: "1.0.0"}, Release: true}
 	p.Sign.Certificate = certificate
 	p.Sign.TimestampURL = "none"
 	p.Windows.Store.Identity = "NSGoMSIX1414"

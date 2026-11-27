@@ -13,6 +13,7 @@ import (
 	"time"
 	"unsafe"
 
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -25,7 +26,7 @@ func TestWindowsFileAssociationsNative(t *testing.T) {
 	dir, pkg, installed := t.TempDir(), t.TempDir(), filepath.Join(t.TempDir(), "installed app")
 	id := fmt.Sprintf("dev.nsgo.associations.%d", time.Now().UnixNano())
 	ext := fmt.Sprintf("nsgo%d", time.Now().UnixNano())
-	p := &project{Dir: dir, Name: "Test App", ID: id, Version: "1.0.0", Release: true}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Test App", ID: id, Version: "1.0.0"}, Release: true}
 	p.FileTypes = []fileType{
 		{Name: "Document", ID: id + ".document", Extensions: []string{ext, ext + "old"}, Role: "viewer"},
 		{Name: "Reassigned", ID: id + ".reassigned", Extensions: []string{ext + "other"}},
@@ -228,7 +229,7 @@ func TestWindowsInstallerPathOwnershipNative(t *testing.T) {
 	saved, kind, savedErr := env.GetStringValue("Path")
 	dir, pkg := t.TempDir(), t.TempDir()
 	a, b := filepath.Join(t.TempDir(), "app a"), filepath.Join(t.TempDir(), "app b")
-	p := &project{Dir: dir, Name: "Path App", ID: fmt.Sprintf("dev.nsgo.path.%d", time.Now().UnixNano()), Version: "1.0.0", Release: true}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Path App", ID: fmt.Sprintf("dev.nsgo.path.%d", time.Now().UnixNano()), Version: "1.0.0"}, Release: true}
 	p.Windows.CommandLine = true
 	t.Cleanup(func() {
 		defer env.Close()

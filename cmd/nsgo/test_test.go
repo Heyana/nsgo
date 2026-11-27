@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"flag"
 	"fmt"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"hash/crc32"
 	"os"
 	"os/exec"
@@ -828,7 +829,7 @@ func TestTSXTestsSkipOwnTrees(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p := &project{Dir: dir, bare: true}
+	p := &project{Config: projectcfg.Config{Dir: dir}, bare: true}
 	if file, err := p.tsxTestFile(); err != nil || file != "" {
 		t.Fatalf("tsxTestFile = %q, %v, want none", file, err)
 	}

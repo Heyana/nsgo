@@ -7,20 +7,6 @@ import (
 	"strings"
 )
 
-// storeCompliance records whether the app's store questionnaires are complete.
-// A nil entry leaves the status unrecorded.
-type storeCompliance struct {
-	AppStore struct {
-		AgeRating *bool `yaml:"age_rating"`
-	} `yaml:"app_store"`
-	GooglePlay struct {
-		DataSafety *bool `yaml:"data_safety"`
-	} `yaml:"google_play"`
-	Steam struct {
-		ContentSurvey *bool `yaml:"content_survey"`
-	} `yaml:"steam"`
-}
-
 func appleStoreTarget(target string) bool {
 	switch target {
 	case "macos_arm64", "macos_x64", "macos_universal", "ios", "tvos", "watchos":
@@ -30,7 +16,7 @@ func appleStoreTarget(target string) bool {
 }
 
 func (p *project) checkStoreCompliance(targets []string) error {
-	if p.Build.embed {
+	if p.buildEmbed {
 		return nil
 	}
 

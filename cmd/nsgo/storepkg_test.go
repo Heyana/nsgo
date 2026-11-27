@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/xml"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"io"
 	"os"
 	"path/filepath"
@@ -22,7 +23,7 @@ import (
 // Release files name their system and architecture, so a release page
 // tells them apart.
 func TestReleaseNames(t *testing.T) {
-	p := &project{Name: "My App", Version: "1.2.0-beta.1"}
+	p := &project{Config: projectcfg.Config{Name: "My App", Version: "1.2.0-beta.1"}}
 	for _, c := range []struct{ got, want string }{
 		{dmgName(p, "arm64"), "my-app-1.2.0-beta.1-macos-arm64.dmg"},
 		{dmgName(p, "universal"), "my-app-1.2.0-beta.1-macos-universal.dmg"},
@@ -149,7 +150,7 @@ func TestMSIXPackage(t *testing.T) {
 }
 
 func TestMSIXManifest(t *testing.T) {
-	p := &project{Name: "My App", ID: "dev.example.my_app", Version: "1.4.0"}
+	p := &project{Config: projectcfg.Config{Name: "My App", ID: "dev.example.my_app", Version: "1.4.0"}}
 	p.FileTypes = []fileType{{Name: "Drawing", Extensions: []string{"draw", "DRW"}}}
 	data, err := msixManifest(p, "arm64")
 	if err != nil {
@@ -193,7 +194,7 @@ func TestMSIXManifest(t *testing.T) {
 
 func TestMSIXDeclaresDisabledStartupTask(t *testing.T) {
 	for _, arch := range []string{"amd64", "arm64"} {
-		p := &project{Name: "My App", ID: "dev.example.app", Version: "1.0.0"}
+		p := &project{Config: projectcfg.Config{Name: "My App", ID: "dev.example.app", Version: "1.0.0"}}
 		data, err := msixManifest(p, arch)
 		if err != nil {
 			t.Fatal(err)
@@ -264,7 +265,7 @@ func TestAppDirEntries(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{"App": "binary", "dev.example.app.png": "icon", "dev.example.app.desktop": "entry",
 		"res/a.txt": "a", "app-1.0.0-linux-x64.deb": "deb", "app-1.0.0-linux-x64.AppImage": "image"})
-	p := &project{Name: "App", ID: "dev.example.app"}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "dev.example.app"}}
 	entries, err := appDirEntries(p, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -293,7 +294,7 @@ func TestAppDirEntries(t *testing.T) {
 // archive of the release on its architecture.
 func TestFlatpakManifest(t *testing.T) {
 	dir := t.TempDir()
-	p := &project{Dir: dir, Name: "My App", ID: "dev.example.myapp", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "My App", ID: "dev.example.myapp", Version: "1.0.0"}}
 	p.Build.Output = dir
 	p.Releases.GitHub = "me/my-app"
 	p.Updates.Channel = channelStore

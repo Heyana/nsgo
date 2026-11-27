@@ -474,7 +474,7 @@ func parseKey(data []byte) (*apk.Key, error) {
 
 // androidDebuggable reports whether the Android package for p sets android:debuggable="true": test builds (nsgo test -target android) and automation dev builds (nsgo dev -target android -automation) need it so the runtime accepts their launch extras and starts TestAgent; release builds never do.
 func androidDebuggable(p *project) bool {
-	return p.testBinary || (p.Dev.Automation && !p.Release)
+	return p.testBinary || (p.devAutomation && !p.Release)
 }
 
 // androidExtras passes the engine's flags as an intent's extras, which

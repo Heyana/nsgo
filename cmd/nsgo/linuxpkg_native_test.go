@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,7 +29,7 @@ func TestLinuxPackagesNative(t *testing.T) {
 	if err := os.Symlink("space #é\\name.txt", filepath.Join(stage, "assets", "alias")); err != nil {
 		t.Fatal(err)
 	}
-	p := &project{Dir: dir, Name: "PackageCheck", ID: "dev.nsgo.test.package1410", Version: "1.0.0", URLSchemes: []string{"nsgo1410"}}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "PackageCheck", ID: "dev.nsgo.test.package1410", Version: "1.0.0", URLSchemes: []string{"nsgo1410"}}}
 	p.Linux.Maintainer = "NSGo <packages@example.invalid>"
 	deb, arch, err := buildLinuxPackages(t.Context(), p, stage, "amd64")
 	if err != nil {

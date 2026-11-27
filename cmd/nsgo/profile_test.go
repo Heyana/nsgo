@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +22,7 @@ func TestDevProfileFlags(t *testing.T) {
 	if err := flags.Parse([]string{"-profile", "cpu"}); err != nil {
 		t.Fatal(err)
 	}
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	profile, err := dev.options().profile.forProject(p, false)
 	if err != nil {
 		t.Fatal(err)

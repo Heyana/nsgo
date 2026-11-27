@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,7 +21,7 @@ func TestLinuxShare(t *testing.T) {
 		"applications/dev.example.app-cli.desktop": "entry",
 		"bash-completion/completions/app":          "complete",
 	})
-	p := &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0"}}
 
 	// Without linux.share, NSGo's own metadata.
 	files, err := linuxPackageFiles(p, dir)
@@ -160,7 +161,7 @@ func TestLinuxShare(t *testing.T) {
 
 // The Linux packages' metadata names a license only when linux.license gives one, no content rating, and Utility when linux.categories names no category, which AppStream needs; a Flatpak's keeps its defaults.
 func TestDirectMetainfo(t *testing.T) {
-	p := &project{Dir: t.TempDir(), Name: "App", ID: "dev.example.app", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir(), Name: "App", ID: "dev.example.app", Version: "1.0.0"}}
 	direct := func() string {
 		t.Helper()
 		data, err := p.metainfo(true)

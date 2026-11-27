@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/nsgo-dev/nsgo/project"
 )
 
 const (
@@ -17,12 +19,7 @@ const (
 
 // Signing names the AppGallery Connect materials for a HarmonyOS HAP.
 // Paths are relative to the app's nsgo.yaml unless absolute.
-type Signing struct {
-	Keystore    string `yaml:"keystore"`
-	KeyAlias    string `yaml:"key_alias"`
-	Certificate string `yaml:"certificate"`
-	Profile     string `yaml:"profile"`
-}
+type Signing = project.HarmonySigning
 
 // Signer uses the SDK's HAP signing tool with the app's own material.
 type Signer struct {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 // goTags returns the tags a Go command for p takes: those in GOFLAGS, which a -tags on the command line would otherwise replace, then the app's build.tags, then extra, the tool's own, each once.
@@ -75,17 +77,7 @@ func uniqueTags(tags []string) []string {
 }
 
 // validTag reports whether tag is a build tag a //go:build line can name: letters, digits, underscores and dots.
-func validTag(tag string) bool {
-	if tag == "" {
-		return false
-	}
-	for _, r := range tag {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '.') {
-			return false
-		}
-	}
-	return true
-}
+func validTag(tag string) bool { return projectcfg.ValidTag(tag) }
 
 // targetTags are the tags target's build adds to the app's, as buildHarmony, watchos.go and miniprogram.go pass them: nsgoharmony for harmonyos, nsgowatch for watchos and watchos_simulator, and miniprogramTags for every miniprogram_<platform>.
 func targetTags(target string) []string {

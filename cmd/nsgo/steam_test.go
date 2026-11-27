@@ -46,7 +46,7 @@ func TestSteamBuildChannel(t *testing.T) {
 			t.Errorf("%s links update flags %v, want only the steam channel", tc.target, flags)
 		}
 	}
-	p.Build.embed = true
+	p.buildEmbed = true
 	if err := p.checkSteamTargets([]string{"macos_arm64"}); err == nil {
 		t.Error("Steam accepted an embedded build")
 	}
@@ -75,7 +75,7 @@ func TestSteamDevConfigAndDepotResources(t *testing.T) {
 	if p.steamDevelopment() {
 		t.Error("web dev enabled the Steam App ID")
 	}
-	p.Dev.Client = false
+	p.devClient = false
 	p.Updates.Channel = channelSteam
 	if err := copyResources(p, dst); err != nil {
 		t.Fatal(err)

@@ -106,6 +106,8 @@ nsgo
 │   └── internal/shaderir                Shader IR, written as MSL, GLSL or HLSL
 │
 └── Build time, outside the layers
+    ├── project                          nsgo.yaml's schema, strict loader and non-network validators
+    ├── targets                          Build target names and group expansion
     ├── cmd/nsgo                         The nsgo tool
     ├── tools/changelog                  Folds changelog.d into CHANGELOG.md for a release
     ├── tools/lucidegen                  Generates icons/lucide

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/internal/appstartup"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 func TestAppClipStorageProfileSigning(t *testing.T) {
@@ -22,7 +23,7 @@ func TestAppClipStorageProfileSigning(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
-			p := &project{Name: "Cafe", ID: "dev.example.cafe", AppClip: &appClip{Name: "Cafe Clip", ID: "dev.example.cafe.Clip"}}
+			p := &project{Config: projectcfg.Config{Name: "Cafe", ID: "dev.example.cafe", AppClip: &appClip{Name: "Cafe Clip", ID: "dev.example.cafe.Clip"}}}
 			p.Apple.AppGroup = "group.dev.example.cafe"
 			p.Sign = signing{Identity: "test identity", Profile: filepath.Join(dir, "app.profile"), ClipProfile: filepath.Join(dir, "clip.profile")}
 			parent := map[string]any{
@@ -204,8 +205,8 @@ func TestAppClipProject(t *testing.T) {
 	if c.AppClip != nil || c.Widgets != nil {
 		t.Error("the clip has the app's clip or widgets")
 	}
-	if c.IOSMinimum() != "17.0" || p.AppClip.limit() != clipDigitalSize {
-		t.Errorf("minimum %s, limit %d", c.IOSMinimum(), p.AppClip.limit())
+	if c.IOSMinimum() != "17.0" || clipLimit(p.AppClip) != clipDigitalSize {
+		t.Errorf("minimum %s, limit %d", c.IOSMinimum(), clipLimit(p.AppClip))
 	}
 	want := "<key>NSAppClip</key><dict><key>NSAppClipRequestEphemeralUserNotification</key><false/><key>NSAppClipRequestLocationConfirmation</key><true/></dict>"
 	if got := c.clipPlist(); got != want {

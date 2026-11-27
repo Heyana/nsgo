@@ -221,7 +221,7 @@ func (f *devFlags) options() devOptions {
 
 func (f *devFlags) apply(p *project) {
 	f.overrides.apply(p)
-	p.Dev.Limits = string(f.limits)
+	p.devLimits = string(f.limits)
 	f.target.replace(&p.Dev.Target)
 	if f.hotReload.set {
 		p.Dev.HotReload = &f.hotReload.value
@@ -279,7 +279,7 @@ func (f *buildFlags) apply(p *project) {
 	f.overrides.apply(p)
 	if f.targets.set {
 		p.Build.Targets = strings.Split(f.targets.value, ",")
-		p.Build.all = slices.Contains(p.Build.Targets, "all")
+		p.buildAll = slices.Contains(p.Build.Targets, "all")
 	}
 	if f.output.set {
 		p.Build.Output = p.resolve(f.output.value)
@@ -294,10 +294,10 @@ func (f *buildFlags) apply(p *project) {
 	f.jobs.replace(&p.Build.Jobs)
 	f.channel.replace(&p.Updates.Channel)
 	if f.notes != "" {
-		p.Updates.notes, _ = filepath.Abs(f.notes)
+		p.updatesNotes, _ = filepath.Abs(f.notes)
 	}
 	p.Build.LDFlags = append(p.Build.LDFlags, (*f.ldflags)...)
-	p.Build.run, p.Build.embed, p.Build.dynamic = f.run, f.embed, f.dynamic
-	p.Build.device, p.Build.team = f.device, f.team
+	p.buildRun, p.buildEmbed, p.buildDynamic = f.run, f.embed, f.dynamic
+	p.buildDevice, p.buildTeam = f.device, f.team
 	f.sign.apply(p)
 }

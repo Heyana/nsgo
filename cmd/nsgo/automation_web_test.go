@@ -18,6 +18,7 @@ import (
 	"golang.org/x/net/websocket"
 
 	"github.com/nsgo-dev/nsgo/internal/automation"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 // mockCDPServer serves a fake Chrome DevTools Protocol WebSocket endpoint for unit testing CDP page setup, binding dispatch, console forwarding and close.
@@ -322,7 +323,7 @@ while [ ! -e "$NSGO_TEST_BROWSER_CLOSED" ]; do sleep 0.05; done
 		t.Fatal(err)
 	}
 	defer srv.close()
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	s := webSession(devOptions{automation: true, server: srv, lang: "de"})
 
 	ctx := t.Context()
@@ -381,7 +382,7 @@ exit 7
 		t.Fatal(err)
 	}
 	defer srv.close()
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	s := webSession(devOptions{automation: true, server: srv})
 	defer s.close()
 

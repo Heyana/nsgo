@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,7 +32,7 @@ func TestIOSShareTypes(t *testing.T) {
 }
 
 func TestIOSShareMetadataAndAppGroup(t *testing.T) {
-	p := &project{ID: "dev.example.app", Name: "Share App", Version: "1.2.3"}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app", Name: "Share App", Version: "1.2.3"}}
 	p.Apple.ShareTypes = []string{"public.url", "public.data"}
 	info := shareInfo(p, map[string]any{"CFBundleSupportedPlatforms": []any{"iPhoneSimulator"}})
 	decoded, err := decodePlist(encodePlist(info))
@@ -64,7 +65,7 @@ func TestIOSShareMetadataAndAppGroup(t *testing.T) {
 }
 
 func TestIOSShareRequiresDedicatedProvisioningProfile(t *testing.T) {
-	p := &project{ID: "dev.example.app"}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app"}}
 	app := t.TempDir()
 	if err := os.MkdirAll(iosSharePath(app), 0o755); err != nil {
 		t.Fatal(err)
@@ -79,7 +80,7 @@ func TestIOSShareRequiresDedicatedProvisioningProfile(t *testing.T) {
 }
 
 func TestIOSShareAndWidgetsHaveIndependentSigningTargets(t *testing.T) {
-	p := &project{ID: "dev.example.app", Name: "App", Widgets: []widgetKind{{Kind: "clock"}}}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app", Name: "App", Widgets: []widgetKind{{Kind: "clock"}}}}
 	p.Apple.ShareTypes = []string{"public.url"}
 	var project strings.Builder
 	if err := iosProject.Execute(&project, iosProjectData(p, iOS, "TEAM")); err != nil {
@@ -116,7 +117,7 @@ func TestIOSShareAndWidgetsHaveIndependentSigningTargets(t *testing.T) {
 
 // With widgets, a share extension and an App Clip together, every object the signing project refers to is defined once, and the project-level products directory the Clip's build directory names stays set.
 func TestIOSSigningProjectDefinesEveryReferencedObject(t *testing.T) {
-	p := &project{ID: "dev.example.app", Name: "App", Widgets: []widgetKind{{Kind: "clock"}}}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app", Name: "App", Widgets: []widgetKind{{Kind: "clock"}}}}
 	p.Apple.ShareTypes = []string{"public.url"}
 	p.AppClip = &appClip{Name: "Quick Clip", ID: "dev.example.app.Clip", Main: "clip", Minimum: "17.0", Domains: []string{"example.com"}}
 	var b strings.Builder
@@ -174,7 +175,7 @@ func TestIOSShareSourcesRemainAvailableWithVendoredTools(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		p := &project{Dir: dir, ID: "dev.nsgo.test.vendoredshare", Name: "VendoredShare", Version: "1.0.0"}
+		p := &project{Config: projectcfg.Config{Dir: dir, ID: "dev.nsgo.test.vendoredshare", Name: "VendoredShare", Version: "1.0.0"}}
 		p.Apple.ShareTypes = []string{"public.url", "public.data"}
 		app := filepath.Join(t.TempDir(), "VendoredShare.app")
 		if err := addIOSShare(t.Context(), p, app, env, true); err != nil {
@@ -201,7 +202,7 @@ func TestIOSShareProfileMustGrantItsBundleAndGroup(t *testing.T) {
 			if err := os.MkdirAll(iosSharePath(app), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			p := &project{ID: "dev.example.app"}
+			p := &project{Config: projectcfg.Config{ID: "dev.example.app"}}
 			p.Sign.ShareProfile = filepath.Join(t.TempDir(), "Share.mobileprovision")
 			if err := os.WriteFile(p.Sign.ShareProfile, []byte("fixture profile"), 0o600); err != nil {
 				t.Fatal(err)

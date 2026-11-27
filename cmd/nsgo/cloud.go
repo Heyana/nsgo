@@ -6,12 +6,6 @@ import (
 	"strings"
 )
 
-// cloudConfig is nsgo.yaml's cloud (or icloud / apple.icloud) section: Apple iCloud key-value store and ubiquity document container identifiers written into generated .entitlements plists by nsgo build.
-type cloudConfig struct {
-	KVStore    bool     `yaml:"kv_store"`
-	Containers []string `yaml:"containers"`
-}
-
 const (
 	kvStoreEntitlement          = "com.apple.developer.ubiquity-kvstore-identifier"
 	icloudContainersEntitlement = "com.apple.developer.icloud-container-identifiers"
@@ -39,33 +33,6 @@ func (p *project) cloudSettings() cloudConfig {
 func (p *project) cloudEnabled() bool {
 	cfg := p.cloudSettings()
 	return cfg.KVStore || len(cfg.Containers) > 0
-}
-
-// validateCloud checks that every configured iCloud container identifier is non-empty, has no whitespace, is not duplicated within a single section, and starts with Apple's required "iCloud." prefix.
-func (p *project) validateCloud() error {
-	for _, section := range []struct {
-		name string
-		list []string
-	}{
-		{"cloud.containers", p.Cloud.Containers},
-		{"icloud.containers", p.ICloud.Containers},
-		{"apple.icloud.containers", p.Apple.ICloud.Containers},
-	} {
-		seen := map[string]bool{}
-		for _, c := range section.list {
-			if c == "" || strings.ContainsAny(c, " \t\r\n") {
-				return fmt.Errorf("%s has invalid container %q", section.name, c)
-			}
-			if !strings.HasPrefix(c, "iCloud.") || len(c) == len("iCloud.") {
-				return fmt.Errorf("%s container %q must start with \"iCloud.\"", section.name, c)
-			}
-			if seen[c] {
-				return fmt.Errorf("%s repeats container %q", section.name, c)
-			}
-			seen[c] = true
-		}
-	}
-	return nil
 }
 
 // cloudEntitlements returns the Apple iCloud entitlements requested by nsgo.yaml. When team is non-empty, the key-value store identifier uses "<team>.<id>"; otherwise it uses Xcode's "$(TeamIdentifierPrefix)<id>" placeholder.

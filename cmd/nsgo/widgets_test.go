@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/xml"
 	"fmt"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,10 +35,10 @@ func TestWidgetsConfig(t *testing.T) {
 }
 
 func TestKindsSwift(t *testing.T) {
-	p := &project{ID: "dev.example.app", Widgets: []widgetKind{
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app", Widgets: []widgetKind{
 		{Kind: "counter", Name: `The "count"`, Families: []string{"small", "circular"}},
 		{Kind: "agenda"},
-	}}
+	}}}
 	src, err := kindsSwift(p, false)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +81,7 @@ func TestWidgetLocalizations(t *testing.T) {
 		"en.yaml":      "widgetName: Now playing\nwidgetDescription: What is playing\nplain: Plain\n",
 		"zh-Hans.yaml": "widgetName: 正在播放\n",
 	})
-	p := &project{Dir: dir}
+	p := &project{Config: projectcfg.Config{Dir: dir}}
 	p.I18n.Dir, p.I18n.Source = locales, "en"
 	p.Widgets = []widgetKind{{Kind: "now", Name: "widgetName", Description: "widgetDescription"}, {Kind: "plain", Name: "Plain"}}
 	src, err := kindsSwift(p, false)
@@ -125,7 +126,7 @@ func TestWidgetLocalizations(t *testing.T) {
 }
 
 func TestLiveActivitiesConfig(t *testing.T) {
-	p := &project{ID: "dev.example.app", LiveActivities: liveActivities{Enabled: true, FrequentUpdates: true}}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app", LiveActivities: liveActivities{Enabled: true, FrequentUpdates: true}}}
 	p.Android.Permissions = []string{"android.permission.CAMERA", "android.permission.POST_NOTIFICATIONS"}
 	if !p.iosExtension() {
 		t.Error("an app with Live Activities has no extension")
@@ -154,7 +155,7 @@ func TestLiveActivitiesConfig(t *testing.T) {
 	for i := range p.Widgets {
 		p.Widgets[i].Kind = fmt.Sprint("w", i)
 	}
-	if err := p.validateWidgets(); err == nil {
+	if err := p.Validate(); err == nil {
 		t.Errorf("%d kinds of widgets and Live Activities fit a bundle", maxWidgets)
 	}
 }
@@ -171,7 +172,7 @@ func TestWidgetsCompile(t *testing.T) {
 	}
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir()) // os.UserCacheDir reads it on macOS
-	p := &project{ID: "dev.example.app", Widgets: []widgetKind{{Kind: "counter"}}, LiveActivities: liveActivities{Enabled: true}}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app", Widgets: []widgetKind{{Kind: "counter"}}, LiveActivities: liveActivities{Enabled: true}}}
 	for _, c := range []struct {
 		target     widgetTarget
 		activities bool
@@ -220,7 +221,7 @@ func TestWidgetsCompile(t *testing.T) {
 
 // TestAndroidOverlayDeclarations checks that only an app listing SYSTEM_ALERT_WINDOW asks for the overlay's foreground service, in its APK's manifest and in its library's.
 func TestAndroidOverlayDeclarations(t *testing.T) {
-	p := &project{ID: "dev.example.app"}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app"}}
 	p.Android.Permissions = []string{"android.permission.CAMERA"}
 	if p.androidOverlay() || slices.ContainsFunc(p.androidPermissions(), func(s string) bool { return strings.Contains(s, "FOREGROUND_SERVICE") }) {
 		t.Errorf("an app without overlays asks for %v", p.androidPermissions())
@@ -248,7 +249,7 @@ func TestAndroidWidgetLocalizations(t *testing.T) {
 	dir := t.TempDir()
 	locales := filepath.Join(dir, "locales")
 	writeFiles(t, locales, map[string]string{"en.yaml": "widgetName: Counter\nwidgetDescription: The current count\nplain: Translated kind\n", "zh.yaml": "widgetName: 计数\n"})
-	p := &project{Dir: dir, Widgets: []widgetKind{{Kind: "counter", Name: "widgetName", Description: "widgetDescription"}, {Kind: "plain"}}}
+	p := &project{Config: projectcfg.Config{Dir: dir, Widgets: []widgetKind{{Kind: "counter", Name: "widgetName", Description: "widgetDescription"}, {Kind: "plain"}}}}
 	p.I18n.Dir, p.I18n.Source = locales, "en"
 	widgets, err := p.androidWidgets()
 	if err != nil {

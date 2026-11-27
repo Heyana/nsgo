@@ -366,11 +366,11 @@ func checkDevAutomation(target, goos string, release bool) error {
 
 // prepareDev sets what dev's builds carry: the dev client, -trace's commits, -highlight's outlines, -layout's audit, -automation's agent and the dev icons; -release strips them as nsgo build does.
 func (p *project) prepareDev(opts devOptions) {
-	p.Release, p.Dev.Client, p.Dev.Trace, p.Dev.Highlight, p.Dev.Devtools, p.Dev.Automation = opts.release, true, opts.trace, opts.highlight, opts.devtools, opts.automation
-	p.Dev.Layout = opts.layout
+	p.Release, p.devClient, p.devTrace, p.devHighlight, p.devDevtools, p.devAutomation = opts.release, true, opts.trace, opts.highlight, opts.devtools, opts.automation
+	p.devLayout = opts.layout
 
 	p.devDebug = opts.debug
-	p.Dev.Profile = opts.profile.kind != ""
+	p.devProfile = opts.profile.kind != ""
 	p.useDevIcons()
 }
 

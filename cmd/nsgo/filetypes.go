@@ -4,100 +4,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
-// fileType is a kind of document the app opens, which nsgo.yaml's file_types lists and desktop and iOS packages register with the system. Opening one reaches desktop.OnOpenFiles.
-type fileType struct {
-	// Name is what the Finder, Explorer and Linux file managers call such a file.
-	Name       string   `yaml:"name"`
-	Extensions []string `yaml:"extensions"`
-	// MIME names existing media types. Without it Linux uses the built-in extension table, defining unknown extensions of an owned type as application/x-<id>.
-	MIME []string `yaml:"mime"`
-	// ID is its uniform type identifier: <app id>.<first extension> by
-	// default. The app declares, and owns, a type under its own ID; any
-	// other it imports, ranking as an alternative to its owner's app.
-	ID string `yaml:"id"`
-	// Icon is an .icns or a square PNG for its macOS files, relative to
-	// nsgo.yaml; without it, the Finder draws the app's icon on a page.
-	Icon string `yaml:"icon"`
-	// Role is editor, the default, or viewer.
-	Role string `yaml:"role"`
-	// Conforms are the types it is a kind of: public.data by default,
-	// public.plain-text or public.json for text a text editor may open.
-	Conforms []string `yaml:"conforms"`
-}
-
-var (
-	extensionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-	utiPattern       = regexp.MustCompile(`^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$`)
-	mimePattern      = regexp.MustCompile(`^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$`)
-)
-
-// validateFileTypes checks file_types and fills in their defaults; it
-// runs once the app's ID is known.
-func (p *project) validateFileTypes() error {
-	seen := map[string]bool{}
-	for i := range p.FileTypes {
-		f := &p.FileTypes[i]
-		key := fmt.Sprintf("file_types[%d]", i)
-		if f.Name == "" {
-			return fmt.Errorf("%s.name is required", key)
-		}
-		if len(f.Extensions) == 0 {
-			return fmt.Errorf("%s.extensions is required", key)
-		}
-		for _, ext := range f.Extensions {
-			if !extensionPattern.MatchString(ext) {
-				return fmt.Errorf("%s.extensions: %q is not an extension; write flow, not .flow", key, ext)
-			}
-		}
-		for _, m := range f.MIME {
-			if !mimePattern.MatchString(m) {
-				return fmt.Errorf("%s.mime: %q is not a media type, as video/mp4", key, m)
-			}
-		}
-		if f.ID == "" {
-			f.ID = p.ID + "." + strings.ToLower(f.Extensions[0])
-		}
-		if !utiPattern.MatchString(f.ID) {
-			return fmt.Errorf("%s.id %q is not a type identifier, as com.example.app.doc", key, f.ID)
-		}
-		if seen[f.ID] {
-			return fmt.Errorf("%s: the type %q is listed twice", key, f.ID)
-		}
-		seen[f.ID] = true
-		switch f.Role {
-		case "", "editor", "viewer":
-		default:
-			return fmt.Errorf("%s.role is %q; use editor, viewer or leave it out", key, f.Role)
-		}
-		for _, c := range f.Conforms {
-			if !utiPattern.MatchString(c) {
-				return fmt.Errorf("%s.conforms: %q is not a type identifier, as public.data", key, c)
-			}
-		}
-		if f.Icon != "" {
-			f.Icon = p.resolve(f.Icon)
-			if ext := filepath.Ext(f.Icon); ext != ".icns" && ext != ".png" {
-				return fmt.Errorf("%s.icon: %s is neither an .icns nor a .png", key, rel(f.Icon))
-			}
-			if _, err := os.Stat(f.Icon); err != nil {
-				return fmt.Errorf("%s.icon: %w", key, err)
-			}
-		}
-	}
-	return nil
-}
-
-// owned reports whether the app declares f as its own type.
-func (f fileType) owned(appID string) bool {
+// fileTypeOwned reports whether the app declares f as its own type.
+func fileTypeOwned(f fileType, appID string) bool {
 	return strings.HasPrefix(f.ID, appID+".")
 }
 
-// iconName is the name of f's icon in the package's resources.
-func (f fileType) iconName() string {
+// fileTypeIconName is the name of f's icon in the package's resources.
+func fileTypeIconName(f fileType) string {
 	if f.Icon == "" {
 		return ""
 	}
@@ -124,7 +40,7 @@ func (p *project) writeFileTypeIcons(resources string) error {
 			}
 			data = icns(img)
 		}
-		if err := os.WriteFile(filepath.Join(resources, f.iconName()), data, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(resources, fileTypeIconName(f)), data, 0o644); err != nil {
 			return err
 		}
 	}
@@ -161,7 +77,7 @@ func (p *project) documentTypesPlist(macIcons bool) string {
 			role = "Viewer"
 		}
 		decls := &exported
-		if !f.owned(p.ID) {
+		if !fileTypeOwned(f, p.ID) {
 			rank, decls = "Alternate", &imported
 		}
 		docs.WriteString("\t\t<dict>\n")
@@ -169,7 +85,7 @@ func (p *project) documentTypesPlist(macIcons bool) string {
 		fmt.Fprintf(&docs, "\t\t\t<key>CFBundleTypeRole</key><string>%s</string>\n", role)
 		fmt.Fprintf(&docs, "\t\t\t<key>LSHandlerRank</key><string>%s</string>\n", rank)
 		fmt.Fprintf(&docs, "\t\t\t<key>LSItemContentTypes</key><array><string>%s</string></array>\n", xmlText(f.ID))
-		if name := f.iconName(); macIcons && name != "" {
+		if name := fileTypeIconName(f); macIcons && name != "" {
 			fmt.Fprintf(&docs, "\t\t\t<key>CFBundleTypeIconFile</key><string>%s</string>\n", xmlText(name))
 		}
 		docs.WriteString("\t\t</dict>\n")
@@ -182,7 +98,7 @@ func (p *project) documentTypesPlist(macIcons bool) string {
 		fmt.Fprintf(decls, "\t\t\t<key>UTTypeIdentifier</key><string>%s</string>\n", xmlText(f.ID))
 		fmt.Fprintf(decls, "\t\t\t<key>UTTypeDescription</key><string>%s</string>\n", xmlText(f.Name))
 		fmt.Fprintf(decls, "\t\t\t<key>UTTypeConformsTo</key>%s\n", plistStrings(conforms))
-		if name := f.iconName(); macIcons && name != "" {
+		if name := fileTypeIconName(f); macIcons && name != "" {
 			fmt.Fprintf(decls, "\t\t\t<key>UTTypeIconFile</key><string>%s</string>\n", xmlText(name))
 		}
 		fmt.Fprintf(decls, "\t\t\t<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key>%s",

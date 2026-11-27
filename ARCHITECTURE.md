@@ -72,6 +72,8 @@ Apps import the public packages; `internal/` holds the implementation, which onl
 | `examples/widgets` | — | A counter whose macOS and iOS widgets show its count in each family, and whose Live Activity changes it, with tests |
 | `examples/appclip` | — | A café whose iOS App Clip, a package of its own, orders at the table its link names, with tests |
 | `examples/hello` | — | A greeting in English and Chinese, built for every target but mini programs, whose 2 MB it is past, and an App Clip greeting the name its link gives, to try the packages and installers, with tests |
+| `targets` | — | The build target names `nsgo` accepts and their group expansion (`all`, `tui`, `miniprogram`, bare OS names), shared with external tools |
+| `project` | — | `nsgo.yaml`'s typed configuration (`Config`), strict loader (`Load`) with validation and defaults without network or Git calls, and effective channel resolution (`Channel`), shared by `cmd/nsgo` and external tools |
 | `cmd/nsgo` | `nsh-cli` | The `nsgo` tool, run on an app's `nsgo.yaml` ([tool](docs/architecture/tool.md)), with `nsgo mcp` serving agents MCP; `apk` signs Android packages in Go, `authenticode` signs Windows images and MSIX packages in Go, and `install` holds the scripts installing a release from GitHub |
 
 [nsgo-dev/game](https://github.com/nsgo-dev/game) is the companion repository for Go games built on NSGo's public API. The [games roadmap](docs/roadmap.md#games) tracks its 2D and 3D goals and the NSGo primitives they need.

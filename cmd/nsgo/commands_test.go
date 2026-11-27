@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/authenticode"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 func TestCommandsConfig(t *testing.T) {
@@ -69,7 +70,7 @@ func commandFixture(t *testing.T) *project {
 	})
 	t.Setenv("GOWORK", "off")
 	t.Setenv("GOFLAGS", "")
-	return &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0", Release: true}
+	return &project{Config: projectcfg.Config{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0"}, Release: true}
 }
 
 // A command built from a Go package lands beside the app as an executable for the target, named for its system.
@@ -224,7 +225,7 @@ func TestSignMacAppSignsCommandsBeforeBundle(t *testing.T) {
 		"Contents/MacOS/tool":               "tool",
 		"Contents/Frameworks/fixture.dylib": "lib",
 	})
-	p := &project{Name: "App", ID: "dev.example.app", Release: true}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "dev.example.app"}, Release: true}
 	p.Commands = []command{{Name: "tool", Package: "./cmd/tool"}, {Name: "absent", Package: "./cmd/absent"}}
 	p.Sign.Identity = "Developer ID Application: Example (ABCDE12345)"
 	p.Sign.Notarize = "nsgo"
@@ -260,7 +261,7 @@ func TestSignMacAppSignsCommandsBeforeBundle(t *testing.T) {
 func TestSignUniversalAdHocSignsCommands(t *testing.T) {
 	app := filepath.Join(t.TempDir(), "App.app")
 	writeFiles(t, app, map[string]string{"Contents/MacOS/App": "app", "Contents/MacOS/tool": "tool"})
-	p := &project{Name: "App", ID: "dev.example.app"}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "dev.example.app"}}
 	p.Commands = []command{{Name: "tool", Package: "./cmd/tool"}}
 	var order []string
 	var signed [][]string
@@ -289,7 +290,7 @@ func TestLinuxPackagesLinkCommands(t *testing.T) {
 	writeFiles(t, dir, map[string]string{"App": "binary", "tool": "command", "dev.example.app.png": "icon"})
 	os.Chmod(filepath.Join(dir, "App"), 0o755)
 	os.Chmod(filepath.Join(dir, "tool"), 0o755)
-	p := &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0"}}
 	p.Commands = []command{{Name: "tool", Package: "./cmd/tool"}}
 	files, err := linuxPackageFiles(p, dir)
 	if err != nil {
@@ -385,7 +386,7 @@ func TestSignsWindowsCommands(t *testing.T) {
 	key := testWindowsKey(t)
 	cert := filepath.Join(t.TempDir(), "release.p12")
 	writeTestCertificate(t, cert, key)
-	p := &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0", Release: true}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0"}, Release: true}
 	p.Commands = []command{{Name: "tool", Package: "./cmd/tool"}}
 	p.Sign.Certificate = cert
 	p.Sign.TimestampURL = "none"

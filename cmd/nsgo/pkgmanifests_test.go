@@ -163,7 +163,7 @@ func TestCaskSingleArchAndUniversal(t *testing.T) {
 func TestCaskEscapingAndCustomFeed(t *testing.T) {
 	p, _ := updatingProject(t, ", feed: 'https://downloads.example.com/app'")
 	p.Releases.GitHub = ""
-	p.Updates.repo = ""
+	p.updatesRepo = ""
 	p.Name = `Bob's #{App}\Tool`
 	p.ID = `dev.example.bobs`
 	p.Version = "1.2.0 beta"
@@ -328,7 +328,7 @@ func TestWingetManifestMultiArch(t *testing.T) {
 func TestWingetManifestEscapingAndNumericVersion(t *testing.T) {
 	p, _ := updatingProject(t, ", feed: 'https://downloads.example.com/app'")
 	p.Releases.GitHub = ""
-	p.Updates.repo = ""
+	p.updatesRepo = ""
 	p.Name = `App: "Quoted" #1`
 	p.ID = `singleid`
 	p.Version = "1.0"
@@ -517,7 +517,7 @@ func TestManifestSkippedWhenInapplicable(t *testing.T) {
 	t.Run("no_release_url", func(t *testing.T) {
 		p, _ := updatingProject(t, "")
 		p.Releases.GitHub = ""
-		p.Updates.repo = ""
+		p.updatesRepo = ""
 		p.Updates.Feed = ""
 		if err := p.cleanReleaseDir(); err != nil {
 			t.Fatal(err)
@@ -552,7 +552,7 @@ func TestManifestSkippedWhenInapplicable(t *testing.T) {
 func TestManifestGitRemoteLookup(t *testing.T) {
 	p, _ := updatingProject(t, "")
 	p.Releases.GitHub = ""
-	p.Updates.repo = ""
+	p.updatesRepo = ""
 	if err := p.cleanReleaseDir(); err != nil {
 		t.Fatal(err)
 	}

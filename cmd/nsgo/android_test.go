@@ -17,6 +17,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/apk"
 	androidruntime "github.com/nsgo-dev/nsgo/internal/platform/android/runtime"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 func TestAndroidRuntimeTargetsPlayAPI(t *testing.T) {
@@ -188,7 +189,7 @@ func TestAndroidLibraries(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		libs, err := androidLibraries(t.Context(), &project{Dir: dir}, "arm64", app)
+		libs, err := androidLibraries(t.Context(), &project{Config: projectcfg.Config{Dir: dir}}, "arm64", app)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -397,7 +398,7 @@ func TestAndroidSessionAutomationOverADB(t *testing.T) {
 			t.Setenv("ANDROID_SERIAL", "")
 
 			dir := t.TempDir()
-			p := &project{Dir: dir, Name: "Demo", ID: "dev.example.demo"}
+			p := &project{Config: projectcfg.Config{Dir: dir, Name: "Demo", ID: "dev.example.demo"}}
 			opts := devOptions{
 				automation: tc.automation,
 				fps:        true,

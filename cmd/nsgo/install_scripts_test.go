@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"net/url"
 	"os"
 	"os/exec"
@@ -15,7 +16,7 @@ func TestInstallScriptsEscapeTagPrefix(t *testing.T) {
 		t.Skip("install.sh runs on macOS and Linux")
 	}
 	dir := t.TempDir()
-	p := &project{Dir: dir, Name: "Fixture", ID: "dev.nsgo.install1411", Version: "1.2.3"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Fixture", ID: "dev.nsgo.install1411", Version: "1.2.3"}}
 	p.Build.Output = filepath.Join(dir, "dist")
 	p.Releases.GitHub = "fixture/example"
 	prefix := "releases/#v"

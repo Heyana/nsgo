@@ -5,6 +5,7 @@ import (
 	"debug/pe"
 	"encoding/binary"
 	"fmt"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -215,7 +216,7 @@ func TestProjectWindowsVersion(t *testing.T) {
 		"locales/eo.yaml":      "appName: Apo\nhello: Saluton\n",
 		"locales/fr.yaml":      "hello: Bonjour\n",
 	})
-	p := &project{Dir: dir, Name: "MyApp", Version: "1.2.0-beta.1", BuildNumber: 7, Copyright: "© 2026 Example"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "MyApp", Version: "1.2.0-beta.1", BuildNumber: 7, Copyright: "© 2026 Example"}}
 	p.I18n.Dir, p.I18n.Source = filepath.Join(dir, "locales"), "en"
 	p.Windows.Store.PublisherName = "Example Store"
 	v, err := p.windowsVersion()
@@ -309,7 +310,7 @@ func TestBuildWindowsCommandResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := buildWindowsCommand(t.Context(), &project{Name: "example"}, dir, "amd64", syso); err != nil {
+	if err := buildWindowsCommand(t.Context(), &project{Config: projectcfg.Config{Name: "example"}}, dir, "amd64", syso); err != nil {
 		t.Fatal(err)
 	}
 	f, err := pe.Open(filepath.Join(dir, "example.com"))

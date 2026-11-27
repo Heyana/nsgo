@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,7 +12,7 @@ import (
 
 func TestWriteInstallScriptsFindsReleaseRepositoryThroughGit(t *testing.T) {
 	dir := t.TempDir()
-	p := &project{Dir: dir, Name: "Fixture", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Fixture", Version: "1.0.0"}}
 	p.Build.Output = filepath.Join(dir, "dist")
 	calls := 0
 	ctx := withProcessRunner(t, func(_ context.Context, cmd processCommand) ([]byte, error) {

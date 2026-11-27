@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,7 +21,7 @@ func TestLinuxURLSchemesNative(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
-	p := &project{Dir: dir, Name: "NSGo Links", ID: "dev.nsgo.links", Version: "1.0.0", URLSchemes: []string{"nsgotestlinks"}}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "NSGo Links", ID: "dev.nsgo.links", Version: "1.0.0", URLSchemes: []string{"nsgotestlinks"}}}
 	writeFiles(t, dir, map[string]string{p.Name: "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$NSGO_ASSOC_OUTPUT\"\n"})
 	if err := os.Chmod(filepath.Join(dir, p.Name), 0o755); err != nil {
 		t.Fatal(err)

@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"io"
 	"os"
 	"os/exec"
@@ -32,7 +33,7 @@ func ghosttyProject(t *testing.T, linked bool) *project {
 		"go.mod":  "module example.com/ghosttyfixture\ngo 1.27.3\nrequire github.com/nsgo-dev/nsgo v0.0.0\nreplace github.com/nsgo-dev/nsgo => " + filepath.ToSlash(root) + "\n",
 		"main.go": main,
 	})
-	return &project{Dir: dir, Name: "GhosttyFixture", ID: "dev.nsgo.test.ghostty1454", Version: "1.0.0", packageLicenses: true}
+	return &project{Config: projectcfg.Config{Dir: dir, Name: "GhosttyFixture", ID: "dev.nsgo.test.ghostty1454", Version: "1.0.0"}, packageLicenses: true}
 }
 
 func TestDesktopTerminalLibrariesFollowLinkedPackage(t *testing.T) {

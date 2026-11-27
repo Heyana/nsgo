@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -10,76 +9,30 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/apk"
 )
 
 const launchImageSize = 128 // points or dp
 
-type launchScreen struct {
-	launchAppearance `yaml:",inline"`
-	Dark             launchAppearance `yaml:"dark"`
-}
-
-type launchAppearance struct {
-	Background string `yaml:"background"`
-	Image      string `yaml:"image"`
-	color      uint32 // opaque ARGB, zero when unset
-}
-
-func (p *project) validateLaunchScreen() error {
-	s := p.LaunchScreen
-	if s == nil {
-		return nil
-	}
-	if s.Background == "" && s.Image == "" {
-		return fmt.Errorf("launch_screen needs a background or image")
-	}
-	if (s.Dark.Background != "" && s.Background == "") || (s.Dark.Image != "" && s.Image == "") {
-		return fmt.Errorf("launch_screen.dark overrides a background or image set in launch_screen")
-	}
-	if _, ok := p.Apple.Info["UILaunchScreen"]; ok {
-		return fmt.Errorf("launch_screen and apple.info.UILaunchScreen both set the iOS launch screen")
-	}
-	if err := p.resolveLaunchAppearance("launch_screen", &s.launchAppearance); err != nil {
-		return err
-	}
-	return p.resolveLaunchAppearance("launch_screen.dark", &s.Dark)
-}
-
-func (p *project) resolveLaunchAppearance(key string, a *launchAppearance) error {
-	if a.Background != "" {
-		rgb, err := hex.DecodeString(strings.TrimPrefix(a.Background, "#"))
-		if err != nil || !strings.HasPrefix(a.Background, "#") || len(rgb) != 3 {
-			return fmt.Errorf("%s.background: %q is not a #RRGGBB color", key, a.Background)
-		}
-		a.color = 0xff000000 | uint32(rgb[0])<<16 | uint32(rgb[1])<<8 | uint32(rgb[2])
-	}
-	if a.Image != "" {
-		a.Image = p.resolve(a.Image)
-	}
-	return nil
-}
-
 func (p *project) androidLaunchScreen() (*apk.LaunchScreen, error) {
 	s := p.LaunchScreen
 	if s == nil {
 		return nil, nil
 	}
-	light, err := s.launchAppearance.android()
+	light, err := androidLaunchAppearance(s.LaunchAppearance)
 	if err != nil {
 		return nil, err
 	}
-	dark, err := s.Dark.android()
+	dark, err := androidLaunchAppearance(s.Dark)
 	if err != nil {
 		return nil, err
 	}
 	return &apk.LaunchScreen{Light: light, Dark: dark}, nil
 }
 
-func (a launchAppearance) android() (apk.LaunchAppearance, error) {
-	v := apk.LaunchAppearance{Background: a.color}
+func androidLaunchAppearance(a launchAppearance) (apk.LaunchAppearance, error) {
+	v := apk.LaunchAppearance{Background: a.Color()}
 	if a.Image == "" {
 		return v, nil
 	}
@@ -141,11 +94,11 @@ type launchAssetColor struct {
 	Components map[string]string `json:"components"`
 }
 
-func (s *launchScreen) writeIOSCatalog(catalog string) error {
+func writeIOSLaunchCatalog(s *launchScreen, catalog string) error {
 	var colors []launchColorAsset
 	var images []launchImageAsset
 	files := map[string][]byte{}
-	for i, a := range []launchAppearance{s.launchAppearance, s.Dark} {
+	for i, a := range []launchAppearance{s.LaunchAppearance, s.Dark} {
 		label := "Light"
 		var appearance []launchAssetAppearance
 		if i == 1 {
@@ -153,10 +106,11 @@ func (s *launchScreen) writeIOSCatalog(catalog string) error {
 			appearance = []launchAssetAppearance{{Appearance: "luminosity", Value: "dark"}}
 		}
 		if a.Background != "" {
+			c := a.Color()
 			color := launchAssetColor{ColorSpace: "srgb", Components: map[string]string{
-				"red":   fmt.Sprintf("0x%02X", byte(a.color>>16)),
-				"green": fmt.Sprintf("0x%02X", byte(a.color>>8)),
-				"blue":  fmt.Sprintf("0x%02X", byte(a.color)),
+				"red":   fmt.Sprintf("0x%02X", byte(c>>16)),
+				"green": fmt.Sprintf("0x%02X", byte(c>>8)),
+				"blue":  fmt.Sprintf("0x%02X", byte(c)),
 				"alpha": "1.000",
 			}}
 			colors = append(colors, launchColorAsset{Idiom: "universal", Color: color, Appearances: appearance})

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -95,9 +96,9 @@ func TestPrivacyValidation(t *testing.T) {
 		{apis: map[string][]string{"NSPrivacyAccessedAPICategoryDiskSpace": nil}, err: "needs its reasons"},
 		{data: []map[string]any{{"NSPrivacyCollectedDataTypeLinked": false}}, err: "no NSPrivacyCollectedDataType"},
 	} {
-		p := &project{}
+		p := &project{Config: projectcfg.Config{Name: "App"}}
 		p.Apple.Privacy.AccessedAPIs, p.Apple.Privacy.CollectedData = c.apis, c.data
-		err := p.validatePrivacy()
+		err := p.Validate()
 		if c.err == "" && err != nil || c.err != "" && (err == nil || !strings.Contains(err.Error(), c.err)) {
 			t.Errorf("%v %v: %v, want %q", c.apis, c.data, err, c.err)
 		}

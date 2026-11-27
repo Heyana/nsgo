@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"image"
 	"image/color"
 	"image/png"
@@ -19,7 +20,7 @@ func TestMSIXIndexesLocalizedNamesAndAllVisualScales(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{"locales/en.yaml": "appName: Fixture App\nhello: Hello\n", "locales/nl.yaml": "hello: Hallo\n",
 		"locales/zh-Hans.yaml": "appName: 测试应用 🧪\n", "Fixture.exe": "owned executable fixture"})
-	p := &project{Dir: dir, Name: "Fixture", ID: "dev.nsgo.msixfixture", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Fixture", ID: "dev.nsgo.msixfixture", Version: "1.0.0"}}
 	p.I18n.Dir, p.I18n.Source = filepath.Join(dir, "locales"), "en"
 	p.Windows.Store.Identity, p.Windows.Store.Publisher = "NSGoFixture", "CN=NSGo Fixture"
 	file, err := buildMSIX(t.Context(), p, dir, "amd64")
@@ -89,7 +90,7 @@ func TestMSIXIndexesLocalizedNamesAndAllVisualScales(t *testing.T) {
 func TestMSIXResourceFallbackAndReservedPayload(t *testing.T) {
 	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
 	img.Set(0, 0, color.NRGBA{R: 255, A: 255})
-	p := &project{Name: "Plain app", ID: "dev.nsgo.plain"}
+	p := &project{Config: projectcfg.Config{Name: "Plain app", ID: "dev.nsgo.plain"}}
 	files, err := msixResourceFiles(p, img)
 	if err != nil {
 		t.Fatal(err)

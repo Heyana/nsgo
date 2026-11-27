@@ -41,7 +41,7 @@ build:
 # steam: { app_id: 480 }      # use your Steamworks App ID for native dev
 ```
 
-A flag replaces the value it names (`-target`, `-version`, `-output`, or the signing profiles `-profile`, `-widgets-profile`, `-share-profile` and `-clip-profile`); `nsgo build -h` lists them. Read the version-matched [Building and shipping](https://nsgo.dev/docs/building.md) page for the rest: installers, store packages, signing, notarizing, GitHub releases, updates, file types, App Clips, widgets and mini programs.
+A flag replaces the value it names (`-target`, `-version`, `-output`, or the signing profiles `-profile`, `-widgets-profile`, `-share-profile` and `-clip-profile`); `nsgo build -h` lists them. Go tools that read `nsgo.yaml` share the tool's schema, defaults and validation through `github.com/nsgo-dev/nsgo/project` (`project.Load`, `project.Config.Channel`). Read the version-matched [Building and shipping](https://nsgo.dev/docs/building.md) page for the rest: installers, store packages, signing, notarizing, GitHub releases, updates, file types, App Clips, widgets and mini programs.
 
 Set `game: true` for game classification and Game Mode metadata, and `gamepad: true` when the app supports a hardware gamepad. See [Games](https://nsgo.dev/docs/building.md#games).
 

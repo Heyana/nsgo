@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/authenticode"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 // buildTestPE builds a Windows executable, as the tool builds an app's.
@@ -136,7 +137,7 @@ func TestSignsWindowsPackage(t *testing.T) {
 
 	cert := filepath.Join(dir, "release.p12")
 	writeTestCertificate(t, cert, key)
-	p := &project{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0", Release: true}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "App", ID: "dev.example.app", Version: "1.0.0"}, Release: true}
 	p.Sign.Certificate = cert
 	p.Sign.TimestampURL = "none"
 	s := windowsSignerOf(p)
@@ -191,7 +192,7 @@ func TestSignsWithACommand(t *testing.T) {
 	if isWindows() {
 		command = "copy /Y " + quoteArg(fixture) + " %1 >NUL"
 	}
-	p := &project{Dir: dir, Name: "App", Release: true}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "App"}, Release: true}
 	p.Sign.SignCommand = command
 	s := windowsSignerOf(p)
 	if s == nil {
@@ -250,7 +251,7 @@ func TestSigningWindowsIsChecked(t *testing.T) {
 		{"both", func(p *project) { p.Sign.SignCommand = "sign %1" }, "exclude each other"},
 		{"no targets", func(p *project) { p.Build.Targets = []string{"macos_arm64"} }, "windows target"},
 	} {
-		p := &project{Dir: t.TempDir(), Name: "App", Release: true}
+		p := &project{Config: projectcfg.Config{Dir: t.TempDir(), Name: "App"}, Release: true}
 		p.Sign.Certificate = "release.p12"
 		p.Build.Targets = []string{"windows_x64"}
 		c.mutate(p)
@@ -259,7 +260,7 @@ func TestSigningWindowsIsChecked(t *testing.T) {
 			t.Errorf("%s: %v, want %q", c.name, err, c.want)
 		}
 	}
-	p := &project{Dir: t.TempDir(), Name: "App", Release: true}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir(), Name: "App"}, Release: true}
 	p.Build.Targets = []string{"windows_x64"}
 	if err := p.checkSigningWindows(p.Build.Targets); err != nil {
 		t.Errorf("a project that signs nothing: %v", err)

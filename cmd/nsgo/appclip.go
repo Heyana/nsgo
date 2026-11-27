@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,29 +24,6 @@ import (
 // stays within the size the system downloads clips at, or the app's own
 // package, which tells the two apart with mobile.IsAppClip.
 
-// appClip is nsgo.yaml's app_clip.
-type appClip struct {
-	// Name is what the clip is called, "<name> Clip" by default.
-	Name string `yaml:"name"`
-	// ID is its bundle ID, under the app's: <id>.Clip by default.
-	ID string `yaml:"id"`
-	// Main is its main package, relative to nsgo.yaml: the app's own by
-	// default. Its resources/ are the clip's.
-	Main string `yaml:"main"`
-	// Minimum is the iOS version it needs, 16.0 by default: from 17.0 a
-	// clip may take 100 MB rather than 15, when it is opened only from
-	// links, as Safari's and Messages', never from codes or tags.
-	Minimum string `yaml:"minimum"`
-	// Domains are the web domains whose links open it, which its
-	// associated domains list as appclips:<domain>.
-	Domains []string `yaml:"domains"`
-	// Notifications and Location ask for what the clip's card offers:
-	// notifications for a day after it opens, and confirming where the
-	// user opened it.
-	Notifications bool `yaml:"notifications"`
-	Location      bool `yaml:"location"`
-}
-
 const (
 	appClipsDir = "AppClips"
 	// clipSize and clipDigitalSize are how large, uncompressed, a clip
@@ -57,45 +33,8 @@ const (
 	clipDigitalSize = 100_000_000
 )
 
-var domainPattern = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$`)
-
-// validateAppClip checks app_clip and fills in its defaults; it runs once
-// the app's ID is known.
-func (p *project) validateAppClip() error {
-	c := p.AppClip
-	if c == nil {
-		return nil
-	}
-	if c.Name == "" {
-		c.Name = p.Name + " Clip"
-	}
-	if c.ID == "" {
-		c.ID = p.ID + ".Clip"
-	}
-	if !strings.HasPrefix(c.ID, p.ID+".") || !utiPattern.MatchString(c.ID) {
-		return fmt.Errorf("app_clip.id %q is not under the app's ID, as %s.Clip", c.ID, p.ID)
-	}
-	if c.Main == "" {
-		c.Main = "."
-	}
-	if c.Minimum == "" {
-		c.Minimum = "16.0"
-	}
-	if version, ok := appleVersion(c.Minimum); !ok || version[0] < 16 {
-		return fmt.Errorf("app_clip.minimum %q is not an iOS version from 16.0", c.Minimum)
-	} else if !strings.Contains(c.Minimum, ".") {
-		c.Minimum += ".0"
-	}
-	for i, d := range c.Domains {
-		if !domainPattern.MatchString(d) {
-			return fmt.Errorf("app_clip.domains[%d] %q is not a domain; write example.com, not https://example.com", i, d)
-		}
-	}
-	return nil
-}
-
-// major is the major version of Minimum, 0 when it is none.
-func (c *appClip) major() int {
+// clipMajor is the major version of c.Minimum, 0 when it is none.
+func clipMajor(c *appClip) int {
 	s, _, _ := strings.Cut(c.Minimum, ".")
 	n, err := strconv.Atoi(s)
 	if err != nil {
@@ -104,9 +43,9 @@ func (c *appClip) major() int {
 	return n
 }
 
-// limit is how large the clip may be.
-func (c *appClip) limit() int64 {
-	if c.major() >= 17 {
+// clipLimit is how large the clip may be.
+func clipLimit(c *appClip) int64 {
+	if clipMajor(c) >= 17 {
 		return clipDigitalSize
 	}
 	return clipSize
@@ -163,7 +102,7 @@ func addIOSAppClip(ctx context.Context, p *project, app string, simulator bool) 
 	if err != nil {
 		return fmt.Errorf("the App Clip: %w", err)
 	}
-	size, limit := dirSize(clip), p.AppClip.limit()
+	size, limit := dirSize(clip), clipLimit(p.AppClip)
 	switch {
 	case size > limit && simulator:
 		warnIn(ctx, "the App Clip takes %s, more than the %s a device downloads it at", formatSize(size), formatSize(limit))

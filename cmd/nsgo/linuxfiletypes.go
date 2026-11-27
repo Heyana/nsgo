@@ -23,14 +23,14 @@ func (p *project) linuxFileTypes() (types []string, definitions []byte, err erro
 			for _, m := range f.MIME {
 				add(m)
 			}
-			if f.owned(p.ID) && slices.Contains(f.MIME, custom) {
+			if fileTypeOwned(f, p.ID) && slices.Contains(f.MIME, custom) {
 				extensions = f.Extensions
 			}
 		} else {
 			for _, ext := range f.Extensions {
 				if m := mimeinfo.ForExtension(ext); m != "" {
 					add(m)
-				} else if !f.owned(p.ID) {
+				} else if !fileTypeOwned(f, p.ID) {
 					return nil, nil, fmt.Errorf("file_types %q: Linux needs mime for the unknown extension %q of an imported type", f.Name, ext)
 				} else {
 					extensions = append(extensions, ext)

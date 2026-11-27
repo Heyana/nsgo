@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/licenseclassifier/v2/assets"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 func TestLicenseNoticesFollowBuildTags(t *testing.T) {
@@ -33,7 +34,7 @@ func TestLicenseNoticesFollowBuildTags(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p := &project{Dir: app}
+	p := &project{Config: projectcfg.Config{Dir: app}}
 	if _, err := p.licenseNoticesFile(t.Context(), "", nil, nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +86,7 @@ func TestLicenseNoticesCopyleftPolicy(t *testing.T) {
 	sources := map[string]*licenseSource{
 		name: {name: name, label: name, root: dir, dirs: map[string]bool{dir: true}},
 	}
-	p := &project{Licenses: licensePolicy{Copyleft: "error"}}
+	p := &project{Config: projectcfg.Config{Licenses: licensePolicy{Copyleft: "error"}}}
 	if _, err := p.renderLicenseNotices(t.Context(), sources, nil); err == nil || !strings.Contains(err.Error(), "copyleft license text (MPL-2.0)") {
 		t.Fatalf("copyleft license = %v", err)
 	}
@@ -130,7 +131,7 @@ func TestLicenseNoticesWorkspaceModules(t *testing.T) {
 
 	// A sibling workspace module without a license file is first-party:
 	// no error, and omitted from the notices when it has no license documents.
-	p := &project{Dir: app, Licenses: licensePolicy{Unknown: "error", Copyleft: "error"}}
+	p := &project{Config: projectcfg.Config{Dir: app, Licenses: licensePolicy{Unknown: "error", Copyleft: "error"}}}
 	if _, err := p.licenseNoticesFile(t.Context(), "", nil, nil, nil, ""); err != nil {
 		t.Fatalf("workspace sibling without license failed: %v", err)
 	}

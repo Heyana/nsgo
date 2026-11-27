@@ -27,7 +27,7 @@ func (p *project) androidWidgets() ([]apk.Widget, error) {
 		if w.Name != "" {
 			names = text(w.Name)
 		}
-		out = append(out, apk.Widget{Kind: w.Kind, Names: names, Descriptions: text(w.Description), Families: w.families()})
+		out = append(out, apk.Widget{Kind: w.Kind, Names: names, Descriptions: text(w.Description), Families: widgetKindFamilies(w)})
 	}
 	return out, nil
 }

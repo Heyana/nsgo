@@ -12,6 +12,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/authenticode"
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/windowsinstaller"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 // The payload reader must continue to locate the ZIP after Authenticode adds alignment padding and its certificate table. The uninstaller is signed before embedding; checking only the outer setup would miss an unsigned uninstall.
@@ -20,7 +21,7 @@ func TestWindowsInstallerSignedPayload(t *testing.T) {
 	certificate := filepath.Join(t.TempDir(), "test.pfx")
 	writeTestCertificate(t, certificate, key)
 	dir := t.TempDir()
-	p := &project{Dir: dir, Name: "App", ID: "dev.nsgo.installersigned", Version: "1.2.0", Release: true}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "App", ID: "dev.nsgo.installersigned", Version: "1.2.0"}, Release: true}
 	p.Sign.Certificate = certificate
 	p.Sign.TimestampURL = "none"
 	writeFiles(t, dir, map[string]string{"App.exe": "synthetic app payload", "resources/data.txt": "data"})
@@ -143,7 +144,7 @@ func TestWindowsInstallerPreservesICOAttributes(t *testing.T) {
 	if err := os.WriteFile(path, icon.Bytes(), 0600); err != nil {
 		t.Fatal(err)
 	}
-	resource, err := windowsInstallerResource(&project{Name: "App", Version: "1.0.0"}, "amd64", path, "Setup.exe", " Setup")
+	resource, err := windowsInstallerResource(&project{Config: projectcfg.Config{Name: "App", Version: "1.0.0"}}, "amd64", path, "Setup.exe", " Setup")
 	if err != nil {
 		t.Fatal(err)
 	}

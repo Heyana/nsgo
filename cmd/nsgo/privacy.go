@@ -37,24 +37,6 @@ var nsgoPrivacyReasons = map[string][]string{
 	"NSPrivacyAccessedAPICategorySystemBootTime": {"35F9.1"},
 }
 
-// validatePrivacy checks apple.privacy's accessed APIs, which Apple refuses without a category or a reason.
-func (p *project) validatePrivacy() error {
-	for name, reasons := range p.Apple.Privacy.AccessedAPIs {
-		if !strings.HasPrefix(name, "NSPrivacyAccessedAPICategory") {
-			return fmt.Errorf("apple.privacy.accessed_apis: %q is not an NSPrivacyAccessedAPICategory", name)
-		}
-		if len(reasons) == 0 || slices.Contains(reasons, "") {
-			return fmt.Errorf("apple.privacy.accessed_apis: %s needs its reasons, such as E174.1", name)
-		}
-	}
-	for i, item := range p.Apple.Privacy.CollectedData {
-		if s, _ := item["NSPrivacyCollectedDataType"].(string); s == "" {
-			return fmt.Errorf("apple.privacy.collected_data[%d] has no NSPrivacyCollectedDataType", i)
-		}
-	}
-	return nil
-}
-
 // privacyManifest returns a bundle's PrivacyInfo.xcprivacy: existing, the manifest the app's resources put there or nil, with NSGo's declarations and apple.privacy's merged in. Categories and their reasons are sorted, so a build writes the same file each time.
 func (p *project) privacyManifest(existing map[string]any) map[string]any {
 	out := map[string]any{}

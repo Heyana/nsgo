@@ -10,18 +10,22 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 func TestAndroidHostTracksPackagingInputs(t *testing.T) {
 	dir := t.TempDir()
 	p := &project{
-		Dir: dir,
-		Icon: icons{
-			Android: &androidIcon{PNG: filepath.Join(dir, "assets/android-icon.png")},
-		},
-		LaunchScreen: &launchScreen{
-			launchAppearance: launchAppearance{Image: filepath.Join(dir, "assets/splash.png")},
-			Dark:             launchAppearance{Image: filepath.Join(dir, "assets/splash-dark.png")},
+		Config: projectcfg.Config{
+			Dir: dir,
+			Icon: icons{
+				Android: &androidIcon{PNG: filepath.Join(dir, "assets/android-icon.png")},
+			},
+			LaunchScreen: &launchScreen{
+				LaunchAppearance: launchAppearance{Image: filepath.Join(dir, "assets/splash.png")},
+				Dark:             launchAppearance{Image: filepath.Join(dir, "assets/splash-dark.png")},
+			},
 		},
 	}
 	p.I18n.Dir = filepath.Join(dir, "locales")
@@ -116,7 +120,7 @@ func TestAndroidHostSessionFastReloadOverADB(t *testing.T) {
 		"nsgo.yaml":          "name: Demo\nid: dev.example.demo\n",
 		"resources/data.txt": "v1",
 	})
-	p := &project{Dir: projDir, Name: "Demo", ID: "dev.example.demo", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: projDir, Name: "Demo", ID: "dev.example.demo", Version: "1.0.0"}}
 
 	envLog := filepath.Join(tmp, "host-env.log")
 	hostCalls := 0

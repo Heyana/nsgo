@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -195,7 +196,7 @@ func TestPickIOSDevice(t *testing.T) {
 
 func TestIOSProject(t *testing.T) {
 	var b strings.Builder
-	p := &project{Name: "Gallery", ID: "dev.oneo.nsgo.gallery"}
+	p := &project{Config: projectcfg.Config{Name: "Gallery", ID: "dev.oneo.nsgo.gallery"}}
 	err := iosProject.Execute(&b, iosProjectData(p, iOS, "TEAM123"))
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +221,7 @@ func TestIOSProject(t *testing.T) {
 // extension target that Xcode signs and embeds, where an App Clip and an
 // Apple TV get none.
 func TestIOSWidgetsProject(t *testing.T) {
-	p := &project{Name: "Gallery", ID: "dev.oneo.nsgo.gallery", LiveActivities: liveActivities{Enabled: true}}
+	p := &project{Config: projectcfg.Config{Name: "Gallery", ID: "dev.oneo.nsgo.gallery", LiveActivities: liveActivities{Enabled: true}}}
 	var b strings.Builder
 	if err := iosProject.Execute(&b, iosProjectData(p, iOS, "TEAM123")); err != nil {
 		t.Fatal(err)
@@ -247,7 +248,7 @@ func TestIOSWidgetsProject(t *testing.T) {
 		}
 	}
 	b.Reset()
-	if err := iosProject.Execute(&b, iosProjectData(&project{Name: "Plain", ID: "dev.example.plain"}, iOS, "TEAM123")); err != nil {
+	if err := iosProject.Execute(&b, iosProjectData(&project{Config: projectcfg.Config{Name: "Plain", ID: "dev.example.plain"}}, iOS, "TEAM123")); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(b.String(), "Widgets") {
@@ -257,7 +258,7 @@ func TestIOSWidgetsProject(t *testing.T) {
 
 func TestTVOSProject(t *testing.T) {
 	var b strings.Builder
-	p := &project{Name: "Gallery", ID: "dev.oneo.nsgo.gallery"}
+	p := &project{Config: projectcfg.Config{Name: "Gallery", ID: "dev.oneo.nsgo.gallery"}}
 	if err := iosProject.Execute(&b, iosProjectData(p, tvOS, "TEAM123")); err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +343,7 @@ func TestPBXString(t *testing.T) {
 
 // Sign in with Apple's entitlement goes into what Xcode and a provisioning profile sign with only when nsgo.yaml asks for it, and a profile that does not grant it refuses the build.
 func TestSignInWithAppleEntitlement(t *testing.T) {
-	p := &project{ID: "dev.example.hello"}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.hello"}}
 	if ents := p.xcodeEntitlements(false, false); len(ents) != 0 {
 		t.Errorf("an app asking for nothing claims %v", ents)
 	}

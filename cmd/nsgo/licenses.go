@@ -23,30 +23,6 @@ import (
 
 const noticesName = "THIRD_PARTY_NOTICES.txt"
 
-type licensePolicy struct {
-	Unknown  string   `yaml:"unknown"`
-	Copyleft string   `yaml:"copyleft"`
-	Allow    []string `yaml:"allow"`
-}
-
-func (policy licensePolicy) validate() error {
-	for _, rule := range []struct{ name, value string }{
-		{"unknown", policy.Unknown}, {"copyleft", policy.Copyleft},
-	} {
-		switch rule.value {
-		case "", "error", "warn":
-		default:
-			return fmt.Errorf("licenses.%s is %q; use error or warn", rule.name, rule.value)
-		}
-	}
-	for _, module := range policy.Allow {
-		if module == "" || len(strings.Fields(module)) != 1 || strings.TrimSpace(module) != module {
-			return fmt.Errorf("licenses.allow needs exact module paths, got %q", module)
-		}
-	}
-	return nil
-}
-
 type licenseModule struct {
 	Path, Version, Dir string
 	Main               bool
@@ -232,7 +208,7 @@ func (p *project) renderLicenseNotices(ctx context.Context, sources map[string]*
 		case "GOOS=android":
 			if sources[nsgoModule] != nil {
 				out.WriteString("NSGo's license below covers its own Android Java classes.\n")
-				if !p.Build.embed {
+				if !p.buildEmbed {
 					notices, err := androidReviewNotices(androidruntime.ClassesJar)
 					if err != nil {
 						return "", err
@@ -291,7 +267,7 @@ func (p *project) renderLicenseNotices(ctx context.Context, sources map[string]*
 			if len(unknown) > 0 {
 				reason = "has unrecognized license text in " + strings.Join(unknown, ", ")
 			}
-			if err := p.Licenses.report(ctx, source.name, "unknown", reason); err != nil {
+			if err := reportLicense(ctx, p.Licenses, source.name, "unknown", reason); err != nil {
 				violations = append(violations, err)
 			}
 			section.WriteString("License identification incomplete.\n")
@@ -303,7 +279,7 @@ func (p *project) renderLicenseNotices(ctx context.Context, sources map[string]*
 			}
 		}
 		if len(copyleft) > 0 && !source.firstParty {
-			if err := p.Licenses.report(ctx, source.name, "copyleft", "has copyleft license text ("+strings.Join(copyleft, ", ")+")"); err != nil {
+			if err := reportLicense(ctx, p.Licenses, source.name, "copyleft", "has copyleft license text ("+strings.Join(copyleft, ", ")+")"); err != nil {
 				violations = append(violations, err)
 			}
 		}
@@ -355,7 +331,7 @@ func copyleftLicense(id string) bool {
 	return false
 }
 
-func (policy licensePolicy) report(ctx context.Context, module, kind, reason string) error {
+func reportLicense(ctx context.Context, policy licensePolicy, module, kind, reason string) error {
 	if slices.Contains(policy.Allow, module) {
 		return nil
 	}

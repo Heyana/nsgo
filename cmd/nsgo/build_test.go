@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"debug/pe"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +40,7 @@ func TestRejectDesktopCgo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\n/* int answer(void) { return 42; } */\nimport \"C\"\n\nfunc main() { _ = C.answer() }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := rejectDesktopCgo(t.Context(), &project{Dir: dir}, []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}, nil, nil, "")
+	err := rejectDesktopCgo(t.Context(), &project{Config: projectcfg.Config{Dir: dir}}, []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}, nil, nil, "")
 	if err == nil || !strings.Contains(err.Error(), "desktop builds disable cgo") || !strings.Contains(err.Error(), "main.go") {
 		t.Fatalf("rejectDesktopCgo = %v, want a cgo policy error naming main.go", err)
 	}
@@ -323,7 +324,7 @@ func TestAndroidDNSTag(t *testing.T) {
 			dir := t.TempDir()
 			os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module app\n\ngo 1.26\n"), 0o644)
 			os.WriteFile(filepath.Join(dir, "main.go"), []byte(c.src), 0o644)
-			got, err := androidDNSTag(t.Context(), &project{Dir: dir}, c.env, c.tags)
+			got, err := androidDNSTag(t.Context(), &project{Config: projectcfg.Config{Dir: dir}}, c.env, c.tags)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -420,7 +421,7 @@ func TestGoBuildCommandUsesBuildParallel(t *testing.T) {
 // The companion is a console program, which the shell waits for and whose streams and exit code it keeps; the app stays a GUI one.
 func TestBuildWindowsCommand(t *testing.T) {
 	dir := t.TempDir()
-	p := &project{Name: "tool"}
+	p := &project{Config: projectcfg.Config{Name: "tool"}}
 	if err := buildWindowsCommand(t.Context(), p, dir, "amd64", nil); err != nil {
 		t.Fatal(err)
 	}

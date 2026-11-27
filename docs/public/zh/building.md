@@ -45,6 +45,8 @@ nsgo build
 
 `nsgo` 会拒绝此文件中的未知键，包括各配置段中拼写错误的键。`apple.info` 和 `macos.entitlements` 等自由格式映射仍可使用平台专属的键。
 
+使用 Go 编写的工具可以通过 `github.com/nsgo-dev/nsgo/project` 以与 `nsgo build` 一致的模式、校验和默认值读取 `nsgo.yaml`：`project.Load(dir)` 将文件严格解码为 `*project.Config`，相对 `dir` 解析 `Build.Output`（默认为 `dist`）等路径，且不发起任何网络或 Git 调用；`(*project.Config).Channel()` 返回实际生效的分发渠道（`updates.channel`，未设置且配置了 `updates.key` 时为 `direct`，否则为 `none`）。
+
 ```yaml
 name: Hello
 id: dev.example.hello   # 应用的 ID；省略时为 dev.nsgo. 加上 name 中的字母和数字

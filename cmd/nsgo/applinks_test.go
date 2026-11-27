@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"slices"
@@ -38,7 +39,7 @@ func TestAppLinksConfig(t *testing.T) {
 }
 
 func TestAppLinksAppleEntitlements(t *testing.T) {
-	p := &project{ID: "dev.example.app", AppLinks: []string{"example.com", "shop.example.com"}, Widgets: []widgetKind{{Kind: "counter"}}}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app", AppLinks: []string{"example.com", "shop.example.com"}, Widgets: []widgetKind{{Kind: "counter"}}}}
 	want := []any{"applinks:example.com", "applinks:shop.example.com"}
 	ents := p.xcodeEntitlements(true, false)
 	if got, _ := ents[associatedDomainsEntitlement].([]any); !slices.Equal(got, want) {

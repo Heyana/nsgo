@@ -22,60 +22,6 @@ import (
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/apk"
 )
 
-// signing is nsgo.yaml's sign section: what release packages are signed
-// with. Passwords never go in it: NSGO_KEYSTORE_PASSWORD and
-// NSGO_KEY_PASSWORD give them.
-type signing struct {
-	// Identity is the codesign identity of the macOS and iOS packages,
-	// its name or SHA-1. By default macOS packages are signed ad hoc and
-	// iOS ones with the keychain's identity for one of Profile's
-	// certificates.
-	Identity string `yaml:"identity"`
-	// Profile is the provisioning profile the iOS package carries and
-	// takes its entitlements from; wildcard profiles sign the app's ID.
-	Profile string `yaml:"profile"`
-	// WidgetsProfile is the provisioning profile of an iOS or Mac App Store package's widget extension, <id>.widgets, granting the app group.
-	WidgetsProfile string `yaml:"widgets_profile"`
-	// ShareProfile signs the iOS share extension.
-	ShareProfile string `yaml:"share_profile"`
-	// AssetPacksProfile signs the iOS Background Assets downloader extension.
-	AssetPacksProfile string `yaml:"asset_packs_profile"`
-	// ClipProfile is the provisioning profile of the iOS package's App
-	// Clip, app_clip.id.
-	ClipProfile string `yaml:"clip_profile"`
-	// MacOSProfile is the Mac App Store's provisioning profile, which a
-	// store build of a macOS target embeds and takes its identity from;
-	// Installer is the Mac Installer Distribution identity that signs its
-	// package, by default the keychain's of the profile's team.
-	MacOSProfile string `yaml:"macos_profile"`
-	Installer    string `yaml:"installer"`
-	// Keystore signs Android packages: a PKCS#12 or JKS file, KeyAlias
-	// naming its key when it holds several. Without it they carry the
-	// project's debug key.
-	Keystore string `yaml:"keystore"`
-	KeyAlias string `yaml:"key_alias"`
-	// Notarize is the notarytool keychain profile (xcrun notarytool
-	// store-credentials) the macOS package is notarized with, signed by
-	// Identity, a Developer ID. NSGO_NOTARY_KEY, NSGO_NOTARY_KEY_ID and
-	// NSGO_NOTARY_ISSUER, an App Store Connect API key, notarize without
-	// one, as CI does.
-	Notarize string `yaml:"notarize"`
-	// Certificate is a Windows code signing certificate: the .pfx (PKCS
-	// #12) whose key and chain sign the executable, the command companion,
-	// the app's commands, the resources' programs and libraries, and the
-	// installer and its uninstaller, which keeps SmartScreen from warning
-	// users.
-	// NSGO_CERTIFICATE_PASSWORD gives its password. SignCommand signs a
-	// file instead, for a certificate on a hardware token or in a cloud
-	// service, %1 standing for the file's path.
-	Certificate string `yaml:"certificate"`
-	SignCommand string `yaml:"sign_command"`
-	// TimestampURL is the RFC 3161 server that timestamps what
-	// Certificate signs, so that the signatures last past the
-	// certificate's expiration.
-	TimestampURL string `yaml:"timestamp_url"`
-}
-
 // signFlags are nsgo build's flags that replace nsgo.yaml's sign values.
 type signFlags struct {
 	identity, profile, widgetsProfile, shareProfile, clipProfile, macOSProfile *override[string]

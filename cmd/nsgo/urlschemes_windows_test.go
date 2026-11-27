@@ -12,6 +12,7 @@ import (
 	"time"
 	"unsafe"
 
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -25,7 +26,7 @@ func TestWindowsURLSchemesNative(t *testing.T) {
 	stamp := time.Now().UnixNano()
 	id := fmt.Sprintf("dev.nsgo.schemes.%d", stamp)
 	scheme, dropped, taken := fmt.Sprintf("nsgotest%d", stamp), fmt.Sprintf("nsgotest%dold", stamp), fmt.Sprintf("nsgotest%dtaken", stamp)
-	p := &project{Dir: dir, Name: "Test App", ID: id, Version: "1.0.0", Release: true, URLSchemes: []string{scheme, dropped, taken}}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Test App", ID: id, Version: "1.0.0", URLSchemes: []string{scheme, dropped, taken}}, Release: true}
 	writeFiles(t, dir, map[string]string{
 		"go.mod": "module urlschemestest\n\ngo 1.27.3\n",
 		"main.go": `package main

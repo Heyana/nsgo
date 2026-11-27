@@ -42,13 +42,6 @@ const (
 	googlePlayMaxScreenshots      = 8
 )
 
-// storeConfig is nsgo.yaml's store section: where store listing files live.
-type storeConfig struct {
-	// Dir is the directory holding listing.yaml and per-locale directories,
-	// relative to nsgo.yaml (default: "store").
-	Dir string `yaml:"dir"`
-}
-
 // storeManifest is the top-level store/listing.yaml file.
 type storeManifest struct {
 	Version       int                      `yaml:"version"`

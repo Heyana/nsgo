@@ -19,19 +19,6 @@ const shareTypesKey = "NSGoShareTypes"
 const shareNotificationKey = "NSGoShareNotification"
 
 func (p *project) iosShares() bool { return len(p.Apple.ShareTypes) > 0 && p.clipParent == "" }
-func (p *project) validateIOSShareTypes() error {
-	seen := map[string]bool{}
-	for _, uti := range p.Apple.ShareTypes {
-		if !utiPattern.MatchString(uti) {
-			return fmt.Errorf("apple.share_types: %q needs a uniform type identifier, as public.url", uti)
-		}
-		if seen[uti] {
-			return fmt.Errorf("apple.share_types: duplicate type %q", uti)
-		}
-		seen[uti] = true
-	}
-	return nil
-}
 func (p *project) sharePlist() string {
 	if !p.iosShares() {
 		return ""

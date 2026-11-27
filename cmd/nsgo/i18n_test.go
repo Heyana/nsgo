@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -334,7 +335,7 @@ func TestSuppliedHours(t *testing.T) {
 	// The module requires what NSGo's go.mod does once go adds it.
 	t.Setenv("GOFLAGS", "-mod=mod")
 	t.Setenv("GOWORK", "off")
-	p := &project{Dir: dir}
+	p := &project{Config: projectcfg.Config{Dir: dir}}
 	p.I18n.Dir, p.I18n.Source = filepath.Join(dir, "locales"), "en"
 	ctx := context.Background()
 	if err := p.prepareCatalogs(ctx, false, "./..."); err != nil {

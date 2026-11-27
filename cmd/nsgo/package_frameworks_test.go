@@ -457,7 +457,7 @@ func TestTUIDevRebuildsLibraries(t *testing.T) {
 // -embed has nowhere to put a package's frameworks, so it stops at the first slice that links one, naming the package.
 func TestPackageFrameworksRefusedByEmbed(t *testing.T) {
 	p := frameworkFixture(t, "ios", frameworkMachO(2, "15.0", "@rpath/Fixture.framework/Fixture"), "ios_simulator")
-	p.Build.embed = true
+	p.buildEmbed = true
 	p.packageLicenses = false
 	// The file -embed adds to the app imports NSGo, which go list then only has to find.
 	writeFiles(t, filepath.Dir(p.Dir), map[string]string{
@@ -482,7 +482,7 @@ func TestPackageFrameworksRefusedByEmbed(t *testing.T) {
 	// A package whose frameworks are for tvOS only gives an iOS host nothing to carry,
 	// while a tvOS -embed refuses them.
 	p = frameworkFixture(t, "tvos", frameworkMachO(3, "17.0", "@rpath/Fixture.framework/Fixture"), "ios", "ios_simulator", "tvos_simulator")
-	p.Build.embed = true
+	p.buildEmbed = true
 	p.packageLicenses = false
 	if _, err := p.buildOverlay(t.Context(), "ios", iosListEnv, nil, nil, nil); err != nil {
 		t.Fatal(err)
@@ -716,7 +716,7 @@ func TestPackageFrameworksSimulatorE2E(t *testing.T) {
 		return nil, nil
 	})
 	run := *p
-	run.Build.Targets, run.Build.run, run.Build.Output = []string{"ios_simulator"}, true, filepath.Join(t.TempDir(), "dist")
+	run.Build.Targets, run.buildRun, run.Build.Output = []string{"ios_simulator"}, true, filepath.Join(t.TempDir(), "dist")
 	if err := buildAll(ctx, &run); err != nil {
 		t.Fatalf("nsgo build -run: %v", err)
 	}

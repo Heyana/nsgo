@@ -147,7 +147,7 @@ func (p *project) bundleFile() (string, error) {
 	if p.split != nil {
 		bundles, chunks = p.split.main, p.split.chunks
 	} else {
-		bundles, err = compileBundles(p.Dir, p.Dev.Client && !p.Release)
+		bundles, err = compileBundles(p.Dir, p.devClient && !p.Release)
 	}
 	if err != nil || len(bundles) == 0 {
 		return "", err

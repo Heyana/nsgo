@@ -9,10 +9,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 func TestIOSSimulatorDevReplacesOnlyTheExecutable(t *testing.T) {
-	p := &project{Name: "Dev", ID: "dev.nsgo.iosdev"}
+	p := &project{Config: projectcfg.Config{Name: "Dev", ID: "dev.nsgo.iosdev"}}
 	dir := t.TempDir()
 	bundle := filepath.Join(dir, "build", "Dev.app")
 	installed := filepath.Join(dir, "installed", "Dev.app")
@@ -78,7 +80,7 @@ esac`)
 }
 
 func TestIOSSimulatorDevReusesStagedBundle(t *testing.T) {
-	p := &project{Name: "Dev", ID: "dev.nsgo.iosdev"}
+	p := &project{Config: projectcfg.Config{Name: "Dev", ID: "dev.nsgo.iosdev"}}
 	dir := t.TempDir()
 	stageDir := filepath.Join(dir, "stage")
 	bundle := filepath.Join(stageDir, "Dev.app")
@@ -243,7 +245,7 @@ func TestIOSSimulatorDevRetainsTheBundleSignature(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("needs codesign")
 	}
-	p := &project{Name: "Dev", ID: "dev.nsgo.iosdev"}
+	p := &project{Config: projectcfg.Config{Name: "Dev", ID: "dev.nsgo.iosdev"}}
 	dir := t.TempDir()
 	bundle, installed := filepath.Join(dir, "build", "Dev.app"), filepath.Join(dir, "installed", "Dev.app")
 	const plist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -284,10 +286,12 @@ func TestIOSSimulatorDevRetainsTheBundleSignature(t *testing.T) {
 func TestIOSSimulatorDevWatchesPackageInputs(t *testing.T) {
 	dir := t.TempDir()
 	p := &project{
-		Dir: dir,
-		LaunchScreen: &launchScreen{
-			launchAppearance: launchAppearance{Image: filepath.Join(dir, "assets/splash.png")},
-			Dark:             launchAppearance{Image: filepath.Join(dir, "assets/splash-dark.png")},
+		Config: projectcfg.Config{
+			Dir: dir,
+			LaunchScreen: &launchScreen{
+				LaunchAppearance: launchAppearance{Image: filepath.Join(dir, "assets/splash.png")},
+				Dark:             launchAppearance{Image: filepath.Join(dir, "assets/splash-dark.png")},
+			},
 		},
 	}
 	p.I18n.Dir = filepath.Join(dir, "locales")

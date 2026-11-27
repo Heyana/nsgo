@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nsgo-dev/nsgo/cmd/nsgo/harmony"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 func TestTestBundleID(t *testing.T) {
@@ -22,7 +23,7 @@ func TestTestBundleID(t *testing.T) {
 }
 
 func TestTestProjectDropsHarmonyOSReleaseProfile(t *testing.T) {
-	p := &project{ID: "dev.example.app"}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app"}}
 	signing := &harmony.Signing{Profile: "app.p7b"}
 	p.Harmonyos.Signing = signing
 	if testProject(p).Harmonyos.Signing != nil || p.Harmonyos.Signing != signing {
@@ -32,7 +33,7 @@ func TestTestProjectDropsHarmonyOSReleaseProfile(t *testing.T) {
 
 // iOS installs an App Clip only under its app's ID, so the test build's clip moves under the test's ID and leaves the app's own alone (#898).
 func TestTestProjectMovesTheAppClip(t *testing.T) {
-	p := &project{ID: "dev.example.app", AppClip: &appClip{ID: "dev.example.app.Clip"}}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app", AppClip: &appClip{ID: "dev.example.app.Clip"}}}
 	test := testProject(p)
 	if test.ID != "dev.example.app.nsgotest" || test.AppClip.ID != "dev.example.app.nsgotest.Clip" {
 		t.Fatalf("test project = %q with clip %q", test.ID, test.AppClip.ID)

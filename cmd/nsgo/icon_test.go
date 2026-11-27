@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"debug/pe"
 	"encoding/binary"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"image"
 	"image/color"
 	"image/png"
@@ -228,7 +229,7 @@ func TestAndroidAdaptiveIcon(t *testing.T) {
 		}
 		return path
 	}
-	p := &project{Icon: icons{Android: &androidIcon{Foreground: write("foreground.png"), Background: "#123456", Monochrome: write("mono.png")}}}
+	p := &project{Config: projectcfg.Config{Icon: icons{Android: &androidIcon{Foreground: write("foreground.png"), Background: "#123456", Monochrome: write("mono.png")}}}}
 	icon, legacy, err := p.androidAdaptiveIcon()
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +274,7 @@ func TestLinuxDesktopEntryNamesTheWindowClass(t *testing.T) {
 	if err := os.WriteFile(icon, b.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p := &project{Name: "App", ID: "dev.example.app", Icon: icons{PNG: icon}}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "dev.example.app", Icon: icons{PNG: icon}}}
 	if err := writeLinuxIcon(p, dir); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +313,7 @@ func TestLinuxDesktopEntryCategories(t *testing.T) {
 		t.Fatal("the packages install no desktop entry")
 		return nil
 	}
-	p := &project{Name: "App", ID: "dev.example.app", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "dev.example.app", Version: "1.0.0"}}
 	for _, entry := range entries(p) {
 		if strings.Contains(entry, "Categories=") {
 			t.Errorf("desktop entry without linux.categories:\n%s", entry)

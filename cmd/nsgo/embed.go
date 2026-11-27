@@ -290,7 +290,7 @@ func buildAppleFramework(ctx context.Context, p *project, sys *appleOS, dir stri
 			// cgo's header declares Go's types too; the host needs only ours.
 			os.Remove(strings.TrimSuffix(lib, ".a") + ".h")
 			libs = append(libs, lib)
-			if p.Build.dynamic {
+			if p.buildDynamic {
 				dylib := filepath.Join(slice, arch, module)
 				install := "@rpath/" + module + ".framework/" + module
 				if sl.catalyst {
@@ -310,7 +310,7 @@ func buildAppleFramework(ctx context.Context, p *project, sys *appleOS, dir stri
 				dylibs = append(dylibs, dylib)
 			}
 		}
-		if !p.Build.dynamic {
+		if !p.buildDynamic {
 			lib := filepath.Join(slice, "lib"+module+".a")
 			if err := run(ctx, "lipo", append([]string{"-create", "-output", lib}, libs...)...); err != nil {
 				return err

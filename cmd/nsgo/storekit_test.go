@@ -1,6 +1,7 @@
 package main
 
 import (
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,7 +41,7 @@ func TestStoreKitCompile(t *testing.T) {
 // Only an app that sets apple.purchases gets the library; an App Clip never does.
 func TestStoreKitOnlyWhereAsked(t *testing.T) {
 	app := t.TempDir()
-	p := &project{ID: "dev.example.app"}
+	p := &project{Config: projectcfg.Config{ID: "dev.example.app"}}
 	if err := addMacStoreKit(t.Context(), p, app, runtime.GOARCH); err != nil {
 		t.Fatal(err)
 	}

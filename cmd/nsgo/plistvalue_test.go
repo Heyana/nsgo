@@ -84,7 +84,7 @@ func iosPlistFor(t *testing.T, src string) string {
 	if err := yaml.Unmarshal([]byte(src), &p); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.validateIPadMultitasking(); err != nil {
+	if err := p.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "Info.plist")
@@ -163,7 +163,8 @@ func TestIPadMultitaskingRejections(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(src), &p); err != nil {
 			t.Fatal(err)
 		}
-		if err := p.validateIPadMultitasking(); err == nil || !strings.Contains(err.Error(), want) {
+		p.Name = "Sheet"
+		if err := p.Validate(); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: error = %v, want %q", src, err, want)
 		}
 	}

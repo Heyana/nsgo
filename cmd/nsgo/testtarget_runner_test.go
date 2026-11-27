@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,7 +11,7 @@ import (
 )
 
 func TestTargetTestDiscoveryUsesProjectAndGoFlagTags(t *testing.T) {
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	p.Build.Tags = []string{"project", "shared"}
 	calls := 0
 	ctx := withProcessRunner(t, func(_ context.Context, cmd processCommand) ([]byte, error) {
@@ -47,7 +48,7 @@ func TestTargetTestsRejectExtraPackagesBeforeStartingGo(t *testing.T) {
 		t.Fatalf("invalid package args started %s %q", cmd.name, cmd.args)
 		return nil, nil
 	})
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	err := runTests(ctx, p, testOptions{target: "android", args: []string{"-count=2", "./second"}})
 	if err == nil || !strings.Contains(err.Error(), `takes package patterns before its flags, not "./second" after them`) {
 		t.Fatalf("multiple-package target test returned %v", err)

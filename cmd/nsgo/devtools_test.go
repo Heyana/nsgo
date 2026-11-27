@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"io"
 	"net"
 	"net/http"
@@ -269,7 +270,7 @@ func TestDevTokenStaysOffCommandLines(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p := &project{Dir: dir, Name: "Token", ID: "com.example.token", Version: "1.0.0", devURL: srv.url(), devToken: srv.token}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Token", ID: "com.example.token", Version: "1.0.0"}, devURL: srv.url(), devToken: srv.token}
 	bin := filepath.Join(dir, "app")
 	cmd, done, err := goBuildCommand(context.Background(), p, bin, nil, buildExtra{})
 	if err != nil {

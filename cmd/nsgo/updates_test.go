@@ -125,7 +125,7 @@ func TestUpdateChannels(t *testing.T) {
 		t.Errorf("channel none's Android app asks for %v", p.androidPermissions())
 	}
 	// The direct channel signs its installers, so it needs the key.
-	p.Updates.Channel, p.Updates.public = channelDirect, nil
+	p.Updates.Channel, p.updatesPublic = channelDirect, nil
 	if err := p.checkUpdateFeed("macos_arm64"); err == nil || !strings.Contains(err.Error(), "updates.key") {
 		t.Errorf("the direct channel without a key: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestUpdateBuildSettings(t *testing.T) {
 		}
 	}
 	// Development builds never update.
-	p.Dev.Client = true
+	p.devClient = true
 	if p.updateLdflags(nil) != nil || p.sparklePlist("macos_arm64") != "" {
 		t.Error("a development build updates")
 	}
@@ -235,7 +235,7 @@ func TestWriteAppcastReleaseNotes(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{"hello-1.2.0-windows-x64-setup.exe": "installer",
 		"notes.md": "Faster `sync`, and:\n\n- A dark theme\n- No more ]]> in feeds\n\n<script>alert(1)</script>\n"})
-	p.Updates.notes = filepath.Join(dir, "notes.md")
+	p.updatesNotes = filepath.Join(dir, "notes.md")
 	if err := p.readReleaseNotes(); err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestWriteAppcastReleaseNotes(t *testing.T) {
 	if err != nil || item.Notes != "Faster sync, and:\n• A dark theme\n• No more ]]> in feeds" {
 		t.Errorf("ParseAppcast's notes %q, %v", item.Notes, err)
 	}
-	p.Updates.notes = filepath.Join(dir, "missing.md")
+	p.updatesNotes = filepath.Join(dir, "missing.md")
 	if err := p.readReleaseNotes(); err == nil {
 		t.Error("missing release notes read")
 	}

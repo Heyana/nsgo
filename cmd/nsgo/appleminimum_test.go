@@ -4,6 +4,7 @@ import (
 	"context"
 	"debug/macho"
 	"encoding/binary"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,7 +26,7 @@ func TestApplePackageMinimums(t *testing.T) {
 		{"watchos", "MinimumOSVersion", "26.0", "27.0", watchosPlist, watchOS},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p := &project{Name: "Minimum", ID: "dev.nsgo.minimum", Version: "1.0.0"}
+			p := &project{Config: projectcfg.Config{Name: "Minimum", ID: "dev.nsgo.minimum", Version: "1.0.0"}}
 			path := filepath.Join(t.TempDir(), "Info.plist")
 			for _, want := range []string{tc.floor, tc.raised} {
 				if want != tc.floor {
@@ -62,25 +63,25 @@ func TestApplePackageMinimums(t *testing.T) {
 
 func TestAppleMinimumRejectsMalformedValues(t *testing.T) {
 	for _, value := range []any{16, false, "", "15.", "15..1", "+16", "16.0beta", "16.0.0.0", "１６.0", "4294967296"} {
-		p := &project{}
+		p := &project{Config: projectcfg.Config{Name: "App"}}
 		p.Apple.Info = map[string]any{"MinimumOSVersion": value}
-		if err := p.validateAppleMinimums(); err == nil {
+		if err := p.Validate(); err == nil {
 			t.Errorf("accepted malformed minimum %#v", value)
 		}
 	}
 	for _, value := range []string{"15", "15.0.0", "15.10", "16.2.1"} {
-		p := &project{}
+		p := &project{Config: projectcfg.Config{Name: "App"}}
 		p.Apple.Info = map[string]any{"MinimumOSVersion": value}
-		if err := p.validateAppleMinimums(); err != nil {
+		if err := p.Validate(); err != nil {
 			t.Errorf("refused %s: %v", value, err)
 		}
 	}
 }
 
 func TestAppleMinimumChecksTheSelectedRuntime(t *testing.T) {
-	p := &project{}
+	p := &project{Config: projectcfg.Config{Name: "App"}}
 	p.Apple.Info = map[string]any{"MinimumOSVersion": "16.0"}
-	if err := p.validateAppleMinimums(); err != nil {
+	if err := p.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.appleMinimum(iOS); err != nil {
@@ -95,9 +96,9 @@ func TestAppleMinimumChecksTheSelectedRuntime(t *testing.T) {
 }
 
 func TestAppClipKeepsItsOwnMinimum(t *testing.T) {
-	p := &project{Name: "Main", ID: "dev.nsgo.minimum", AppClip: &appClip{Minimum: "17.1"}}
+	p := &project{Config: projectcfg.Config{Name: "Main", ID: "dev.nsgo.minimum", AppClip: &appClip{Minimum: "17.1"}}}
 	p.Apple.Info = map[string]any{"MinimumOSVersion": "18.0"}
-	if err := p.validateAppClip(); err != nil {
+	if err := p.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	if p.IOSMinimum() != "18.0" || p.clipProject().IOSMinimum() != "17.1" {

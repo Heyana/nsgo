@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,7 +112,7 @@ func TestAppLdflagsReachTheBinary(t *testing.T) {
 		"go.mod":  "module stamp\n\ngo 1.26\n",
 		"main.go": "package main\n\nimport \"fmt\"\n\nvar releaseDate, note, owner string\n\nfunc main() { fmt.Print(releaseDate + \"|\" + note + \"|\" + owner) }\n",
 	})
-	p := &project{Dir: dir, Name: "Stamp", ID: "com.example.stamp", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Dir: dir, Name: "Stamp", ID: "com.example.stamp", Version: "1.0.0"}}
 	p.Build.LDFlags = []string{"-X main.releaseDate=2026-11-17", "-X 'main.note=two words' -X main.owner=app"}
 	bin := filepath.Join(dir, "app")
 	cmd, done, err := goBuildCommand(t.Context(), p, bin, nil, buildExtra{}, "-X main.owner=tool")
@@ -149,10 +150,9 @@ func TestDevFlagsApply(t *testing.T) {
 	if err := fs.Parse(args); err != nil {
 		t.Fatal(err)
 	}
-	p := &project{
-		Name:    "App",
+	p := &project{Config: projectcfg.Config{Name: "App",
 		ID:      "com.example.app",
-		Version: "1.0.0",
+		Version: "1.0.0"},
 	}
 	p.Dev.Target = "native"
 	off := false
@@ -184,7 +184,7 @@ func TestDevFlagsKeepValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	hot := true
-	p := &project{Name: "App", ID: "com.example.app", Version: "1.0.0"}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "com.example.app", Version: "1.0.0"}}
 	p.Dev.Target = "web"
 	p.Dev.HotReload = &hot
 
@@ -221,7 +221,7 @@ func TestNameFollowsGeneratedID(t *testing.T) {
 	if err := fs.Parse([]string{"-name", "Other"}); err != nil {
 		t.Fatal(err)
 	}
-	p := &project{Name: "App", ID: "dev.nsgo.App", idDefault: true}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "dev.nsgo.App"}, idDefault: true}
 
 	f.apply(p)
 
@@ -237,7 +237,7 @@ func TestBuildFlagsApply(t *testing.T) {
 	if err := fs.Parse(args); err != nil {
 		t.Fatal(err)
 	}
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	p.Build.Output = p.resolve("dist")
 	p.Build.Targets = []string{"macos_arm64"}
 
@@ -323,14 +323,14 @@ func TestBuildSigningProfileFlags(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	p := &project{Dir: t.TempDir(), Sign: signing{
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir(), Sign: signing{
 		Profile:        "from-yaml.mobileprovision",
 		WidgetsProfile: "from-yaml-widgets.mobileprovision",
 		ShareProfile:   "from-yaml-share.mobileprovision",
 		ClipProfile:    "from-yaml-clip.mobileprovision",
 		MacOSProfile:   "from-yaml-macos.provisionprofile",
 		Installer:      "from-yaml-installer",
-	}}
+	}}}
 
 	f.apply(p)
 
@@ -374,7 +374,7 @@ func TestBuildFlagsKeepValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	open := false
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	p.Build.Output = p.resolve("dist")
 	p.Build.Targets = []string{"macos_arm64"}
 	p.Build.Open = &open
@@ -417,7 +417,7 @@ func TestBuildFlagsAbsoluteOutput(t *testing.T) {
 	if err := fs.Parse([]string{"-output", out}); err != nil {
 		t.Fatal(err)
 	}
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 
 	f.apply(p)
 
@@ -453,7 +453,7 @@ func TestAppFlags(t *testing.T) {
 	if got := (devOptions{}).appFlags(); got != nil {
 		t.Errorf("appFlags without -fps or -lang = %q", got)
 	}
-	p := &project{Name: "App", ID: "com.example.app"}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "com.example.app"}}
 	if strings.Contains(p.ldflags(), "fps") {
 		t.Errorf("ldflags = %q", p.ldflags())
 	}
@@ -473,7 +473,7 @@ func TestLayoutFlag(t *testing.T) {
 			t.Errorf("-layout=%s was taken", bad)
 		}
 	}
-	p := &project{Name: "App", ID: "com.example.app"}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "com.example.app"}}
 	p.prepareDev(devOptions{layout: "bounds,grid=4"})
 	if flags := p.ldflags(); !strings.Contains(flags, " -X github.com/nsgo-dev/nsgo/internal/dev.devLayout=bounds,grid=4") {
 		t.Errorf("ldflags = %q, want -layout's value for the dev client", flags)
@@ -485,7 +485,7 @@ func TestLayoutFlag(t *testing.T) {
 }
 
 func TestIdentityLdflags(t *testing.T) {
-	p := &project{Name: "App", ID: "com.example.app", Version: "1.2.0", BuildNumber: 12}
+	p := &project{Config: projectcfg.Config{Name: "App", ID: "com.example.app", Version: "1.2.0", BuildNumber: 12}}
 	flags := p.ldflags()
 	for _, want := range []string{"core.appName=App'", "core.appID=com.example.app'", "core.appVersion=1.2.0'", "core.appBuild=12'"} {
 		if !strings.Contains(flags, want) {
@@ -511,7 +511,7 @@ func TestIdentityLdflags(t *testing.T) {
 		t.Errorf("ldflags without the app's own %q start with a space", flags)
 	}
 	// go build splits -ldflags at spaces outside quotes and takes no escapes inside them, so a name with a single quote goes in double quotes.
-	p = &project{Name: "Bob's Notes", ID: "com.example.notes", Version: "1.0.0"}
+	p = &project{Config: projectcfg.Config{Name: "Bob's Notes", ID: "com.example.notes", Version: "1.0.0"}}
 	if want := `-X "github.com/nsgo-dev/nsgo/core.appName=Bob's Notes"`; !strings.Contains(p.ldflags(), want) {
 		t.Errorf("ldflags %s lack %s", p.ldflags(), want)
 	}

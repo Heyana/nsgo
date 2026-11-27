@@ -6,8 +6,9 @@ import (
 	"debug/elf"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
+
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 // appImageUpdate selects the external updater's locator independently of NSGo's signed appcast. A configured empty value leaves discovery disabled.
@@ -27,30 +28,7 @@ func (p *project) appImageUpdate(ctx context.Context, arch string) (string, erro
 }
 
 func validateAppImageUpdate(info string) error {
-	if info == "" {
-		return nil
-	}
-	if strings.ContainsAny(info, "\x00\r\n") {
-		return errors.New("contains a NUL or line break")
-	}
-	parts := strings.Split(info, "|")
-	switch parts[0] {
-	case "zsync":
-		if len(parts) == 2 {
-			u, err := url.Parse(parts[1])
-			if err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.Fragment == "" {
-				return nil
-			}
-		}
-		return errors.New("use zsync| followed by an absolute HTTP or HTTPS control-file URL without a fragment")
-	case "gh-releases-zsync":
-		if len(parts) == 5 && parts[1] != "" && parts[2] != "" && parts[3] != "" && parts[4] != "" && !strings.ContainsAny(parts[1]+parts[2], "/\\") {
-			return nil
-		}
-		return errors.New("use gh-releases-zsync|owner|repository|tag|filename-pattern")
-	default:
-		return errors.New("transport must be zsync or gh-releases-zsync")
-	}
+	return projectcfg.ValidateAppImageUpdate(info)
 }
 
 // setAppImageUpdate fills the runtime's reserved section in memory. The cached, SHA-256-pinned runtime and all ELF offsets remain unchanged.

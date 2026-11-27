@@ -14,6 +14,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/nsgo-dev/goja"
+	projectcfg "github.com/nsgo-dev/nsgo/project"
 )
 
 func TestOpenMiniProgramRefreshesWeChatProject(t *testing.T) {
@@ -46,7 +47,7 @@ func TestMiniProgramSessionReopensOnlyWeChat(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { openMiniProgramProject = openMiniProgram })
-	p := &project{Dir: t.TempDir()}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir()}}
 	for _, target := range []string{"miniprogram_wechat", "miniprogram_alipay"} {
 		mp, _ := miniProgramPlatformOf(target)
 		s := miniprogramSession(mp, devOptions{})
@@ -191,7 +192,7 @@ func TestMiniProgramTreeAccessibilityUpdates(t *testing.T) {
 func TestMiniProgramProject(t *testing.T) {
 	wechat, _ := miniProgramPlatformOf("miniprogram_wechat")
 	dir := t.TempDir()
-	p := &project{Dir: t.TempDir(), Name: "Demo", ID: "dev.demo"}
+	p := &project{Config: projectcfg.Config{Dir: t.TempDir(), Name: "Demo", ID: "dev.demo"}}
 	p.MiniProgram.CustomNavigation = true
 	module := []byte("\x00asm module")
 	var compressed bytes.Buffer
@@ -247,7 +248,7 @@ func TestMiniProgramPlatforms(t *testing.T) {
 	for _, mp := range miniProgramPlatforms {
 		t.Run(mp.name, func(t *testing.T) {
 			dir := t.TempDir()
-			p := &project{Dir: t.TempDir(), Name: "Demo", ID: "dev.demo"}
+			p := &project{Config: projectcfg.Config{Dir: t.TempDir(), Name: "Demo", ID: "dev.demo"}}
 			p.MiniProgram.AppID = map[string]string{mp.name: "id-" + mp.name}
 			if err := writeMiniProgram(p, mp, dir, []byte("module")); err != nil {
 				t.Fatal(err)
@@ -502,7 +503,7 @@ func TestMiniProgramRenderingOpsVideoAndTemplates(t *testing.T) {
 	for _, mp := range miniProgramPlatforms {
 		t.Run(mp.name, func(t *testing.T) {
 			dir := t.TempDir()
-			p := &project{Dir: t.TempDir(), Name: "Demo", ID: "dev.demo"}
+			p := &project{Config: projectcfg.Config{Dir: t.TempDir(), Name: "Demo", ID: "dev.demo"}}
 			if err := writeMiniProgram(p, mp, dir, []byte("module")); err != nil {
 				t.Fatal(err)
 			}
@@ -537,7 +538,7 @@ func TestMiniProgramDevBuildWiring(t *testing.T) {
 
 	env := []string{"GOOS=js", "GOARCH=wasm"}
 	t.Run("dev flags reach mini program builds", func(t *testing.T) {
-		p := &project{Dir: dir, Name: "MP Probe", ID: "dev.nsgo.mpprobe", Version: "1.0.0"}
+		p := &project{Config: projectcfg.Config{Dir: dir, Name: "MP Probe", ID: "dev.nsgo.mpprobe", Version: "1.0.0"}}
 		p.Dev.Target = "miniprogram_wechat"
 		opts := devOptions{
 			server:    srv,
@@ -627,7 +628,7 @@ func TestMiniProgramDevBuildWiring(t *testing.T) {
 	})
 
 	t.Run("release build omits dev client and token", func(t *testing.T) {
-		p := &project{Dir: dir, Name: "MP Probe", ID: "dev.nsgo.mpprobe", Version: "1.0.0"}
+		p := &project{Config: projectcfg.Config{Dir: dir, Name: "MP Probe", ID: "dev.nsgo.mpprobe", Version: "1.0.0"}}
 		p.Dev.Target = "miniprogram_wechat"
 		opts := devOptions{
 			server:    srv,
