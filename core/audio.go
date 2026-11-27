@@ -283,6 +283,7 @@ type soundBuffer struct {
 }
 
 type soundWait struct {
+	soundWaitCausal
 	owner *Scope
 	done  func(*Sound, error)
 	// gone says its owner was disposed.
@@ -330,7 +331,7 @@ func (cx *Scope) LoadSound(src AudioSource, done func(*Sound, error)) {
 	}
 	b := st.buffers[key]
 	if b != nil && b.loaded {
-		s := b.newSound(owner)
+		s := b.newSound(owner, "")
 		if done != nil {
 			owner.Post(func() { done(s, nil) })
 		}
@@ -350,11 +351,12 @@ func (cx *Scope) LoadSound(src AudioSource, done func(*Sound, error)) {
 			MaxBytes: limits.MaxEncodedBytes, MaxDuration: limits.MaxDuration, MaxDecodedBytes: limits.MaxDecodedBytes})
 	}
 	w := &soundWait{owner: owner, done: done}
+	w.captureSite(cx.rt)
 	b.waits = append(b.waits, w)
-	owner.addCleanup(func() {
+	owner.annotateCleanupSite(owner.addCleanup(func() {
 		w.gone = true
 		b.abandoned()
-	})
+	}), "sound", w.loadSite())
 }
 
 // abandoned drops a load whose loads all went before it decoded.
@@ -393,10 +395,10 @@ func (b *soundBuffer) drop() {
 }
 
 // newSound is a Sound over b that owner closes as it goes.
-func (b *soundBuffer) newSound(owner *Scope) *Sound {
+func (b *soundBuffer) newSound(owner *Scope, site string) *Sound {
 	s := &Sound{buffer: b}
 	b.open++
-	owner.addCleanup(s.Close)
+	owner.annotateCleanupSite(owner.addCleanup(s.Close), "sound", site)
 	return s
 }
 
@@ -449,7 +451,7 @@ func (b *soundBuffer) event(e *driver.AudioEvent) {
 		if w.gone {
 			continue
 		}
-		s := b.newSound(w.owner)
+		s := b.newSound(w.owner, w.loadSite())
 		if w.done != nil {
 			b.key.tree.within(w.owner, func() { w.done(s, nil) })
 		}
@@ -563,7 +565,7 @@ func (cx *Scope) NewAudioPlayer(src AudioSource, opts AudioPlayerOptions) *Audio
 	opts.ProgressInterval = videoInterval(opts.ProgressInterval)
 	p := &AudioPlayer{rt: cx.rt, tree: cx.tree(), owner: owner, id: audioIDs.Add(1), src: src, opts: opts, volume: 1, rate: 1}
 	p.refused = audioRefusal(cx, src)
-	owner.addCleanup(p.Close)
+	owner.annotateCleanup(owner.addCleanup(p.Close), "audio-player")
 	return p
 }
 

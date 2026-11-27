@@ -34,6 +34,21 @@ type Causes struct {
 	App, Layout time.Duration
 	// Ran are the computations that ran, by kind and the line that made them, the longest first; they are named only while DevTools record sites (devtools.Enabled).
 	Ran []Ran
+	// Triggers links signal writes to the computations they ran during this commit; populated only in nsgodev builds.
+	Triggers []Trigger `json:",omitempty"`
+}
+
+// Trigger links one signal write to a computation it ran within a commit.
+type Trigger struct {
+	Seq         uint64
+	SignalID    uint64
+	Generation  uint64
+	WriteSite   string
+	Kind        string
+	Owner       uint64
+	Site        string
+	Took        time.Duration
+	Retriggered int
 }
 
 // Ran is the runs of the computations of one kind made at one line, and their time.

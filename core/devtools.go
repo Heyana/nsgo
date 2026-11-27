@@ -82,6 +82,7 @@ func (cx *Scope) devOwner() *Scope {
 func devSignal[T any](owner *Scope, s *Signal[T]) {
 	d := s.rt.dev
 	d.next++
+	s.setDevID(d.next)
 	w := weak.Make(s)
 	v := &devValue{id: d.next, site: callerSite(3), typ: reflect.TypeFor[T]().String(),
 		get: func() string {
@@ -568,6 +569,7 @@ func (s *devSurface) Owners() devtools.Owner {
 	walk = func(o *Scope) (devtools.Owner, bool) {
 		count++
 		out := devtools.Owner{Name: "scope"}
+		s.fillOwnerCausal(o, &out)
 		if c, ok := d.components[o]; ok {
 			out.Name, out.Site = c.name, c.site
 		}
@@ -577,6 +579,7 @@ func (s *devSurface) Owners() devtools.Owner {
 			if dc := d.comps[o.comp]; dc != nil {
 				out.Site = d.siteOf(o.comp, dc)
 				c := devtools.Computation{Kind: kind, Site: out.Site, Runs: dc.runs}
+				s.fillCompCausal(o.comp, &c)
 				if dc.value != nil {
 					c.Value = clip(dc.value())
 					if o.comp.subs != nil {

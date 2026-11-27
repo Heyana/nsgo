@@ -28,6 +28,7 @@ import (
 // Go has no goroutine-local state, so cx is how code finds its graph.
 // While the graph runs code, reactive primitives (Effect, Memo, Cleanup, AfterFunc, Context, Child, Key.Provide and event registrations) belong to the innermost running owner, whichever cx the code captured, so closures inside an Effect clean up when the Effect runs again; use Scope.Run to switch the running owner when calling those from another handler. Explicit-lifetime resources and surfaces (OpenWindow, OpenPanel, NewTray, OpenOverlay, NewAudioPlayer, LoadSound, NewHolder and Post) instead belong to cx itself, so passing a longer-lived scope such as the app's from an OnPress handler keeps them alive after the button's scope goes.
 type Scope struct {
+	scopeCausal
 	rt       *runtime
 	parent   *Scope
 	first    *Scope // owned scopes, oldest first
@@ -157,6 +158,7 @@ const maxRuns = 1_000_000
 
 type runtime struct {
 	graphOwner
+	causalState
 	workObserved bool
 	activeWork   *workObserver
 	automation   automationToolRegistry
@@ -354,7 +356,9 @@ func (cx *Scope) Dispose() {
 			rt.flush()
 		}
 	}()
+	disp := rt.beginExplicitDisposal(cx)
 	cx.disposeOwned()
+	rt.endDisposal(disp)
 	cx.disposed = true
 	if rt.dev != nil {
 		rt.dev.forget(cx)
@@ -416,6 +420,7 @@ func (cx *Scope) disposeOwned() {
 		}
 		fn := c.fn
 		c.fn, c.owner = nil, nil
+		cx.rt.noteCleanupRan(c)
 		cx.rt.guard(cx, fn)
 	}
 	cx.cleanups = nil
@@ -430,7 +435,9 @@ func (cx *Scope) disposeOwned() {
 }
 
 func (cx *Scope) disposeDetached() {
+	disp := cx.rt.beginCascadeDisposal(cx)
 	cx.disposeOwned()
+	cx.rt.endDisposal(disp)
 	cx.disposed = true
 	if cx.rt != nil && cx.rt.dev != nil {
 		cx.rt.dev.forget(cx)
@@ -441,7 +448,10 @@ func (cx *Scope) disposeDetached() {
 }
 
 // Cleanup registers fn to run when the current owner is disposed or runs again, last registered first, as testing.T.Cleanup does. Readers of what fn writes run once the disposal, or the owner's new run, is over, never against a half-disposed tree.
-func (cx *Scope) Cleanup(fn func()) { cx.current().addCleanup(fn) }
+func (cx *Scope) Cleanup(fn func()) {
+	o := cx.current()
+	o.annotateCleanup(o.addCleanup(fn), "cleanup")
+}
 
 // addCleanup registers fn on o, or runs it at once if o is disposed, in which case it returns nil.
 func (o *Scope) addCleanup(fn func()) *cleanup {
@@ -456,6 +466,7 @@ func (o *Scope) addCleanup(fn func()) *cleanup {
 
 // cleanup is one function registered on an owner, which runs it as the owner is disposed or runs again.
 type cleanup struct {
+	cleanupCausal
 	owner *Scope
 	fn    func()
 }
@@ -489,7 +500,9 @@ func (c *cleanup) remove() {
 
 func init() {
 	driver.ScopeCleanup = func(scope any, fn func()) func() {
-		c := scope.(*Scope).current().addCleanup(fn)
+		o := scope.(*Scope).current()
+		c := o.addCleanup(fn)
+		o.annotateCleanup(c, "cleanup")
 		if c == nil {
 			return func() {}
 		}
@@ -798,6 +811,7 @@ type source interface {
 }
 
 type computation struct {
+	compCausal
 	Scope
 	fn     func() (changed bool)
 	effect func() // an effect's, which changes nothing it is read for, in place of fn
@@ -818,6 +832,7 @@ func newComputation(owner *Scope, kind compKind, fn func() bool) *computation {
 	if c.rt.dev != nil {
 		c.rt.dev.computation(c)
 	}
+	c.rt.noteNewComputation(c)
 	return c
 }
 
@@ -830,7 +845,11 @@ func (c *computation) unlink() {
 }
 
 func (c *computation) mark(s compState) {
-	if c.state >= s || c.disposed {
+	if c.disposed {
+		return
+	}
+	c.rt.noteMarked(c)
+	if c.state >= s {
 		return
 	}
 	wasClean := c.state == clean
@@ -874,6 +893,7 @@ func (c *computation) update() {
 		return
 	}
 	c.state = clean
+	c.clearPendingCause()
 }
 
 // heldBack returns the parking of s or the nearest owner above it that is parked, or nil.
@@ -901,6 +921,7 @@ func (c *computation) run() {
 		began = time.Now()
 	}
 	rt := c.rt
+	runTok := rt.beginCompRun(c)
 	// The batch covers the disposal too, so a cleanup's write runs nothing before c has run again.
 	rt.batch++
 	end := c.Scope.BeginWork()
@@ -911,7 +932,9 @@ func (c *computation) run() {
 			}
 		}()
 	}
+	disp := rt.beginRerunDisposal(c)
 	c.disposeOwned()
+	rt.endDisposal(disp)
 	c.unlink()
 	c.state = clean
 	prevOwner, prevObs := rt.owner, rt.observer
@@ -932,12 +955,15 @@ func (c *computation) run() {
 	if rt.dev != nil {
 		rt.dev.ran(c, time.Since(began))
 	}
+	rt.endCompRun(c, runTok)
 	rt.batch--
 	rt.owner, rt.observer = prevOwner, prevObs
 	if changed && c.subs != nil {
+		memoTok := rt.beginMemoNotify(runTok)
 		for _, r := range c.subs.list {
 			r.c.mark(dirty)
 		}
+		rt.endMemoNotify(memoTok)
 	}
 	rt.maybeFlush()
 }
@@ -1085,6 +1111,7 @@ func (rt *runtime) track(src source, subs *subscribers) {
 
 // Signal is a value computations subscribe to by reading it.
 type Signal[T any] struct {
+	signalCausal
 	rt    *runtime
 	value T
 	equal func(a, b T) bool
@@ -1133,10 +1160,12 @@ func (s *Signal[T]) Set(v T) {
 	if driver.TraceCauses {
 		rt.noteWrite()
 	}
+	writeTok := rt.beginSignalWrite(&s.signalCausal)
 	rt.batch++
 	for _, r := range s.subs.list {
 		r.c.mark(dirty)
 	}
+	rt.endSignalWrite(writeTok)
 	rt.batch--
 	rt.maybeFlush()
 }

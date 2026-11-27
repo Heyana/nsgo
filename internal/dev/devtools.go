@@ -217,8 +217,27 @@ func runDevCommand(c devCommand, out *devOut) {
 			reply(m)
 		case "hot":
 			reply(devMessage{Type: "hot", Hot: s.Hot(max(c.N, 1))})
+		case "causes":
+			if cs, ok := s.(devtools.CausalSurface); ok {
+				reply(devMessage{Type: "causes", Data: cs.Causes(causalLimit(c.N))})
+			}
+		case "triggers":
+			if cs, ok := s.(devtools.CausalSurface); ok {
+				reply(devMessage{Type: "triggers", Data: cs.Triggers(causalLimit(c.N))})
+			}
+		case "disposals":
+			if cs, ok := s.(devtools.CausalSurface); ok {
+				reply(devMessage{Type: "disposals", Data: cs.Disposals(causalLimit(c.N))})
+			}
 		}
 	})
+}
+
+func causalLimit(n int) int {
+	if n <= 0 {
+		return 100
+	}
+	return n
 }
 
 // devOut sends the page and the automation messages: one goroutine posts what gathered while the last post was on its way, so the graph never waits for the network.

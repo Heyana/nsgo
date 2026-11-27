@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 const state = {
   surface: 0, tab: "elements", connected: false,
   elements: null, selected: 0, expanded: new Set(), rows: new Map(),
-  owners: null, commits: [], paused: false, recording: false, steps: [], picking: false,
+  owners: null, commits: [], triggers: [], disposals: [], paused: false, recording: false, steps: [], picking: false,
   dirty: { elements: false, state: false },
 };
 
@@ -195,9 +195,10 @@ function renderOwners() {
     const counted = Object.entries(kinds).map(([k, n]) => `${n} ${k}${n === 1 ? "" : "s"}`).join(", ");
     const comps = o.computations || [];
     const head = el("div", { class: "row", style: `padding-left:${8 + depth * 14}px` },
-      el("span", { class: "kind" }, o.name), siteLink(o.site),
+      el("span", { class: "kind" }, o.name), o.id ? el("span", { class: "chip" }, `#${o.id}`) : null, siteLink(o.site),
       comps.map((c) => [c.value !== undefined ? el("span", { class: "dim" }, " = " + c.value) : null,
-        el("span", { class: "chip" }, `ran ${c.runs}×`), c.readers ? el("span", { class: "chip" }, `read by ${c.readers}`) : null]),
+        el("span", { class: "chip" }, `ran ${c.runs}×`), c.readers ? el("span", { class: "chip" }, `read by ${c.readers}`) : null,
+        c.lastCause ? el("span", { class: "chip", title: `Last triggered by signal #${c.lastCause.signalID} gen ${c.lastCause.generation} at ${c.lastCause.site || "unknown"}` }, `trigger #${c.lastTriggerSeq}`) : null]),
       leaves.length ? el("span", { class: "chip", title: "The computations it owns that hold nothing, such as its elements' bindings" }, `${counted}, ran ${runs}×`) : null);
     const vals = values.map((v) => el("div", { class: "row value", style: `padding-left:${22 + depth * 14}px` },
       el("span", { class: "dim" }, v.type + " "), valueField(v), siteLink(v.site),
@@ -229,9 +230,10 @@ function renderCommits() {
     const k = c.causes || {};
     const writes = k.Writes || [];
     const ran = k.Ran || [];
+    const triggers = k.Triggers || [];
     const open = state.openCommit === c.n;
     rows.push(el("tr", { onclick: () => { state.openCommit = open ? 0 : c.n; renderCommits(); }, title: "Show what this commit ran" },
-      el("td", { class: "num" }, (ran.length ? (open ? "▾ " : "▸ ") : "") + c.n),
+      el("td", { class: "num" }, ((ran.length || triggers.length) ? (open ? "▾ " : "▸ ") : "") + c.n),
       el("td", { class: "num" }, total(c).toFixed(2)),
       el("td", { style: "width:80px" }, el("div", { class: "bar", style: `width:${(80 * total(c)) / max}px` })),
       el("td", { class: "num dim" }, k.App !== undefined ? ms(k.App) : ""),
@@ -241,9 +243,20 @@ function renderCommits() {
       el("td", { class: "num" }, c.items),
       el("td", {}, writes.slice(0, 3).map((w) => el("div", {}, w.Site + (w.Count > 1 ? ` ×${w.Count}` : ""))), writes.length > 3 ? el("div", { class: "dim" }, `and ${writes.length - 3} more`) : null),
       el("td", { class: "dim" }, `${k.Renders || 0} bindings, ${k.Effects || 0} effects, ${k.Memos || 0} memos`)));
-    if (open) rows.push(el("tr", {}, el("td", {}), el("td", { colspan: 9 }, el("table", {},
-      el("tr", {}, el("th", {}, "ms"), el("th", {}, "runs"), el("th", {}, "kind"), el("th", {}, "made at")),
-      ran.map((r) => el("tr", {}, el("td", { class: "num" }, ms(r.Took)), el("td", { class: "num" }, r.Runs), el("td", {}, r.Kind), el("td", {}, siteLink(r.Site) || el("span", { class: "dim" }, "—"))))))));
+    if (open) rows.push(el("tr", {}, el("td", {}), el("td", { colspan: 9 },
+      ran.length ? el("table", {},
+        el("tr", {}, el("th", {}, "ms"), el("th", {}, "runs"), el("th", {}, "kind"), el("th", {}, "made at")),
+        ran.map((r) => el("tr", {}, el("td", { class: "num" }, ms(r.Took)), el("td", { class: "num" }, r.Runs), el("td", {}, r.Kind), el("td", {}, siteLink(r.Site) || el("span", { class: "dim" }, "—"))))) : null,
+      triggers.length ? el("table", {},
+        el("tr", {}, el("th", {}, "seq"), el("th", {}, "signal"), el("th", {}, "write site"), el("th", {}, "kind"), el("th", {}, "owner"), el("th", {}, "made at"), el("th", {}, "ms")),
+        triggers.map((t) => el("tr", {},
+          el("td", { class: "num" }, `#${t.Seq}`),
+          el("td", {}, `#${t.SignalID} gen ${t.Generation}`),
+          el("td", {}, siteLink(t.WriteSite) || el("span", { class: "dim" }, "—")),
+          el("td", {}, t.Kind, t.Retriggered ? el("span", { class: "chip" }, `+${t.Retriggered}`) : null),
+          el("td", { class: "num" }, `#${t.Owner}`),
+          el("td", {}, siteLink(t.Site) || el("span", { class: "dim" }, "—")),
+          el("td", { class: "num" }, ms(t.Took))))) : null)));
   }
   list.replaceChildren(el("table", {},
     el("tr", {}, el("th", {}, "#"), el("th", {}, "ms"), el("th", {}), el("th", { title: "The app's code before the commit: handlers, timers, effects" }, "app"),
@@ -257,6 +270,54 @@ function renderHot(hot) {
   $("hot").replaceChildren(el("table", {},
     el("tr", {}, el("th", {}, "ms"), el("th", {}, "runs"), el("th", {}, "kind"), el("th", {}, "made at")),
     (hot || []).map((c) => el("tr", {}, el("td", { class: "num" }, ms(c.took || 0)), el("td", { class: "num" }, c.runs), el("td", {}, c.kind), el("td", {}, siteLink(c.site) || el("span", { class: "dim" }, "—"))))));
+}
+
+// Causal diagnostics.
+
+function renderTriggers() {
+  const list = $("triggers");
+  const q = $("triggers-filter").value.trim().toLowerCase();
+  const has = (v) => v !== undefined && v !== null && String(v).toLowerCase().includes(q);
+  const rows = state.triggers.slice().reverse().filter((t) => !q ||
+    has(t.kind) || has(t.site) || has(`#${t.owner}`) ||
+    has(`#${t.cause?.seq}`) || has(`#${t.cause?.signalID}`) || has(t.cause?.site));
+  if (!rows.length) {
+    list.replaceChildren(el("p", { class: "hint", style: "padding:8px 12px" }, "No signal-triggered runs recorded yet."));
+    return;
+  }
+  list.replaceChildren(el("table", {},
+    el("tr", {}, el("th", {}, "seq"), el("th", {}, "signal"), el("th", {}, "write site"), el("th", {}, "kind"), el("th", {}, "owner"), el("th", {}, "made at"), el("th", {}, "ms")),
+    rows.map((t) => el("tr", {},
+      el("td", { class: "num" }, `#${t.cause?.seq ?? 0}`),
+      el("td", {}, `#${t.cause?.signalID ?? 0} `, el("span", { class: "dim" }, `gen ${t.cause?.generation ?? 0}`)),
+      el("td", {}, siteLink(t.cause?.site) || el("span", { class: "dim" }, "—")),
+      el("td", {}, t.kind, t.retriggered ? el("span", { class: "chip", title: "Additional signal writes coalesced before this run" }, `+${t.retriggered}`) : null),
+      el("td", { class: "num" }, `#${t.owner}`),
+      el("td", {}, siteLink(t.site) || el("span", { class: "dim" }, "—")),
+      el("td", { class: "num" }, ms(t.duration || 0))))));
+}
+
+function renderDisposals() {
+  const list = $("disposals");
+  const q = $("disposals-filter").value.trim().toLowerCase();
+  const has = (v) => v !== undefined && v !== null && String(v).toLowerCase().includes(q);
+  const rows = state.disposals.slice().reverse().filter((d) => !q ||
+    has(d.reason) || has(d.ownerName) || has(d.caller) || has(`#${d.owner}`) || has(`#${d.rootOwner}`) ||
+    (d.cleanups || []).some((c) => has(c.label) || has(c.site)));
+  if (!rows.length) {
+    list.replaceChildren(el("p", { class: "hint", style: "padding:8px 12px" }, "No scope disposals recorded yet."));
+    return;
+  }
+  list.replaceChildren(el("table", {},
+    el("tr", {}, el("th", {}, "seq"), el("th", {}, "reason"), el("th", {}, "owner"), el("th", {}, "caller"), el("th", {}, "cleanups")),
+    rows.map((d) => el("tr", {},
+      el("td", { class: "num" }, `#${d.seq}`),
+      el("td", {}, el("span", { class: "chip" }, d.reason), d.triggerSeq ? el("span", { class: "chip", title: "Signal write sequence that triggered this re-run disposal" }, `trigger #${d.triggerSeq}`) : null),
+      el("td", {}, `#${d.owner} `, el("span", { class: "dim" }, d.ownerName || ""),
+        d.rootOwner && d.rootOwner !== d.owner ? el("span", { class: "chip" }, `root #${d.rootOwner}`) : null),
+      el("td", {}, siteLink(d.caller) || el("span", { class: "dim" }, "—")),
+      el("td", {}, (d.cleanups || []).length ? d.cleanups.map((c) => el("span", { class: "cleanup-item" },
+        el("span", { class: "chip" }, c.label || "cleanup"), siteLink(c.site))) : el("span", { class: "dim" }, "—"))))));
 }
 
 // Recorder.
@@ -323,6 +384,7 @@ function refreshSoon() {
     refreshTimer = 0;
     if (state.tab === "elements" && $("elements-live").checked) send({ op: "elements" });
     if (state.tab === "state" && $("state-live").checked) send({ op: "owners" });
+    if (state.tab === "causal" && $("causal-live").checked) { send({ op: "triggers", n: 200 }); send({ op: "disposals", n: 200 }); }
   }, 700);
 }
 
@@ -378,6 +440,8 @@ function onMessage(m) {
     case "step": addStep(m.step); break;
     case "set": if (m.error) alert(m.error); send({ op: "owners" }); break;
     case "hot": if (state.tab === "profiler") renderHot(m.hot); break;
+    case "triggers": state.triggers = m.data || []; if (state.tab === "causal") renderTriggers(); break;
+    case "disposals": state.disposals = m.data || []; if (state.tab === "causal") renderDisposals(); break;
     case "applied": {
       const c = state.commits.find((x) => x.n === m.id);
       if (c) { c.platform = m.data; if (state.tab === "profiler") renderCommits(); }
@@ -406,6 +470,7 @@ function showTab(name) {
   if (name === "elements") send({ op: "elements" });
   if (name === "state") send({ op: "owners" });
   if (name === "profiler") { renderCommits(); send({ op: "hot", n: 40 }); }
+  if (name === "causal") { renderTriggers(); renderDisposals(); send({ op: "triggers", n: 200 }); send({ op: "disposals", n: 200 }); }
   if (name === "recorder") renderRecorder();
 }
 
@@ -422,10 +487,14 @@ $("highlight").addEventListener("change", (e) => send({ op: "highlight", on: e.t
 // The app answers whether the audit shows.
 $("layout").addEventListener("change", (e) => { send({ op: "layout", on: e.target.checked }); send({ op: "watch-layout" }); });
 $("editor").value = localStorage.getItem("nsgo-devtools-editor") ?? "vscode";
-$("editor").addEventListener("change", (e) => { localStorage.setItem("nsgo-devtools-editor", e.target.value); renderElements(); renderOwners(); });
+$("editor").addEventListener("change", (e) => { localStorage.setItem("nsgo-devtools-editor", e.target.value); renderElements(); renderOwners(); renderTriggers(); renderDisposals(); });
 $("element-filter").addEventListener("input", renderElements);
 $("state-filter").addEventListener("input", renderOwners);
 $("state-own").addEventListener("change", renderOwners);
+$("triggers-filter").addEventListener("input", renderTriggers);
+$("disposals-filter").addEventListener("input", renderDisposals);
+$("triggers-refresh").addEventListener("click", () => send({ op: "triggers", n: 200 }));
+$("disposals-refresh").addEventListener("click", () => send({ op: "disposals", n: 200 }));
 $("commits-pause").addEventListener("click", (e) => { state.paused = !state.paused; e.target.textContent = state.paused ? "Resume" : "Pause"; });
 $("commits-clear").addEventListener("click", () => { state.commits = []; renderCommits(); });
 $("record").addEventListener("click", () => { state.recording = !state.recording; send({ op: "record", on: state.recording }); renderRecorder(); });

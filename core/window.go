@@ -245,7 +245,7 @@ func (rt *runtime) openSurface(owner *Scope, parent *Window, cfg driver.SurfaceC
 	t.Resize(Size{Width: cfg.Width, Height: cfg.Height}, Geometry{})
 	app.commands = append(app.commands, driver.MountItem{Kind: driver.ItemOpenSurface, Surface: &cfg})
 	app.changed = true
-	s.addCleanup(w.gone)
+	s.annotateSurfaceCleanup(s.addCleanup(w.gone), cfg.Kind)
 	if content != nil {
 		t.Mount(content)
 	}
@@ -673,7 +673,7 @@ func (cx *Scope) NewTray(opts TrayOptions) *Tray {
 		tr.view = rt.openSurface(owner, nil, driver.SurfaceConfig{Kind: driver.SurfaceTrayIcon, Width: width, Height: 22,
 			Tray: tr.cfg.ID}, opts.View)
 	}
-	owner.addCleanup(tr.Remove)
+	owner.annotateCleanup(owner.addCleanup(tr.Remove), "tray")
 	return tr
 }
 

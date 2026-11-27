@@ -56,5 +56,6 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .box.border { background: rgba(255, 229, 153, 0.35); border-style: solid; }
 .box.padding { background: rgba(147, 196, 125, 0.3); }
 .box.content { background: rgba(111, 168, 220, 0.35); border-style: solid; padding: 8px; }
-#commits td, #hot td { white-space: nowrap; }
-#commits { overflow-x: auto; }
+#commits td, #hot td, #triggers td, #disposals td { white-space: nowrap; }
+#commits, #triggers, #disposals { overflow-x: auto; }
+.cleanup-item { display: inline-flex; align-items: center; margin-right: 6px; }

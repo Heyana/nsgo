@@ -469,3 +469,139 @@ func TestDevWrapOverlayAndDevToolsCommands(t *testing.T) {
 	defer mu.Unlock()
 	t.Fatalf("DevTools messages received = %v, want surfaces, elements and layout", gotTypes)
 }
+
+// DevTools causal commands (causes, triggers, disposals) return signal-trigger and scope-disposal causal chains over the dev channel.
+func TestDevToolsCausalCommands(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		messages = map[string]string{}
+		cmdCh    = make(chan string, 8)
+		stopSrv  = make(chan struct{})
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-NSGo-Token") != "causal-token" {
+			http.Error(w, "no token", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/_nsgo/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, _ := w.(http.Flusher)
+			fmt.Fprint(w, "data: hello\n\n")
+			if flusher != nil {
+				flusher.Flush()
+			}
+			if !r.URL.Query().Has("devtools") {
+				select {
+				case <-stopSrv:
+				case <-r.Context().Done():
+				}
+				return
+			}
+			for {
+				select {
+				case cmd := <-cmdCh:
+					fmt.Fprintf(w, "data: devtools %s\n\n", cmd)
+					if flusher != nil {
+						flusher.Flush()
+					}
+				case <-stopSrv:
+					return
+				case <-r.Context().Done():
+					return
+				}
+			}
+		case "/_nsgo/devtools/out":
+			sc := bufio.NewScanner(r.Body)
+			for sc.Scan() {
+				line := sc.Text()
+				for _, typ := range []string{"causes", "triggers", "disposals"} {
+					if strings.Contains(line, `"type":"`+typ+`"`) {
+						mu.Lock()
+						messages[typ] = line
+						mu.Unlock()
+					}
+				}
+			}
+		}
+	}))
+	defer func() {
+		close(stopSrv)
+		server.Close()
+	}()
+
+	prevServer, prevDevtools, prevToken := devServer, devDevtools, devtools.ServerToken
+	prevStart, prevChannel := start, devChannel
+	t.Setenv("NSGO_DEV_SERVER", "")
+	devServer, devDevtools, devtools.ServerToken = server.URL, "1", "causal-token"
+	devChannel = nil
+	start = sync.OnceFunc(func() { startDevTools(server.URL) })
+	t.Cleanup(func() {
+		devServer, devDevtools, devtools.ServerToken = prevServer, prevDevtools, prevToken
+		start, devChannel = prevStart, prevChannel
+		engine.Trace, driver.Applied = nil, nil
+		devtools.Enabled, driver.TraceCauses = false, false
+		devtools.MountOverlay = nil
+		devOverlays.Store(nil)
+	})
+
+	Start()
+	var (
+		shown *core.Signal[bool]
+		child *core.Scope
+	)
+	app := nsgotest.Start(t, Wrap(func(cx *core.Scope) core.Node {
+		shown = core.NewSignal(cx, true)
+		child = cx.Child()
+		child.Cleanup(func() {})
+		return core.Show{
+			When: shown.Get,
+			Then: func(cx *core.Scope) core.Node {
+				cx.Cleanup(func() {})
+				return core.Text{Content: "shown"}
+			},
+		}
+	}))
+
+	app.Post(func() {
+		shown.Set(false)
+		child.Dispose()
+	})
+	app.Settle()
+
+	surfaces := devtools.Surfaces()
+	if len(surfaces) == 0 {
+		t.Fatal("surface did not register with DevTools")
+	}
+	sid := surfaces[len(surfaces)-1].ID()
+	t.Cleanup(func() { devtools.Unregister(surfaces[len(surfaces)-1]) })
+
+	cmdCh <- fmt.Sprintf(`{"op":"causes","surface":%d,"n":20}`, sid)
+	cmdCh <- fmt.Sprintf(`{"op":"triggers","surface":%d,"n":20}`, sid)
+	cmdCh <- fmt.Sprintf(`{"op":"disposals","surface":%d,"n":20}`, sid)
+
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		app.Settle()
+		mu.Lock()
+		cMsg, hasC := messages["causes"]
+		tMsg, hasT := messages["triggers"]
+		dMsg, hasD := messages["disposals"]
+		mu.Unlock()
+		if hasC && hasT && hasD {
+			if !strings.Contains(cMsg, `"triggers"`) {
+				t.Errorf("causes message missing triggers: %s", cMsg)
+			}
+			if !strings.Contains(tMsg, `"binding"`) {
+				t.Errorf("triggers message missing binding run: %s", tMsg)
+			}
+			if !strings.Contains(dMsg, `"dispose"`) || !strings.Contains(dMsg, `"cleanup"`) {
+				t.Errorf("disposals message missing dispose/cleanup: %s", dMsg)
+			}
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("timed out waiting for causal replies; got %v", messages)
+}

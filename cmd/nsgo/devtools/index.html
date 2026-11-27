@@ -26,6 +26,7 @@
   <button data-tab="elements" class="active">Elements</button>
   <button data-tab="state">State</button>
   <button data-tab="profiler">Profiler</button>
+  <button data-tab="causal">Causal</button>
   <button data-tab="recorder">Recorder</button>
 </nav>
 <main>
@@ -43,6 +44,18 @@
     <div class="split">
       <div class="pane"><div class="toolbar"><strong>Commits</strong><button id="commits-pause">Pause</button><button id="commits-clear">Clear</button></div><div id="commits" class="list"></div></div>
       <div class="pane"><div class="toolbar"><strong>Computations that ran in the last second</strong></div><div id="hot" class="list"></div></div>
+    </div>
+  </section>
+  <section id="causal" class="tab">
+    <div class="split">
+      <div class="pane">
+        <div class="toolbar"><strong>Signal triggers</strong><input id="triggers-filter" placeholder="Filter by signal, owner, kind or site"><label><input type="checkbox" id="causal-live" checked> Live</label><button id="triggers-refresh">Refresh</button></div>
+        <div id="triggers" class="list"></div>
+      </div>
+      <div class="pane">
+        <div class="toolbar"><strong>Scope disposals</strong><input id="disposals-filter" placeholder="Filter by owner, reason, cleanup or site"><button id="disposals-refresh">Refresh</button></div>
+        <div id="disposals" class="list"></div>
+      </div>
     </div>
   </section>
   <section id="recorder" class="tab">

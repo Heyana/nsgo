@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -13,6 +14,9 @@ var devClientSymbols = []string{"internal/dev.startDevTools", "internal/dev.runD
 
 // devOverlaySymbols are functions of DevTools' overlay in core, the layout audit's among them, which only the dev client mounts (core.UpdateHighlights).
 var devOverlaySymbols = []string{"core.(*Tree).mountHighlights", "core.(*Tree).auditBoxes", "core.paintAudit", "core.(*layoutAudit).readout", "(*Tree).keepAudit"}
+
+// devCausalSymbols are causal-chain diagnostic functions in core, compiled only under nsgodev so release builds link none of them.
+var devCausalSymbols = []string{"core.(*runtime).beginSignalWrite", "core.(*runtime).endCompRun", "core.(*runtime).beginExplicitDisposal", "core.(*runtime).endDisposal", "core.(*devSurface).Causes", "core.(*devSurface).Triggers", "core.(*devSurface).Disposals"}
 
 // TestReleaseBuildsLinkNoDevClient builds an app as nsgo build does and as nsgo dev does and reads their symbols. DevTools' client, traces, runtime profiles and overlay link only into dev builds. Core's recording for DevTools links into both, behind devtools.Enabled.
 func TestReleaseBuildsLinkNoDevClient(t *testing.T) {
@@ -39,7 +43,8 @@ func TestReleaseBuildsLinkNoDevClient(t *testing.T) {
 		return string(out)
 	}
 	release, dev := symbols(""), symbols("nsgodev")
-	for _, s := range append(devClientSymbols, devOverlaySymbols...) {
+	allSymbols := append(append(slices.Clone(devClientSymbols), devOverlaySymbols...), devCausalSymbols...)
+	for _, s := range allSymbols {
 		if strings.Contains(release, s) {
 			t.Errorf("a release build links %s", s)
 		}

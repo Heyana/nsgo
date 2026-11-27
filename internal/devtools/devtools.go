@@ -112,6 +112,7 @@ type Prop struct {
 
 // Owner is an owner of the graph: a component's scope, a computation's, a region's or the root, with the values and computations it holds and the owners under it.
 type Owner struct {
+	ID           uint64        `json:"id,omitempty"`
 	Name         string        `json:"name"`
 	Site         string        `json:"site,omitempty"`
 	Values       []Value       `json:"values,omitempty"`
@@ -140,6 +141,9 @@ type Computation struct {
 	// Value is a memo's value as text, and Readers the computations that read it.
 	Value   string `json:"value,omitempty"`
 	Readers int    `json:"readers,omitempty"`
+	// LastTriggerSeq and LastCause name the last signal write that triggered this computation; populated only in nsgodev builds.
+	LastTriggerSeq uint64       `json:"lastTriggerSeq,omitempty"`
+	LastCause      *SignalCause `json:"lastCause,omitempty"`
 }
 
 // Step is what the user did, as a test step: Press, Type or Clear on the view Selector names, Type with Text, or ScrollTo with the Offset a scroll view came to.

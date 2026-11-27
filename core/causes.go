@@ -55,6 +55,7 @@ func (rt *runtime) takeCauses() *driver.Causes {
 	if rt.dev != nil {
 		c.Ran = rt.dev.takeRan(maxRan)
 	}
+	c.Triggers = rt.takeCommitTriggers(maxRan)
 	for site, n := range rt.causes.writes {
 		c.Writes = append(c.Writes, driver.Write{Site: site, Count: n})
 	}
