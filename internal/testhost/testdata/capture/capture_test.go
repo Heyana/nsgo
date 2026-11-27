@@ -67,6 +67,53 @@ func TestCaptureShowsCompositedEffects(t *testing.T) {
 	}
 }
 
+// TestCaptureRingAndShadowIsDeterministic checks that a scene with a core.Ring
+// and a box shadow consistently captures the WindowServer composite (including
+// both the ring and shadow) rather than intermittently falling back (#2614).
+func TestCaptureRingAndShadowIsDeterministic(t *testing.T) {
+	if nsgotest.Target() != "macos" {
+		t.Skip("checks the macOS test host's composited capture")
+	}
+	const width, height = 240, 180
+	app := nsgotest.Start(t, func(*core.Scope) core.Node {
+		return core.View{
+			Style: core.Style{
+				Background: core.RGB(0xffffff),
+				Padding:    core.All(40),
+			},
+			Children: []core.Node{
+				core.View{
+					TestID: "card",
+					Style: core.Style{
+						Width:      core.Pt(120),
+						Height:     core.Pt(60),
+						Background: core.RGB(0x1e293b),
+						Shadows: []core.BoxShadow{
+							core.Ring(4, core.RGBA(0xf59e0b, 0.9)),
+							{Offset: core.Point{Y: 24}, Color: core.RGB(0x000000)},
+						},
+					},
+				},
+			},
+		}
+	}, nsgotest.Size(width, height))
+	app.Screenshot("ring-shadow")
+	img := app.Capture()
+	at := func(x, y core.Points) (r, g, b uint32) {
+		p := image.Pt(img.Bounds().Min.X+int(float64(x)*float64(img.Bounds().Dx())/width), img.Bounds().Min.Y+int(float64(y)*float64(img.Bounds().Dy())/height))
+		r, g, b, _ = img.At(p.X, p.Y).RGBA()
+		return r >> 8, g >> 8, b >> 8
+	}
+	// Card sits at (40,40)-(160,100); the 4pt amber ring extends to y=36..40.
+	if r, g, b := at(100, 38); r < 180 || g < 110 || b > 100 {
+		t.Errorf("above the card shows %d,%d,%d, want the amber core.Ring", r, g, b)
+	}
+	// The black shadow offset by +24pt sits at (40,64)-(160,124), visible at y=112.
+	if r, g, b := at(100, 112); r > 40 || g > 40 || b > 40 {
+		t.Errorf("below the card shows %d,%d,%d, want its black shadow", r, g, b)
+	}
+}
+
 // TestPartialBorderShowsOverABackdrop checks that a border on only some sides of a frosted, material or Liquid Glass view draws over its backdrop, the right way up, as a uniform border does (#935). Glass needs macOS 26 and falls back to the blur before it.
 func TestPartialBorderShowsOverABackdrop(t *testing.T) {
 	if nsgotest.Target() != "macos" {

@@ -1115,7 +1115,7 @@ func TestSaveScreenshotsKeepsNamesAndRejectsDuplicates(t *testing.T) {
 	}
 	if _, saved, err := saveScreenshots(line("en/my library")+"\n"+line("after")+"\n", dir, seen); err == nil {
 		t.Fatal("duplicate screenshot path succeeded")
-	} else if len(saved) != 1 || filepath.Base(saved[0]) != "after.png" {
+	} else if len(saved) != 1 || filepath.Base(saved[0].path) != "after.png" {
 		t.Fatalf("saved %v beside a duplicate, want after.png", saved)
 	}
 	// Two shots of one name in one process, the second larger, fail without corrupting the first.
@@ -1168,7 +1168,7 @@ func TestSaveScreenshotsKeepsNamesAndRejectsDuplicates(t *testing.T) {
 	}
 	if _, saved, err := saveScreenshots(strings.Join(chunks("complete", png, 8), "\n")+"\n", dir, map[string]bool{}); err != nil || len(saved) != 1 {
 		t.Fatalf("complete chunks: saved %v, error %v", saved, err)
-	} else if b, _ := os.ReadFile(saved[0]); string(b) != string(png) {
+	} else if b, _ := os.ReadFile(saved[0].path); string(b) != string(png) {
 		t.Fatalf("complete chunks saved %q, want %q", b, png)
 	}
 	// Names that differ only in case are one file where the volume ignores case.
@@ -1182,6 +1182,45 @@ func TestSaveScreenshotsKeepsNamesAndRejectsDuplicates(t *testing.T) {
 		t.Error("en/home overwrote en/Home on a case-insensitive volume")
 	} else if folds != nil && err != nil {
 		t.Errorf("en/home beside en/Home on a case-sensitive volume: %v", err)
+	}
+}
+
+func TestSaveScreenshotsMarksFallback(t *testing.T) {
+	dir := t.TempDir()
+	encode := func(name string) string { return "~" + base64.RawURLEncoding.EncodeToString([]byte(name)) }
+	png := []byte("\x89PNG\r\n\x1a\n multi-chunk fallback screenshot bytes")
+	data := base64.StdEncoding.EncodeToString(png)
+	sum := fmt.Sprintf("%d:%08x", len(png), crc32.ChecksumIEEE(png))
+	var multiFallback []string
+	const size = 12
+	n := (len(data) + size - 1) / size
+	for i := range n {
+		multiFallback = append(multiFallback, fmt.Sprintf("nsgo-screenshot %s %d/%d %s:fallback %s",
+			encode("degraded"), i+1, n, sum, data[i*size:min((i+1)*size, len(data))]))
+	}
+	normalLine := "nsgo-screenshot " + encode("composited") + " 1/1 8:7a0709a4 iVBORw0KGgo="
+	out := normalLine + "\n" + strings.Join(multiFallback, "\n") + "\n"
+	_, saved, err := saveScreenshots(out, dir, map[string]bool{})
+	if err != nil {
+		t.Fatalf("saveScreenshots: %v", err)
+	}
+	if len(saved) != 2 {
+		t.Fatalf("saved %v, want 2 screenshots", saved)
+	}
+	if saved[0].fallback || !saved[1].fallback {
+		t.Fatalf("fallback flags = [%v, %v], want [false, true]", saved[0].fallback, saved[1].fallback)
+	}
+	if got := formatSavedScreenshot(saved[0]); strings.Contains(got, "(fallback)") || !strings.Contains(got, "composited.png") {
+		t.Errorf("normal screenshot output = %q, want path without (fallback)", got)
+	}
+	if got := formatSavedScreenshot(saved[1]); !strings.Contains(got, "degraded.png (fallback)") {
+		t.Errorf("fallback screenshot output = %q, want path followed by (fallback)", got)
+	}
+	// Chunks of one shot that disagree on fallback fail without saving.
+	mixed := append([]string(nil), multiFallback...)
+	mixed[len(mixed)-1] = strings.Replace(mixed[len(mixed)-1], ":fallback ", " ", 1)
+	if _, got, err := saveScreenshots(strings.Join(mixed, "\n")+"\n", dir, map[string]bool{}); err == nil || len(got) != 0 {
+		t.Fatalf("mixed fallback chunks: saved=%v err=%v, want error and no saved file", got, err)
 	}
 }
 

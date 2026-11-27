@@ -3,8 +3,11 @@
 package macos
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"log"
 	"math"
 	"os"
@@ -12,6 +15,7 @@ import (
 	"sync"
 	"time"
 	"unicode/utf16"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
@@ -1051,22 +1055,29 @@ func (t *testSurface) Answer(id uint32, index int) error {
 	return err
 }
 
-// composited captures the surface's window and any native popup it is
+// compositedAttempt captures the surface's window and any native popup it is
 // tracking, clipped to the view's bounds. WindowServer keeps the Core
-// Animation effects an AppKit cacheDisplayInRect: redraw omits. Hidden
-// windows and images smaller than the view's pixels use that redraw instead.
-func (t *testSurface) composited(bounds apple.CGRect) []byte {
+// Animation effects (shadows, rings, masks, filters, presentation layers) that
+// an AppKit cacheDisplayInRect: redraw omits. Returns retry=true when the
+// window is visible and not minimized but WindowServer has not finished
+// compositing a full frame yet. Must be called on the main thread.
+func (t *testSurface) compositedAttempt(bounds apple.CGRect) (data []byte, retry bool) {
 	w := t.s.window
 	if w == 0 || bounds.Size.Width <= 0 || bounds.Size.Height <= 0 ||
-		!objc.Send[bool](w, sel("isVisible")) || !objc.Send[bool](w, sel("isOnActiveSpace")) {
-		return nil
+		!objc.Send[bool](w, sel("isVisible")) || objc.Send[bool](w, sel("isMiniaturized")) {
+		return nil, false
 	}
+	// Flush pending AppKit display and Core Animation layer commits so
+	// WindowServer's composite reflects the settled scene.
+	t.s.commitPending()
+	w.Send(sel("displayIfNeeded"))
+	objc.ID(apple.Class("CATransaction")).Send(sel("flush"))
 	number := objc.Send[int](w, sel("windowNumber"))
 	if number <= 0 {
-		return nil
+		return nil, true
 	}
 	if loadCG(); cgWindowListCreateImage == nil && cgWindowListCreateImageFromArray == nil {
-		return nil
+		return nil, false
 	}
 	// screenPoint is in the global top-left coordinates CGWindowListCreateImage takes.
 	origin := t.screenPoint(driver.Point{})
@@ -1082,16 +1093,128 @@ func (t *testSurface) composited(bounds apple.CGRect) []byte {
 		image = cgWindowListCreateImage(rect, windowListIncludingWindow, uint32(number), imageOptions)
 	}
 	if image == 0 {
-		return nil
+		return nil, true
 	}
 	defer apple.Release(image)
 	scale := objc.Send[float64](w, sel("backingScaleFactor"))
 	width, height := apple.ImageSize(image)
 	if float64(width) < math.Floor(bounds.Size.Width*scale) || float64(height) < math.Floor(bounds.Size.Height*scale) {
+		return nil, true
+	}
+	rep := objc.ID(apple.Class("NSBitmapImageRep")).Send(sel("alloc")).Send(sel("initWithCGImage:"), objc.ID(image))
+	if rep == 0 {
+		data, _ = apple.PNGImage(image)
+		return data, data == nil
+	}
+	defer rep.Send(selRelease)
+	// A freshly ordered opaque window whose backing store WindowServer has not
+	// composited yet can return a full-sized all-transparent (zero) image.
+	if objc.Send[bool](w, sel("isOpaque")) && bitmapRepIsAllZero(rep) {
+		return nil, true
+	}
+	data, _ = pngFromBitmapRep(rep)
+	return data, data == nil
+}
+
+// bitmapRepIsAllZero reports whether rep is an alpha-bearing interleaved bitmap
+// whose pixels are all zero (fully transparent). Any composited opaque window
+// has non-zero alpha on its very first pixel and returns false immediately.
+func bitmapRepIsAllZero(rep objc.ID) bool {
+	if !objc.Send[bool](rep, sel("hasAlpha")) || objc.Send[bool](rep, sel("isPlanar")) {
+		return false
+	}
+	w := objc.Send[int](rep, sel("pixelsWide"))
+	h := objc.Send[int](rep, sel("pixelsHigh"))
+	bpr := objc.Send[int](rep, sel("bytesPerRow"))
+	bpp := objc.Send[int](rep, sel("bitsPerPixel"))
+	ptr := objc.Send[*byte](rep, sel("bitmapData"))
+	if w <= 0 || h <= 0 || bpr <= 0 || bpp <= 0 || bpp%8 != 0 || ptr == nil {
+		return false
+	}
+	rowBytes := min(w*(bpp/8), bpr)
+	buf := unsafe.Slice(ptr, h*bpr)
+	for y := range h {
+		for _, b := range buf[y*bpr : y*bpr+rowBytes] {
+			if b != 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// compositedSC captures the window through ScreenCaptureKit's current-process
+// API (macOS 14.4+, no Screen Recording permission required) when
+// CGWindowListCreateImage is unavailable or did not produce a composite.
+func (t *testSurface) compositedSC() []byte {
+	ch := make(chan []byte, 1)
+	var minW, minH int
+	var opaque, started bool
+	onMainSync(func() {
+		v, w := t.s.native, t.s.window
+		if v == 0 || w == 0 || (t.s.popup != 0 && t.s.tracking) ||
+			!objc.Send[bool](w, sel("isVisible")) || objc.Send[bool](w, sel("isMiniaturized")) {
+			return
+		}
+		bounds := objc.Send[apple.CGRect](v, selBounds)
+		if bounds.Size.Width <= 0 || bounds.Size.Height <= 0 {
+			return
+		}
+		number := objc.Send[int](w, sel("windowNumber"))
+		if number <= 0 {
+			return
+		}
+		r := objc.Send[apple.CGRect](v, sel("convertRect:toView:"), bounds, objc.ID(0))
+		region := objc.Send[apple.CGRect](w, sel("convertRectToScreen:"), r)
+		scale := objc.Send[float64](w, sel("backingScaleFactor"))
+		frame := objc.Send[apple.CGRect](w, sel("frame"))
+		minW = int(math.Floor(bounds.Size.Width * scale))
+		minH = int(math.Floor(bounds.Size.Height * scale))
+		opaque = objc.Send[bool](w, sel("isOpaque"))
+		loadCapture()
+		started = captureOwnWindow(uint32(number), frame, region, scale, func(data []byte, err error) {
+			if err != nil {
+				ch <- nil
+				return
+			}
+			ch <- data
+		})
+	})
+	if !started {
 		return nil
 	}
-	png, _ := pngFromCGImage(image)
-	return png
+	select {
+	case data := <-ch:
+		if len(data) == 0 {
+			return nil
+		}
+		cfg, err := png.DecodeConfig(bytes.NewReader(data))
+		if err != nil || cfg.Width < minW || cfg.Height < minH {
+			return nil
+		}
+		if opaque {
+			img, err := png.Decode(bytes.NewReader(data))
+			if err != nil || imageIsAllTransparent(img) {
+				return nil
+			}
+		}
+		return data
+	case <-time.After(time.Second):
+		return nil
+	}
+}
+
+func imageIsAllTransparent(img image.Image) bool {
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			_, _, _, a := img.At(x, y).RGBA()
+			if a != 0 {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // popupImage uses only explicit window IDs: other apps' windows must never
@@ -1138,17 +1261,7 @@ func (t *testSurface) popupImage(bounds apple.CGRect, window, options uint32) ui
 	return cgWindowListCreateImageFromArray(bounds, array, options)
 }
 
-// pngFromCGImage encodes image after converting it to sRGB. WindowServer uses the display's color space for a composited capture, which is commonly Display P3. Keeping that profile in a test screenshot makes raw pixel comparisons depend on the display that ran the test. NSBitmapImageRep does the color conversion before ImageIO writes the PNG.
-func pngFromCGImage(image uintptr) ([]byte, error) {
-	rep := objc.ID(apple.Class("NSBitmapImageRep")).Send(sel("alloc")).Send(sel("initWithCGImage:"), objc.ID(image))
-	if rep == 0 {
-		return apple.PNGImage(image)
-	}
-	defer rep.Send(selRelease)
-	return pngFromBitmapRep(rep)
-}
-
-// pngFromBitmapRep encodes rep as a PNG in sRGB, converting it from the window's color space, which the AppKit fallback's bitmap also carries.
+// pngFromBitmapRep encodes rep as a PNG in sRGB, converting it from the window's color space, which both the WindowServer composite and the AppKit fallback carry.
 func pngFromBitmapRep(rep objc.ID) ([]byte, error) {
 	if rep == 0 {
 		return nil, errors.New("macos: empty bitmap image")
@@ -1169,32 +1282,79 @@ func pngFromBitmapRep(rep objc.ID) ([]byte, error) {
 	return apple.Bytes(data), nil
 }
 
+// Screenshot implements testhost.Surface.
 func (t *testSurface) Screenshot() ([]byte, error) {
+	res, err := t.ScreenshotDetailed()
+	return res.PNG, err
+}
+
+// ScreenshotDetailed implements testhost.DetailedScreenshotSurface, returning
+// WindowServer's composited frame when available and flagging when it had to
+// fall back to AppKit's cacheDisplayInRect: redraw.
+func (t *testSurface) ScreenshotDetailed() (testhost.ScreenshotResult, error) {
 	t.follow()
-	var png []byte
-	onMainSync(func() {
-		v := t.s.native
-		if v == 0 {
-			return
-		}
-		bounds := objc.Send[apple.CGRect](v, selBounds)
-		if png = t.composited(bounds); png != nil {
-			return
-		}
-		screenshotFallbackOnce.Do(func() {
-			log.Printf("nsgo: macOS composited screenshot unavailable; falling back to cacheDisplayInRect: (shadows, animations and visual effects may be missing)")
+	const (
+		compositeWait = 500 * time.Millisecond
+		compositeStep = 20 * time.Millisecond
+	)
+	var pngData []byte
+	var trySC bool
+	deadline := time.Now().Add(compositeWait)
+	for {
+		var retry bool
+		onMainSync(func() {
+			v := t.s.native
+			if v == 0 {
+				return
+			}
+			bounds := objc.Send[apple.CGRect](v, selBounds)
+			pngData, retry = t.compositedAttempt(bounds)
+			if pngData == nil {
+				w := t.s.window
+				trySC = w != 0 && bounds.Size.Width > 0 && bounds.Size.Height > 0 &&
+					objc.Send[bool](w, sel("isVisible")) && !objc.Send[bool](w, sel("isMiniaturized"))
+			}
 		})
-		rep := v.Send(sel("bitmapImageRepForCachingDisplayInRect:"), bounds)
-		if rep == 0 {
-			return
+		if pngData != nil {
+			return testhost.ScreenshotResult{PNG: pngData}, nil
 		}
-		v.Send(sel("cacheDisplayInRect:toBitmapImageRep:"), bounds, rep)
-		png, _ = pngFromBitmapRep(rep)
-	})
-	if png == nil {
-		return nil, errors.New("the window drew nothing")
+		if !retry || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(compositeStep)
 	}
-	return png, nil
+	if trySC {
+		if pngData = t.compositedSC(); pngData != nil {
+			return testhost.ScreenshotResult{PNG: pngData}, nil
+		}
+	}
+	onMainSync(func() {
+		pngData = t.fallbackScreenshot()
+	})
+	if pngData == nil {
+		return testhost.ScreenshotResult{}, errors.New("the window drew nothing")
+	}
+	return testhost.ScreenshotResult{PNG: pngData, Fallback: true}, nil
+}
+
+// fallbackScreenshot redraws the surface through AppKit's cacheDisplayInRect:
+// when WindowServer's composite is unavailable. Must be called on the main thread.
+func (t *testSurface) fallbackScreenshot() []byte {
+	v := t.s.native
+	if v == 0 {
+		return nil
+	}
+	bounds := objc.Send[apple.CGRect](v, selBounds)
+	screenshotFallbackOnce.Do(func() {
+		log.Printf("nsgo: macOS composited screenshot unavailable; falling back to cacheDisplayInRect: (shadows, animations and visual effects may be missing)")
+	})
+	rep := v.Send(sel("bitmapImageRepForCachingDisplayInRect:"), bounds)
+	if rep == 0 {
+		return nil
+	}
+	v.Send(sel("cacheDisplayInRect:toBitmapImageRep:"), bounds, rep)
+	pngData, _ := pngFromBitmapRep(rep)
+	return pngData
 }
 
 func (t *testSurface) Sync() { t.s.engine.Sync() }

@@ -159,7 +159,7 @@ tests:
 			r.results = append(r.results, t)
 			r.print(t)
 			for _, s := range saved {
-				fmt.Fprintf(r.out, "%s  → %s\n", margin, rel(s))
+				io.WriteString(r.out, formatSavedScreenshot(s))
 			}
 			if flags.failfast && t.Status == "fail" {
 				break tests
@@ -457,8 +457,21 @@ func isTestName(name string) bool {
 	return rest == "" || !unicode.IsLower(r)
 }
 
+// savedScreenshot is a screenshot saved from a target test run.
+type savedScreenshot struct {
+	path     string
+	fallback bool
+}
+
+func formatSavedScreenshot(s savedScreenshot) string {
+	if s.fallback {
+		return fmt.Sprintf("%s  → %s (fallback)\n", margin, rel(s.path))
+	}
+	return fmt.Sprintf("%s  → %s\n", margin, rel(s.path))
+}
+
 // targetResult turns one test process's output into its result and saves the screenshots it carries in dir, returning the files written.
-func targetResult(name string, depth int, out string, code int, runErr error, dir string, seen map[string]bool) (*testResult, []string) {
+func targetResult(name string, depth int, out string, code int, runErr error, dir string, seen map[string]bool) (*testResult, []savedScreenshot) {
 	text, saved, saveErr := saveScreenshots(out, dir, seen)
 	t := parseTestOutput(name, depth, text, code, runErr)
 	// A screenshot the tool cannot save, as one whose path an earlier one took, fails its test, and the run goes on.
@@ -557,21 +570,22 @@ func parseTestOutput(name string, depth int, out string, code int, runErr error)
 	return t
 }
 
-// screenshotLine is how nsgotest hands the tool a screenshot: its encoded name, the chunk's number and count, the PNG's length and CRC-32, then the PNG in base64, in chunks a device's log keeps whole.
-var screenshotLine = regexp.MustCompile(`nsgo-screenshot (\S+) (\d+)/(\d+) (\d+):([0-9a-f]{8}) (\S*)`)
+// screenshotLine is how nsgotest hands the tool a screenshot: its encoded name, the chunk's number and count, the PNG's length and CRC-32 (with optional :fallback when taken through a degraded capture path), then the PNG in base64, in chunks a device's log keeps whole.
+var screenshotLine = regexp.MustCompile(`nsgo-screenshot (\S+) (\d+)/(\d+) (\d+):([0-9a-f]{8})(?::(fallback))? (\S*)`)
 
 // saveScreenshots saves the screenshots out carries in dir and returns out without them, the files written and an error for each shot whose chunks are missing, repeated, inconsistent or do not add up to the PNG they declare, or whose path is invalid, taken before or cannot be written, which it skips.
-func saveScreenshots(out, dir string, seen map[string]bool) (string, []string, error) {
+func saveScreenshots(out, dir string, seen map[string]bool) (string, []savedScreenshot, error) {
 	var kept strings.Builder
 	// Each Screenshot call is a shot of its own, so a name taken twice in one process is a duplicate rather than one image's chunks overwritten.
 	type shot struct {
 		name  string
 		total int
 		// sum is the PNG's length and CRC-32 as its first chunk declares them.
-		sum   string
-		parts []string
-		got   []bool
-		errs  []error
+		sum      string
+		fallback bool
+		parts    []string
+		got      []bool
+		errs     []error
 	}
 	var shots []*shot
 	current := map[string]*shot{}
@@ -595,10 +609,11 @@ func saveScreenshots(out, dir string, seen map[string]bool) (string, []string, e
 		}
 		i, iErr := strconv.Atoi(m[2])
 		n, nErr := strconv.Atoi(m[3])
+		fallback := m[6] == "fallback"
 		// A first chunk starts a new shot of the name.
 		s := current[name]
 		if s == nil || i == 1 {
-			s = &shot{name: name, total: n, sum: m[4] + ":" + m[5]}
+			s = &shot{name: name, total: n, sum: m[4] + ":" + m[5], fallback: fallback}
 			if n > 0 {
 				s.parts = make([]string, n)
 				s.got = make([]bool, n)
@@ -610,7 +625,7 @@ func saveScreenshots(out, dir string, seen map[string]bool) (string, []string, e
 			s.errs = append(s.errs, fmt.Errorf("screenshot %q: invalid chunk %q/%q", name, m[2], m[3]))
 			continue
 		}
-		if n != s.total || m[4]+":"+m[5] != s.sum {
+		if n != s.total || m[4]+":"+m[5] != s.sum || fallback != s.fallback {
 			s.errs = append(s.errs, fmt.Errorf("screenshot %q: chunk %d declares %d parts of %s, want %d of %s", name, i, n, m[4]+":"+m[5], s.total, s.sum))
 			continue
 		}
@@ -619,13 +634,13 @@ func saveScreenshots(out, dir string, seen map[string]bool) (string, []string, e
 				s.errs = append(s.errs, fmt.Errorf("screenshot %q: chunk %d was repeated", name, i))
 				continue
 			}
-			s.parts[i-1] = m[6]
+			s.parts[i-1] = m[7]
 			s.got[i-1] = true
 		} else {
 			s.errs = append(s.errs, fmt.Errorf("screenshot %q: chunk %d is outside 1/%d", name, i, s.total))
 		}
 	}
-	var saved []string
+	var saved []savedScreenshot
 	var errs []error
 	for _, s := range shots {
 		name := s.name
@@ -676,7 +691,7 @@ func saveScreenshots(out, dir string, seen map[string]bool) (string, []string, e
 			errs = append(errs, fmt.Errorf("screenshot %q: %w", name, err))
 			continue
 		}
-		saved = append(saved, path)
+		saved = append(saved, savedScreenshot{path: path, fallback: s.fallback})
 	}
 	return kept.String(), saved, errors.Join(errs...)
 }

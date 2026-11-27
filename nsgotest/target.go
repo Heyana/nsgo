@@ -1029,14 +1029,20 @@ func (t *target) scroll(v *View, d driver.Points) {
 // CapturePNG captures the app as the platform shows it and returns its PNG. On macOS, iOS and tvOS its pixels are sRGB. Headless runs skip the test because they have no native pixels.
 func (a *App) CapturePNG() []byte {
 	a.t.Helper()
+	png, _ := a.capturePNG()
+	return png
+}
+
+func (a *App) capturePNG() ([]byte, bool) {
+	a.t.Helper()
 	if a.target == nil {
 		a.t.Skip("nsgotest: no pixels headless; run under nsgo test -target")
 	}
-	png, err := a.target.screenshotPNG()
+	png, fallback, err := a.target.screenshotPNG()
 	if err != nil {
 		a.t.Fatalf("nsgotest: capture: %v", err)
 	}
-	return append([]byte(nil), png...)
+	return append([]byte(nil), png...), fallback
 }
 
 // Capture captures the app as the platform shows it and decodes its PNG. On macOS, iOS and tvOS its pixels are sRGB, regardless of the display's color space. Headless runs skip the test because they have no native pixels.
@@ -1063,11 +1069,14 @@ func (a *App) Screenshot(name string) {
 		a.t.Logf("nsgotest: no screenshot %q headless; nsgo test -target takes it", name)
 		return
 	}
-	png := a.CapturePNG()
+	png, fallback := a.capturePNG()
 	encoded := base64.RawURLEncoding.EncodeToString([]byte(name))
 	// The tool saves it: the app may run on a phone, or in a browser. A device's log keeps lines of a few kilobytes, so it goes in chunks, each with the PNG's length and CRC-32, which the tool checks the joined chunks against: a log that drops or cuts lines, as HarmonyOS's hilog does when it throttles an app, fails the test instead of saving a corrupt image.
 	data := base64.StdEncoding.EncodeToString(png)
 	sum := fmt.Sprintf("%d:%08x", len(png), crc32.ChecksumIEEE(png))
+	if fallback {
+		sum += ":fallback"
+	}
 	const chunk = 3000
 	n := (len(data) + chunk - 1) / chunk
 	for i := range n {
@@ -1076,9 +1085,14 @@ func (a *App) Screenshot(name string) {
 }
 
 // screenshotPNG settles and captures the app as the platform shows it.
-func (t *target) screenshotPNG() ([]byte, error) {
+func (t *target) screenshotPNG() ([]byte, bool, error) {
 	t.settle()
-	return t.surface.Screenshot()
+	if detailed, ok := t.surface.(testhost.DetailedScreenshotSurface); ok {
+		res, err := detailed.ScreenshotDetailed()
+		return res.PNG, res.Fallback, err
+	}
+	png, err := t.surface.Screenshot()
+	return png, false, err
 }
 
 func pathHasParent(name string) bool {

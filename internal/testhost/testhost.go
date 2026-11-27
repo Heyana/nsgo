@@ -214,6 +214,17 @@ type PointerLockSurface interface {
 	PointerDelta(dx, dy float64)
 }
 
+// ScreenshotResult is a surface screenshot with metadata about how the host captured it.
+type ScreenshotResult struct {
+	PNG      []byte
+	Fallback bool
+}
+
+// DetailedScreenshotSurface is implemented by test hosts whose screenshot capture may fall back to a degraded path, such as AppKit cacheDisplayInRect: on macOS when WindowServer's composite is unavailable.
+type DetailedScreenshotSurface interface {
+	ScreenshotDetailed() (ScreenshotResult, error)
+}
+
 var host Host
 
 // ErrNoMenu is a platform's answer to a menu step where it shows no

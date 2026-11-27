@@ -1,7 +1,10 @@
 package nsgotest
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"os"
 	"runtime"
 	"slices"
 	"strconv"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/internal/driver"
+	"github.com/nsgo-dev/nsgo/internal/testhost"
 )
 
 type settlingSurface struct {
@@ -539,4 +543,56 @@ func TestTargetObserveRetainsPooledCanvasDrawingsUnderConcurrentDrain(t *testing
 			t.Fatalf("drawing %d still InUse after platform and model release", i)
 		}
 	}
+}
+
+type detailedScreenshotSurface struct {
+	noSurface
+	png      []byte
+	fallback bool
+}
+
+func (s detailedScreenshotSurface) Sync() {}
+func (s detailedScreenshotSurface) ScreenshotDetailed() (testhost.ScreenshotResult, error) {
+	return testhost.ScreenshotResult{PNG: s.png, Fallback: s.fallback}, nil
+}
+
+func TestScreenshotMarksFallbackSurface(t *testing.T) {
+	captureStdout := func(fn func()) string {
+		t.Helper()
+		old := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Stdout = w
+		var buf bytes.Buffer
+		done := make(chan struct{})
+		go func() {
+			_, _ = io.Copy(&buf, r)
+			close(done)
+		}()
+		fn()
+		w.Close()
+		os.Stdout = old
+		<-done
+		r.Close()
+		return buf.String()
+	}
+
+	root := func(*core.Scope) core.Node { return core.View{TestID: "root"} }
+	pngBytes := []byte("\x89PNG\r\n\x1a\n")
+
+	a := Start(t, root, Size(100, 100))
+	a.target = &target{a: a, surface: detailedScreenshotSurface{png: pngBytes, fallback: false}}
+	normalOut := captureStdout(func() { a.Screenshot("composite") })
+	if strings.Contains(normalOut, ":fallback") || !strings.Contains(normalOut, "nsgo-screenshot ") {
+		t.Errorf("composite screenshot stdout = %q, want nsgo-screenshot without :fallback", normalOut)
+	}
+
+	a.target = &target{a: a, surface: detailedScreenshotSurface{png: pngBytes, fallback: true}}
+	fallbackOut := captureStdout(func() { a.Screenshot("degraded") })
+	if !strings.Contains(fallbackOut, ":fallback ") {
+		t.Errorf("fallback screenshot stdout = %q, want :fallback marker on nsgo-screenshot line", fallbackOut)
+	}
+	a.target = nil
 }

@@ -892,7 +892,7 @@ func (g *agent) screenshot(p *automation.ScreenshotParams) (any, *automation.Err
 	}
 	var data []byte
 	var serr error
-	if err := g.tb.try(func() { data, serr = f.app.target.screenshotPNG() }); err != nil {
+	if err := g.tb.try(func() { data, _, serr = f.app.target.screenshotPNG() }); err != nil {
 		return nil, err
 	}
 	if serr != nil {
