@@ -116,6 +116,7 @@ type boxKey struct {
 type surface struct {
 	sensors apple.Sensors
 	auths   authSessions
+	perms   watchPermissions
 
 	opts        Options
 	test        *testOpen
@@ -241,6 +242,7 @@ func runHost() {
 		purego.NewCallback(hostLifecycle),
 		purego.NewCallback(hostSnapshot),
 		purego.NewCallback(hostAuth),
+		purego.NewCallback(hostPermission),
 	}
 	purego.SyscallN(connect, uintptr(unsafe.Pointer(&table[0])), uintptr(len(table)))
 	// The table is copied; the callbacks live as long as the process.
@@ -527,8 +529,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 			continue
 		case driver.ItemPermission:
-			// The SwiftUI host asks nothing yet (docs/roadmap.md): what a watch keeps answers unknown.
-			driver.AnswerPermission(it.Count, *it.Permission, watchPermission, s.engine.Dispatch)
+			if it.Permission != nil {
+				s.perms.handle(it.Count, *it.Permission, &s.w, apple.NotificationPermission, s.engine.Dispatch)
+			}
 			continue
 		case driver.ItemNotificationPermission, driver.ItemShowNotification, driver.ItemCloseNotification:
 			s.notify(it)
@@ -1043,19 +1046,17 @@ func hostAuth(id uint32, outcome uint8, data *byte, n int) {
 	}
 }
 
+// hostPermission completes a permission check or prompt answered by Host.swift.
+func hostPermission(id uint32, status uint8) {
+	if s != nil && s.engine != nil {
+		s.perms.finished(id, status, s.engine.Dispatch)
+	}
+}
+
 // openURL answers that url did not open: watchOS opens no URL for an
 // app but through SwiftUI's openURL, which takes only the system's own.
 func (s *surface) openURL(_ string, request uint32) {
 	s.engine.Dispatch(driver.Event{Kind: driver.EventOpenURL, Count: request})
-}
-
-// watchPermission is whether watchOS keeps the permission name: a watch has no camera, photo library, media library, or wired notifications.
-func watchPermission(name string) int {
-	switch name {
-	case driver.PermissionCamera, driver.PermissionPhotos, driver.PermissionMediaLibrary, driver.PermissionNotifications:
-		return driver.PermissionUnavailable
-	}
-	return driver.PhonePermission(name)
 }
 
 // errUnsupported is what a service watchOS has not answers with.

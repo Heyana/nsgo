@@ -33,7 +33,7 @@ cx.RequestPermission(core.PermissionCamera, func(s core.PermissionStatus) {
 
 ## 用途说明
 
-在 macOS 和 iOS 上，请求权限需要应用的 Info.plist 写明用途，由 `nsgo.yaml` 的 `apple.info` 提供；缺少时请求回答不可用并在日志中写出所需的键，因为系统会在询问时终止应用。应用[文案](localization.md)中与之同键的文案（例如 `locales/en.yaml` 中的 `NSCameraUsageDescription: Scans the codes you point it at.`）会翻译这段用途说明，系统随后用用户的语言询问；没有翻译它的语言使用源语言的文案。
+在 macOS、iOS 和 watchOS 上，请求权限需要应用的 Info.plist 写明用途，由 `nsgo.yaml` 的 `apple.info` 提供；缺少时请求回答不可用并在日志中写出所需的键，因为系统会在询问时终止应用。应用[文案](localization.md)中与之同键的文案（例如 `locales/en.yaml` 中的 `NSCameraUsageDescription: Scans the codes you point it at.`）会翻译这段用途说明，系统随后用用户的语言询问；没有翻译它的语言使用源语言的文案。
 
 ```yaml
 apple:
@@ -106,7 +106,8 @@ stop := desktop.GuidePermission(cx, core.PermissionAccessibility, desktop.GuideO
 | Linux | 沙盒外不受限；通知反映通知服务是否响应；在 Flatpak 和 Snap 中通过桌面 Portal 读取和请求相机，通过 Portal 与 PipeWire 读取和请求麦克风 |
 | Web | 麦克风和相机（在 Firefox 中为未知）、通知、位置（不含后台位置）以及移动浏览器上的运动 |
 | Android | 在 `android.permissions` 中声明了的麦克风、相机、日历、蓝牙和媒体资料库；本地网络不受限 |
-| Apple Watch、小程序 | 通知、定位和运动走各自服务；其余系统保管的权限目前为未知 |
+| Apple Watch | 麦克风、日历、提醒事项、蓝牙、通知、定位和运动；通讯录和本地网络为未知；相机、照片、媒体资料库及仅限 Mac 的权限为不可用 |
+| 小程序 | 平台保管的权限为未知，其余为不可用 |
 
 定位和运动权限在有对应传感器的平台上都能读取和请求，`PermissionNotifications` 与[通知](notifications.md)一致。在移动 Safari 上，请在点按处理函数中请求 `PermissionMotion`。
 

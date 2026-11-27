@@ -308,7 +308,7 @@ watchOS runs in a SwiftUI host, its views nodes Go draws into ([platforms](../AR
 | Sticky views and list headers on watchOS | `scrolling-and-lists.md`, [#1494](https://github.com/nsgo-dev/nsgo/issues/1494) | The SwiftUI host consumes `ItemStickyCells` and pins views at the start or end of its scroll viewport within their travel; it ignores these ranges now |
 | What watchOS has not | [#1495](https://github.com/nsgo-dev/nsgo/issues/1495) | Web views, video, native components and shaders (no WebKit, AVKit views or Metal), the clipboard, pickers, files, sharing and speech report `ErrUnsupported`, each checked by a test on the simulator, as the gallery leaves their demos out there; the views show empty boxes and the services answer unsupported now |
 | Speaking on Apple Watch | [#1496](https://github.com/nsgo-dev/nsgo/issues/1496) | `Speak` speaks with `AVSpeechSynthesizer` on watchOS, its audio session set for playback, where `Env.CanSpeak` is false now |
-| Permissions on Apple Watch | `services.md` (Permissions), [#1497](https://github.com/nsgo-dev/nsgo/issues/1497) | The SwiftUI host tells and asks for the microphone (`AVAudioSession`'s record permission), calendars, reminders and Bluetooth, which answer unknown now |
+| Permissions on Apple Watch | `services.md` (Permissions), [#1497](https://github.com/nsgo-dev/nsgo/issues/1497) | Verify live prompt flows on a watchOS simulator or paired Apple Watch; the SwiftUI host (`cmd/nsgo/watch/Host.swift`) now tells and asks for the microphone (`AVAudioApplication` / `AVAudioSession`), calendars, reminders and Bluetooth with Info.plist usage-description guards, and notifications run through `UNUserNotificationCenter` (`apple/notifications.go`) |
 
 ## Mini programs
 

@@ -29,6 +29,7 @@ const (
 	opCull
 	opAccess
 	opAuthSession
+	opPermission
 )
 
 // writer writes ops as the host's Reader reads them: little-endian

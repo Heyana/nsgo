@@ -11,6 +11,9 @@ import SwiftUI
 import Observation
 import ImageIO
 import AuthenticationServices
+import AVFAudio
+import EventKit
+import CoreBluetooth
 
 // MARK: The bridge
 
@@ -39,6 +42,8 @@ struct Bridge {
 	var snapshot: @convention(c) (UnsafePointer<UInt8>?, Int) -> Void
 	/// Authentication session id ended: callback (0), cancelled (1), failed (2) or unavailable (3), with a callback URL or error in UTF-8.
 	var auth: @convention(c) (UInt32, UInt8, UnsafePointer<UInt8>?, Int) -> Void
+	/// Permission request id answered with driver.Permission* status code.
+	var permission: @convention(c) (UInt32, UInt8) -> Void
 }
 
 var bridge: Bridge?
@@ -47,7 +52,7 @@ var bridge: Bridge?
 /// order.
 @_cdecl("nsgo_watch_connect")
 public func nsgoWatchConnect(_ fns: UnsafePointer<UnsafeRawPointer>, _ n: Int) {
-	guard n >= 10 else { return }
+	guard n >= 11 else { return }
 	bridge = Bridge(
 		size: unsafeBitCast(fns[0], to: (@convention(c) (Double, Double, Double, Double, Double, Double, Double, UInt32) -> Void).self),
 		touch: unsafeBitCast(fns[1], to: (@convention(c) (UInt8, Double, Double, Double) -> Void).self),
@@ -58,7 +63,8 @@ public func nsgoWatchConnect(_ fns: UnsafePointer<UnsafeRawPointer>, _ n: Int) {
 		alert: unsafeBitCast(fns[6], to: (@convention(c) (UInt32, Int32) -> Void).self),
 		lifecycle: unsafeBitCast(fns[7], to: (@convention(c) (UInt8) -> Void).self),
 		snapshot: unsafeBitCast(fns[8], to: (@convention(c) (UnsafePointer<UInt8>?, Int) -> Void).self),
-		auth: unsafeBitCast(fns[9], to: (@convention(c) (UInt32, UInt8, UnsafePointer<UInt8>?, Int) -> Void).self))
+		auth: unsafeBitCast(fns[9], to: (@convention(c) (UInt32, UInt8, UnsafePointer<UInt8>?, Int) -> Void).self),
+		permission: unsafeBitCast(fns[10], to: (@convention(c) (UInt32, UInt8) -> Void).self))
 }
 
 /// nsgo_watch_main runs the app on the calling thread, the main thread,
@@ -161,6 +167,223 @@ final class AuthSessions {
 	private func report(_ id: UInt32, _ outcome: UInt8, _ value: String) {
 		var value = value
 		value.withUTF8 { bytes in bridge?.auth(id, outcome, bytes.baseAddress, bytes.count) }
+	}
+}
+
+// MARK: Permissions
+
+/// Permissions queries and requests watchOS microphone, calendar, reminder and
+/// Bluetooth authorization on the main thread, verifying the app's Info.plist
+/// usage descriptions before prompting so the system never terminates the app.
+final class Permissions: NSObject, CBCentralManagerDelegate {
+	// Driver PermissionStatus values (internal/driver/permissions.go).
+	private static let notAsked: UInt8 = 0
+	private static let granted: UInt8 = 1
+	private static let denied: UInt8 = 2
+	private static let unknown: UInt8 = 3
+	private static let unavailable: UInt8 = 5
+
+	// Host permission kinds (internal/platform/watchos/permissions.go).
+	private static let kindMicrophone: UInt8 = 1
+	private static let kindCalendars: UInt8 = 2
+	private static let kindReminders: UInt8 = 3
+	private static let kindBluetooth: UInt8 = 4
+
+	private var eventStore: EKEventStore?
+	private var centralManager: CBCentralManager?
+	private var bluetoothWaiters: [UInt32] = []
+	private var bluetoothTimer: Timer?
+	private var bluetoothDeadline: Date?
+
+	func handle(_ id: UInt32, kind: UInt8, ask: Bool) {
+		let current = status(for: kind)
+		if !ask || current != Self.notAsked {
+			report(id, current)
+			return
+		}
+		switch kind {
+		case Self.kindMicrophone:
+			guard checkUsage(name: "microphone", key: "NSMicrophoneUsageDescription") else {
+				report(id, Self.unavailable)
+				return
+			}
+			requestMicrophone(id)
+		case Self.kindCalendars:
+			requestEventKit(id, entity: .event, name: "calendars")
+		case Self.kindReminders:
+			requestEventKit(id, entity: .reminder, name: "reminders")
+		case Self.kindBluetooth:
+			guard checkUsage(name: "bluetooth", key: "NSBluetoothAlwaysUsageDescription") else {
+				report(id, Self.unavailable)
+				return
+			}
+			requestBluetooth(id)
+		default:
+			report(id, Self.unavailable)
+		}
+	}
+
+	private func status(for kind: UInt8) -> UInt8 {
+		switch kind {
+		case Self.kindMicrophone:
+			return microphoneStatus()
+		case Self.kindCalendars:
+			return eventKitStatus(.event)
+		case Self.kindReminders:
+			return eventKitStatus(.reminder)
+		case Self.kindBluetooth:
+			return bluetoothStatus()
+		default:
+			return Self.unavailable
+		}
+	}
+
+	private func microphoneStatus() -> UInt8 {
+		if #available(watchOS 10.0, *) {
+			switch AVAudioApplication.shared.recordPermission {
+			case .undetermined: return Self.notAsked
+			case .granted: return Self.granted
+			case .denied: return Self.denied
+			@unknown default: return Self.unknown
+			}
+		} else {
+			switch AVAudioSession.sharedInstance().recordPermission {
+			case .undetermined: return Self.notAsked
+			case .granted: return Self.granted
+			case .denied: return Self.denied
+			@unknown default: return Self.unknown
+			}
+		}
+	}
+
+	private func requestMicrophone(_ id: UInt32) {
+		if #available(watchOS 10.0, *) {
+			AVAudioApplication.requestRecordPermission { [weak self] _ in
+				DispatchQueue.main.async {
+					guard let self else { return }
+					self.report(id, self.microphoneStatus())
+				}
+			}
+		} else {
+			AVAudioSession.sharedInstance().requestRecordPermission { [weak self] _ in
+				DispatchQueue.main.async {
+					guard let self else { return }
+					self.report(id, self.microphoneStatus())
+				}
+			}
+		}
+	}
+
+	private func eventKitStatus(_ entity: EKEntityType) -> UInt8 {
+		switch EKEventStore.authorizationStatus(for: entity) {
+		case .notDetermined: return Self.notAsked
+		case .fullAccess: return Self.granted
+		case .restricted, .denied, .writeOnly: return Self.denied
+		@unknown default: return Self.unknown
+		}
+	}
+
+	private func sharedEventStore() -> EKEventStore {
+		if let store = eventStore { return store }
+		let store = EKEventStore()
+		eventStore = store
+		return store
+	}
+
+	private func requestEventKit(_ id: UInt32, entity: EKEntityType, name: String) {
+		if #available(watchOS 10.0, *) {
+			let key = entity == .reminder ? "NSRemindersFullAccessUsageDescription" : "NSCalendarsFullAccessUsageDescription"
+			guard checkUsage(name: name, key: key) else {
+				report(id, Self.unavailable)
+				return
+			}
+			let store = sharedEventStore()
+			let done: EKEventStoreRequestAccessCompletionHandler = { [weak self] _, _ in
+				DispatchQueue.main.async {
+					guard let self else { return }
+					self.report(id, self.eventKitStatus(entity))
+				}
+			}
+			if entity == .reminder {
+				store.requestFullAccessToReminders(completion: done)
+			} else {
+				store.requestFullAccessToEvents(completion: done)
+			}
+		} else {
+			let key = entity == .reminder ? "NSRemindersUsageDescription" : "NSCalendarsUsageDescription"
+			guard checkUsage(name: name, key: key) else {
+				report(id, Self.unavailable)
+				return
+			}
+			sharedEventStore().requestAccess(to: entity) { [weak self] _, _ in
+				DispatchQueue.main.async {
+					guard let self else { return }
+					self.report(id, self.eventKitStatus(entity))
+				}
+			}
+		}
+	}
+
+	private func bluetoothStatus() -> UInt8 {
+		switch CBManager.authorization {
+		case .notDetermined: return Self.notAsked
+		case .allowedAlways: return Self.granted
+		case .restricted, .denied: return Self.denied
+		@unknown default: return Self.unknown
+		}
+	}
+
+	private func requestBluetooth(_ id: UInt32) {
+		bluetoothWaiters.append(id)
+		if centralManager == nil {
+			centralManager = CBCentralManager(delegate: self, queue: .main, options: [CBCentralManagerOptionShowPowerAlertKey: false])
+		}
+		bluetoothDeadline = Date().addingTimeInterval(600)
+		if bluetoothTimer == nil {
+			bluetoothTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+				self?.finishBluetoothIfReady()
+			}
+		}
+		finishBluetoothIfReady()
+	}
+
+	func centralManagerDidUpdateState(_ central: CBCentralManager) {
+		finishBluetoothIfReady()
+	}
+
+	private func finishBluetoothIfReady() {
+		guard !bluetoothWaiters.isEmpty else { return }
+		let st = bluetoothStatus()
+		let expired = bluetoothDeadline.map { Date() >= $0 } ?? false
+		guard st != Self.notAsked || expired else { return }
+		let waiters = bluetoothWaiters
+		bluetoothWaiters.removeAll()
+		bluetoothTimer?.invalidate()
+		bluetoothTimer = nil
+		bluetoothDeadline = nil
+		centralManager?.delegate = nil
+		centralManager = nil
+		for id in waiters {
+			report(id, st)
+		}
+	}
+
+	private func checkUsage(name: String, key: String) -> Bool {
+		if let value = Bundle.main.object(forInfoDictionaryKey: key) {
+			if let text = value as? String {
+				if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+					return true
+				}
+			} else {
+				return true
+			}
+		}
+		NSLog("nsgo: requesting %@ needs %@ in the app's Info.plist (nsgo.yaml's apple.info)", name, key)
+		return false
+	}
+
+	private func report(_ id: UInt32, _ status: UInt8) {
+		bridge?.permission(id, status)
 	}
 }
 
@@ -297,6 +520,7 @@ struct Alert: Identifiable {
 
 	@ObservationIgnored var nodes: [UInt32: Node] = [:]
 	@ObservationIgnored private var authSessions = AuthSessions()
+	@ObservationIgnored private var permissions = Permissions()
 	var root: Node?
 	var ticking = false
 	var alert: Alert?
@@ -307,7 +531,7 @@ struct Alert: Identifiable {
 	/// The ops Go writes, as watchos.go's op constants number them.
 	enum Op: UInt8 {
 		case create = 1, insert, remove, delete, frame, look, ink, redraw, scroll, scrollTo, input, focus, blur,
-			alert, root, lock, dismiss, cull, access, authSession
+			alert, root, lock, dismiss, cull, access, authSession, permission
 	}
 
 	func apply(_ r: Reader) {
@@ -419,6 +643,9 @@ struct Alert: Identifiable {
 				} else if command == 2 {
 					authSessions.cancel(id)
 				}
+			case .permission:
+				let id = r.u32(), kind = r.u8(), ask = r.u8() != 0
+				permissions.handle(id, kind: kind, ask: ask)
 			}
 		}
 	}

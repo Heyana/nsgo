@@ -33,7 +33,7 @@ On macOS, Automation is granted per target app: pass `core.PermissionAutomationO
 
 ## Usage descriptions
 
-On macOS and iOS, asking needs the permission's reason in the app's Info.plist, which `nsgo.yaml`'s `apple.info` holds; without it the request answers unavailable and logs the key, as the system would end the app. A message of the app's [catalogs](localization.md) with the same key, such as `NSCameraUsageDescription: Scans the codes you point it at.` in `locales/en.yaml`, translates the reason, which the system then asks in the user's language; a language that does not translate it says the source's.
+On macOS, iOS and watchOS, asking needs the permission's reason in the app's Info.plist, which `nsgo.yaml`'s `apple.info` holds; without it the request answers unavailable and logs the key, as the system would end the app. A message of the app's [catalogs](localization.md) with the same key, such as `NSCameraUsageDescription: Scans the codes you point it at.` in `locales/en.yaml`, translates the reason, which the system then asks in the user's language; a language that does not translate it says the source's.
 
 ```yaml
 apple:
@@ -106,7 +106,8 @@ The app held out is its bundle, else its executable; `GuideOptions.App` names an
 | Linux | Not gated outside sandboxes; notifications reflect whether a notification server answers; in Flatpak and Snap, the camera through the desktop portal and the microphone through the portal and PipeWire |
 | Web | The microphone and the camera (unknown in Firefox), notifications, location (not background location), and motion on mobile browsers |
 | Android | The microphone, the camera, calendars, Bluetooth and the media library, where `android.permissions` declares them; the local network is not gated |
-| Apple Watch, mini programs | Notifications, location and motion through their services; the rest kept by the system is unknown for now |
+| Apple Watch | The microphone, calendars, reminders, Bluetooth, notifications, location and motion; contacts and the local network are unknown; the camera, photos, media library and Mac-only permissions are unavailable |
+| Mini programs | Unknown for what the platform keeps, unavailable for the rest |
 
 Location and motion permissions follow each [platform's sensors](services.md#location-and-motion), and `PermissionNotifications` follows [notifications](notifications.md). Fitness uses `PermissionActivityRecognition` (`ACTIVITY_RECOGNITION` on Android, `NSMotionUsageDescription` on Apple), including Apple pressure; raw Android motion remains separate. On mobile Safari, ask for `PermissionMotion` from a press handler.
 

@@ -79,6 +79,19 @@ type PermissionRequest struct {
 	App, AppName string
 }
 
+// NotificationPermissionStatus maps a notification permission answer (NotificationsNotAsked, ...) to an EventPermission status (PermissionNotAsked, ...).
+func NotificationPermissionStatus(np int) int {
+	switch np {
+	case NotificationsNotAsked:
+		return PermissionNotAsked
+	case NotificationsGranted:
+		return PermissionGranted
+	case NotificationsDenied:
+		return PermissionDenied
+	}
+	return PermissionUnavailable
+}
+
 // AnswerPermission answers ItemPermission id where nothing asks, opens settings or guides: a check, a request and a guide hear status of the permission at once, opening the settings that none opened, and a stop nothing.
 func AnswerPermission(id uint32, r PermissionRequest, status func(name string) int, dispatch func(Event)) {
 	switch r.Command {
