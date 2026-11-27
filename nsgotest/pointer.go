@@ -2,6 +2,7 @@ package nsgotest
 
 import (
 	"math"
+	"slices"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
@@ -112,6 +113,7 @@ func (a *App) drag(v *View, start driver.Point, path []driver.Point) {
 		a.done()
 		return
 	}
+	a.inputBy(driver.ModalityPointer)
 	f := &finger{start: start, at: start, last: start, reporting: a.listensToTouches(), downAt: a.Clock.Now()}
 	for p := a.viewAt(start, func(*View) bool { return true }); p != nil; p = p.Parent {
 		f.chain = append(f.chain, p)
@@ -163,20 +165,32 @@ type Finger struct {
 	matrix driver.Matrix3D
 }
 
+// ID returns the finger's Touch.ID.
+func (g *Finger) ID() int { return g.f.id }
+
 // Touch puts a finger down at at, in the coordinates of the view selector
-// names, and reports it there.
+// names, and reports it there. Each finger receives a fresh incrementing ID,
+// reports pointer modality, and stays active alongside other held fingers
+// until lifted or cancelled.
 func (a *App) Touch(selector string, at driver.Point) *Finger {
 	a.t.Helper()
 	a.step("touch(%s, %v)", selector, at)
 	v := a.pick(selector, "view", func(m *View) (*View, bool) { return m, true })
 	start := v.pagePoint(at)
-	f := &finger{start: start, at: start, last: start, reporting: a.listensToTouches(), id: 1, downAt: a.Clock.Now(),
+	a.inputBy(driver.ModalityPointer)
+	a.nextFingerID++
+	f := &finger{start: start, at: start, last: start, reporting: a.listensToTouches(), id: a.nextFingerID, downAt: a.Clock.Now(),
 		t0: a.Clock.Now().Sub(a.start)}
 	for p := a.viewAt(start, func(*View) bool { return true }); p != nil; p = p.Parent {
 		f.chain = append(f.chain, p)
 	}
-	a.blocked = false
-	if !a.tryGrabScrollHandle(f, start) {
+	if len(a.fingers) == 0 {
+		a.blocked = false
+	}
+	if a.tryGrabScrollHandle(f, start) {
+		f.reporting = false
+	} else {
+		a.fingers = append(a.fingers, f)
 		for _, p := range f.chain {
 			if f.press == nil && (pressable(p) || p.Events.Has(driver.EventLongPress)) && !v.disabled(p) {
 				f.press = p
@@ -184,8 +198,7 @@ func (a *App) Touch(selector string, at driver.Point) *Finger {
 		}
 		// It names the view it went down on, as a platform that knows.
 		if f.reporting {
-			a.dispatch(driver.Event{Kind: driver.EventTouch, ID: v.ID, Phase: driver.GestureBegan, Time: f.t0,
-				Touches: []driver.Touch{{ID: f.id, PagePosition: start, Changed: true}}})
+			a.touchFinger(f, driver.GestureBegan, v.ID)
 		}
 		a.pressOutside(v, start)
 		a.pressIn(f)
@@ -261,14 +274,17 @@ func (g *Finger) Cancel() {
 	g.a.step("cancel")
 	f := g.f
 	if f.mode == dragHandle {
+		g.a.dropFinger(f)
 		g.a.scrollEvent(f.view, driver.EventScrollDragEnd)
 		g.a.scrollEvent(f.view, driver.EventScrollEnd)
 		g.a.done()
 		return
 	}
 	if f.reporting {
-		g.a.touchAt(driver.GestureCancelled, f.at, f.t0+f.elapsed, f.id)
+		g.a.touchFinger(f, driver.GestureCancelled, 0)
+		f.reporting = false
 	}
+	g.a.dropFinger(f)
 	if f.pressed && !f.cancelled {
 		f.cancelled = true
 		ev := g.a.pressEvent(f.press, f.start)
@@ -276,6 +292,45 @@ func (g *Finger) Cancel() {
 		g.a.send(f.press, ev)
 	}
 	g.a.done()
+}
+
+// touchFinger reports f's phase in EventTouch; while f is among the fingers
+// Touch currently holds down, Touches lists all active fingers in order with
+// Changed set only on f.
+func (a *App) touchFinger(f *finger, phase driver.GesturePhase, target driver.NodeID) {
+	if !a.listensToTouches() {
+		return
+	}
+	var touches []driver.Touch
+	if slices.Contains(a.fingers, f) {
+		touches = make([]driver.Touch, len(a.fingers))
+		for i, cur := range a.fingers {
+			touches[i] = driver.Touch{
+				ID:           cur.id,
+				PagePosition: cur.at,
+				Changed:      cur == f,
+			}
+		}
+	} else {
+		touches = []driver.Touch{{ID: f.id, PagePosition: f.at, Changed: true}}
+	}
+	elapsed := f.t0 + f.elapsed
+	if f.id != 0 {
+		elapsed = a.Clock.Now().Sub(a.start)
+	}
+	a.dispatch(driver.Event{
+		Kind:    driver.EventTouch,
+		ID:      target,
+		Phase:   phase,
+		Time:    elapsed,
+		Touches: touches,
+	})
+}
+
+func (a *App) dropFinger(f *finger) {
+	if i := slices.Index(a.fingers, f); i >= 0 {
+		a.fingers = slices.Delete(a.fingers, i, i+1)
+	}
 }
 
 // frame takes one display frame of a gesture.
@@ -298,7 +353,7 @@ func (a *App) fingerMoved(f *finger, at driver.Point) {
 	f.moved = true
 	t := driver.Point{X: at.X - f.start.X, Y: at.Y - f.start.Y}
 	if f.reporting {
-		a.touchAt(driver.GestureChanged, at, f.t0+f.elapsed, f.id)
+		a.touchFinger(f, driver.GestureChanged, 0)
 	}
 	distance := driver.Points(math.Hypot(float64(t.X), float64(t.Y)))
 	if f.pressed && !f.cancelled && distance > pressSlop {
@@ -349,9 +404,10 @@ func (a *App) startDrag(f *finger, t driver.Point) {
 			driver.Points(math.Hypot(float64(t.X), float64(t.Y))) >= driver.DefaultPanSlop && a.canScroll(v, t) {
 			if f.reporting {
 				// The scroll view takes the touches over.
-				a.touchAt(driver.GestureCancelled, f.at, f.t0+f.elapsed, f.id)
+				a.touchFinger(f, driver.GestureCancelled, 0)
 				f.reporting = false
 			}
+			a.dropFinger(f)
 			f.mode, f.view, f.from, f.grabbed = dragScroll, v, v.Offset, f.at
 			a.scrollEvent(v, driver.EventScrollDragStart)
 			return
@@ -453,8 +509,10 @@ func (a *App) pullValue(v *View) {
 
 func (a *App) fingerLifted(f *finger) {
 	if f.reporting {
-		a.touchAt(driver.GestureEnded, f.at, f.t0+f.elapsed, f.id)
+		a.touchFinger(f, driver.GestureEnded, 0)
+		f.reporting = false
 	}
+	a.dropFinger(f)
 	switch f.mode {
 	case dragPan:
 		a.pan(f, driver.GestureEnded, driver.Point{X: f.at.X - f.start.X, Y: f.at.Y - f.start.Y})

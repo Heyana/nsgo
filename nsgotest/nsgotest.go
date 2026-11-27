@@ -594,6 +594,10 @@ type App struct {
 	// blocked is set while the touch responder keeps native drags from
 	// starting (ItemBlockNative).
 	blocked bool
+	// nextFingerID numbers fingers put down by Touch, starting at 1.
+	nextFingerID int
+	// fingers holds the fingers Touch currently has down, in the order they went down.
+	fingers []*finger
 	// hovered are the views the mouse is over, innermost first.
 	hovered []*View
 	// mouse is where it is in the surface; mouseIn says the pointer is inside.

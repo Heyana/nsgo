@@ -108,7 +108,7 @@ func TestMain(m *testing.M) {
 
 `nsgotest.UpdaterState(core.UpdaterState{...})` 可在第一次渲染前设置更新器的能力和偏好，适用于无窗口测试及原生目标。通过 `app.Update` 提供每次检查的结果；偏好变更由测试模型处理，不访问更新源。
 
-无头测试通过 `app.EditMenu` 和 `app.EditMenuItems()` 检查编辑菜单，用 `app.ChooseEditAction(core.EditCopy)` 选择已提供的操作，用 `app.CloseEditMenu()` 关闭菜单；粘贴使用测试的剪贴板。`app.LongPressAt(selector, point)` 长按指定位置；无头测试中，`app.Touch(selector, point).Hold(duration)` 会在手指抬起之前触发长按，随后可用 `Move` 测试选区扫动。这些菜单记录和操作选择检查模型行为，系统工具栏仍需原生验收。
+无头测试通过 `app.EditMenu` 和 `app.EditMenuItems()` 检查编辑菜单，用 `app.ChooseEditAction(core.EditCopy)` 选择已提供的操作，用 `app.CloseEditMenu()` 关闭菜单；粘贴使用测试的剪贴板。`app.LongPressAt(selector, point)` 长按指定位置；无头测试中，`app.Touch(selector, point).Hold(duration)` 会在手指抬起之前触发长按，随后可用 `Move` 测试选区扫动。每次调用 `app.Touch(selector, point)` 都会分配递增的唯一 `Finger.ID()`，上报指针输入模态，并在 `Lift`、`LiftAt` 或 `Cancel` 之前与其他按住的手指并存；每次触摸事件都会列出当前所有按住的手指，只对发生变化的那根手指设置 `Changed`。这些菜单记录和操作选择检查模型行为，系统工具栏仍需原生验收。
 
 `View.Props` 是 `nsgotest.ViewProps` 快照，记录视图标识、无障碍名称和状态、操作，以及焦点和指针设置。`HelpText`、`HasAction`、`ActionList` 和 `FocusStop` 提供对应策略；标签 ID、操作列表和涟漪设置会从挂载值复制。
 
