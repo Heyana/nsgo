@@ -31,6 +31,7 @@ type video struct {
 	timer     uint32
 	timerData uintptr
 	controls  bool // the widget is a GtkVideo
+	alpha     bool // source declares an alpha channel
 }
 
 // rateWarned is the warning, once, that Rate does not apply.
@@ -124,18 +125,20 @@ func videoFile(source string) uintptr {
 func (w *window) openVideo(v *view) {
 	vd := v.video
 	w.closeStream(v)
-	vd.loaded, vd.failed, vd.buffering, vd.playing = false, false, false, false
+	vd.loaded, vd.failed, vd.buffering, vd.playing, vd.alpha = false, false, false, false, false
 	vd.playback = videoplay.State{}
 	source := vd.config.Source
 	if source == "" {
 		return
 	}
-	if msg := alphaRefused(videoalpha.Source(source, imageload.ResourceRoot)); msg != "" {
+	alpha := videoalpha.Source(source, imageload.ResourceRoot)
+	if msg := alphaRefused(alpha); msg != "" {
 		vd.failed = true
 		log.Printf("nsgo: video %s: %s", source, msg)
 		w.report(v, driver.Event{Kind: driver.EventError, ID: v.id, Text: source + ": " + msg, Index: driver.VideoErrorAlphaUnsupported})
 		return
 	}
+	vd.alpha = alpha != videoalpha.None
 	w.report(v, driver.Event{Kind: driver.EventLoadStart, ID: v.id})
 	file := videoFile(source)
 	defer gObjectUnref(file)
@@ -200,9 +203,11 @@ func (w *window) showVideo(v *view) {
 	var child uintptr
 	if controls {
 		child = gtkVideoNew()
-		bindLook()
-		addLookCSS()
-		gtkWidgetAddCSSClass(child, cstr("nsgo-video"))
+		if vd.alpha {
+			bindLook()
+			addLookCSS()
+			gtkWidgetAddCSSClass(child, cstr("nsgo-video"))
+		}
 		// The app drives playback (Paused), not the widget.
 		gtkVideoSetAutoplay(child, 0)
 	} else {

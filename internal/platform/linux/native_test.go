@@ -1582,13 +1582,19 @@ func TestVideoShowsWhatIsBehindItsTransparentPixels(t *testing.T) {
 			name = "controls"
 		}
 		t.Run(name, func(t *testing.T) {
+			wPt, hPt := driver.Points(100), driver.Points(100)
+			if controls {
+				// GtkVideo's built-in GtkMediaControls enforces a minimum width wider than 100pt,
+				// which allocateNative preserves and would shift the centered 1:1 clip past x=100.
+				wPt, hPt = 320, 160
+			}
 			title := "nsgo-native-" + t.Name()
 			app := func(cx *core.Scope) core.Node {
 				state := core.NewSignal(cx, "")
 				cx.Effect(func() { cx.SetTitle(title + "|" + state.Get()) })
-				return core.View{Style: core.Style{Width: driver.Pt(100), Height: driver.Pt(100), Background: driver.RGB(0xff0000)},
+				return core.View{Style: core.Style{Width: driver.Pt(wPt), Height: driver.Pt(hPt), Background: driver.RGB(0xff0000)},
 					Children: []core.Node{core.Video{Source: path, Repeat: true, Muted: true, Controls: controls,
-						Style:  core.Style{Width: driver.Pt(100), Height: driver.Pt(100)},
+						Style:  core.Style{Width: driver.Pt(wPt), Height: driver.Pt(hPt)},
 						OnLoad: func(core.VideoInfo) { state.Set("load") },
 						OnError: func(err error) {
 							var reason core.MediaErrorReason
@@ -1610,21 +1616,23 @@ func TestVideoShowsWhatIsBehindItsTransparentPixels(t *testing.T) {
 				}
 				t.Skip(got)
 			}
-			// The clip's square covers its middle half: 25 to 75 points here. With Controls, GTK's bar sits at the bottom, so sample the top corners.
+			// The clip's square covers its middle half (outer 25% is transparent). With Controls,
+			// the 1:1 clip is centered inside 320x160 and GTK's bar sits at the bottom, so sample
+			// two top corners inside the clip's transparent border and the center of its blue square.
 			red := func(p []byte) bool { return p[2] > 200 && p[1] < 60 && p[0] < 60 && p[3] == 255 }
 			blue := func(p []byte) bool { return p[0] > 200 && p[1] < 60 && p[2] < 60 && p[3] == 255 }
-			secondY := 92
+			c1x, c1y, c2x, c2y, midX, midY := 8, 8, 92, 92, 50, 50
 			if controls {
-				secondY = 8
+				c1x, c1y, c2x, c2y, midX, midY = 105, 12, 215, 12, 160, 65
 			}
 			var last pixels
 			for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
 				last = w.surfacePixels(t)
-				if red(last.at(8, 8)) && red(last.at(92, secondY)) && blue(last.at(50, 50)) {
+				if red(last.at(c1x, c1y)) && red(last.at(c2x, c2y)) && blue(last.at(midX, midY)) {
 					return
 				}
 				if time.Now().After(deadline) {
-					t.Fatalf("want red around a blue square, have %v and %v at its corners and %v in its middle (BGRA) in %dx%d", last.at(8, 8), last.at(92, secondY), last.at(50, 50), last.width, last.height)
+					t.Fatalf("want red around a blue square, have %v and %v at its corners and %v in its middle (BGRA) in %dx%d", last.at(c1x, c1y), last.at(c2x, c2y), last.at(midX, midY), last.width, last.height)
 				}
 			}
 		})

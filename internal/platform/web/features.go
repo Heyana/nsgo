@@ -152,7 +152,7 @@ func (*surface) EnableWebView() {
 		command: (*surface).webCommand,
 		close: func(v *view) {
 			if v.web != nil {
-				v.web.closePort()
+				v.web.close()
 			}
 		},
 	})

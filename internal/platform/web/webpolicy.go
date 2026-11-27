@@ -352,9 +352,10 @@ func webRestrictedBridge(token string, exposeBridge bool, c *driver.WebConfig, r
       if (e.hashChange) return;
       const dest = e.destination.url;
       if (!navigable(dest)) {
-        if (e.cancelable) prevent.call(e);
-        reportedUnchecked = true;
-        reportRefused(dest);
+        if (e.cancelable) {
+          prevent.call(e);
+          reportRefused(dest);
+        }
       } else {
         approveUnloadBriefly();
       }

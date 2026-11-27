@@ -15,6 +15,7 @@ import (
 // webFrame is a web view's <iframe>, as NSH's web backend has it. HTML loads as srcdoc in a sandbox with an origin of its own, so it never reaches the app's page, with a bridge script first: it hands the app a MessagePort with token, which only the srcdoc's document knows, and window.nsgo.postMessage writes to the port, which also runs injected scripts and history steps. The app takes the port only from the frame's own window, so neither a frame within the page nor a page it went to has the bridge, and the page's messages report the source's origin. Restricted views omit allow-popups, allow-popups-to-escape-sandbox and allow-downloads from the sandbox, decode data:text/html sources through the same guarded srcdoc path, add a CSP form-action policy, strip disallowed meta refreshes (and static links when JavaScript is disabled), and enforce WebConfig.Navigable in the bridge before page scripts run. A URL loads as it is (without its origin when it is the app's own); the browser hides what a cross-origin page does after it loads, so it only gets PostMessage, load events and the iframe sandbox's restrictions.
 type webFrame struct {
 	frame          js.Value
+	frameListeners listeners
 	config         driver.WebConfig
 	source         driver.WebSource // what the frame loaded last: the config's, or Ref.Load's
 	loaded         bool             // configured at least once
@@ -58,8 +59,29 @@ func (s *surface) createWeb(v *view) {
 	})
 	v.inner = w.frame
 	v.el.Call("appendChild", w.frame)
-	v.listeners.on(w.frame, "load", func(js.Value) { s.webLoaded(v) })
+	w.frameListeners.on(w.frame, "load", func(js.Value) { s.webLoaded(v) })
 	v.listeners.on(js.Global(), "message", func(e js.Value) { s.webBridged(v, e) })
+}
+
+// replaceWebFrame swaps in a fresh <iframe> so any in-flight navigation on the
+// previous browsing context is discarded before restoring srcdoc or about:blank.
+func (s *surface) replaceWebFrame(v *view) {
+	w := v.web
+	old := w.frame
+	w.frameListeners.release()
+	fresh := s.element("iframe")
+	for _, attr := range []string{"allowtransparency", "sandbox", "allow", "scrolling"} {
+		if old.Call("hasAttribute", attr).Bool() {
+			fresh.Call("setAttribute", attr, old.Call("getAttribute", attr))
+		}
+	}
+	setStyle(fresh, map[string]string{
+		"width": "100%", "height": "100%", "border": "0", "background": "transparent", "border-radius": "inherit",
+	})
+	w.frame = fresh
+	v.inner = fresh
+	old.Call("replaceWith", fresh)
+	w.frameListeners.on(fresh, "load", func(js.Value) { s.webLoaded(v) })
 }
 
 // webBridged takes the port an HTML page's bridge hands the app: from the frame's own window, with the page's token.
@@ -121,7 +143,7 @@ func (s *surface) webBridged(v *view, e js.Value) {
 							w.lastSrcdoc = strings.ReplaceAll(w.lastSrcdoc, strconv.Quote(oldToken), strconv.Quote(w.token))
 						}
 						w.awaitBridge()
-						w.frame.Call("removeAttribute", "srcdoc")
+						s.replaceWebFrame(v)
 						w.frame.Set("srcdoc", w.lastSrcdoc)
 					} else {
 						w.restoring = true
@@ -129,7 +151,7 @@ func (s *surface) webBridged(v *view, e js.Value) {
 						w.exposeBridge = false
 						w.lastSrcdoc = ""
 						w.awaitBridge()
-						w.frame.Call("removeAttribute", "srcdoc")
+						s.replaceWebFrame(v)
 						w.frame.Set("src", "about:blank")
 					}
 					return nil
@@ -146,12 +168,7 @@ func (s *surface) webBridged(v *view, e js.Value) {
 	})
 	w.port.Set("onmessage", w.portFn)
 	w.bridging = false
-	if expose {
-		for _, msg := range w.queued {
-			w.port.Call("postMessage", msg)
-		}
-	}
-	w.queued = nil
+	w.flushQueued()
 }
 
 func (s *surface) setWeb(v *view, c *driver.WebConfig) {
@@ -314,9 +331,15 @@ func (s *surface) webLoaded(v *view) {
 	w.uncheckedCount = 0
 	if w.restoring {
 		w.restoring = false
+		w.flushQueued()
 		return
 	}
 	s.webNavigation(v, driver.EventLoad, false)
+}
+
+func (w *webFrame) close() {
+	w.closePort()
+	w.frameListeners.release()
 }
 
 func (w *webFrame) closePort() {
@@ -326,6 +349,18 @@ func (w *webFrame) closePort() {
 		w.portFn.Release()
 		w.port = js.Undefined()
 	}
+}
+
+func (w *webFrame) flushQueued() {
+	if w.restoring || !w.port.Truthy() {
+		return
+	}
+	if w.exposeBridge {
+		for _, msg := range w.queued {
+			w.port.Call("postMessage", msg)
+		}
+	}
+	w.queued = nil
 }
 
 // awaitBridge drops the bridge of the page the frame shows, which is going, and waits for the next page's when the source has one.
@@ -342,10 +377,10 @@ func (s *surface) webCommand(v *view, c driver.WebCommand, value string, data an
 			return false
 		}
 		switch {
+		case w.bridging || w.restoring:
+			w.queued = append(w.queued, msg)
 		case w.port.Truthy():
 			w.port.Call("postMessage", msg)
-		case w.bridging:
-			w.queued = append(w.queued, msg)
 		default:
 			return false
 		}

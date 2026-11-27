@@ -1813,7 +1813,7 @@ func (s *surface) mount(b *driver.MountBatch) {
 				v.gpu = nil
 			}
 			if v.web != nil {
-				v.web.closePort()
+				v.web.close()
 			}
 			if v.video != nil {
 				v.video.release()
