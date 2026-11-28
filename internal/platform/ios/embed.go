@@ -302,11 +302,27 @@ func (s *surface) dropLink() {
 
 // close stops the surface's frame clock, its observations and its
 // engine, then destroys the native components still showing.
+func (s *surface) releasePools() {
+	if b := s.spareBar; b != nil {
+		s.spareBar = nil
+		b.bar.Send(selRelease)
+		b.item.Send(selRelease)
+		b.back.Send(selRelease)
+	}
+	for _, l := range s.contentLayerPool {
+		if l != 0 {
+			apple.Msg(l, selRelease)
+		}
+	}
+	s.contentLayerPool = nil
+}
+
 func (s *surface) close() {
 	if s.closed {
 		return
 	}
 	s.closed = true
+	s.releasePools()
 	s.dismissAppClipOverlay()
 	s.stopHapticPattern()
 	s.sensors.Close()

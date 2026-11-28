@@ -33,6 +33,7 @@ import (
 var (
 	selSetAccessibilityHint           = sel("setAccessibilityHint:")
 	selSetAccessibilityElementsHidden = sel("setAccessibilityElementsHidden:")
+	selSetAccessibilityViewIsModal    = sel("setAccessibilityViewIsModal:")
 	selCustomAction                   = sel("nsgoAccessibilityAction:")
 	layoutChanged                     uint32  // UIAccessibilityLayoutChangedNotification
 	headingLevelKey                   objc.ID // UIAccessibilityTextAttributeHeadingLevel
@@ -99,10 +100,10 @@ func (v *view) setProps(p *driver.ViewProps) {
 	old := v.props
 	v.props = *p
 	if p.TestID != old.TestID {
-		v.native.Send(selSetAccessibilityIdentifier, nsOrNil(p.TestID))
+		apple.Msg(v.native, selSetAccessibilityIdentifier, uintptr(nsOrNil(p.TestID)))
 	}
 	if p.Appearance != old.Appearance {
-		v.native.Send(sel("setOverrideUserInterfaceStyle:"), uiStyle(p.Appearance))
+		apple.Msg(v.native, sel("setOverrideUserInterfaceStyle:"), uintptr(uiStyle(p.Appearance)))
 	}
 	v.updateAccessibility()
 	if v.propsSet && p.Label != old.Label {
@@ -231,8 +232,22 @@ func (v *view) updateAccessibility() {
 		return
 	}
 	// VoiceOver keeps to a dialog while it shows.
-	native.Send(sel("setAccessibilityViewIsModal:"), p.Role == driver.RoleDialog || p.Role == driver.RoleAlertDialog)
-	native.Send(selSetAccessibilityElementsHidden, p.ElementsHidden)
+	if modal := p.Role == driver.RoleDialog || p.Role == driver.RoleAlertDialog; modal != v.axModal {
+		v.axModal = modal
+		var m uintptr
+		if modal {
+			m = 1
+		}
+		apple.Msg(native, selSetAccessibilityViewIsModal, m)
+	}
+	if p.ElementsHidden != v.axHidden {
+		v.axHidden = p.ElementsHidden
+		var h uintptr
+		if p.ElementsHidden {
+			h = 1
+		}
+		apple.Msg(native, selSetAccessibilityElementsHidden, h)
+	}
 	const noContainer, semanticGroup = 0, 4
 	pressable := !p.LabelPress && (v.events.Has(driver.EventPress) || v.events.Has(driver.EventLongPress))
 	var t uint64
@@ -246,11 +261,16 @@ func (v *view) updateAccessibility() {
 		driver.RoleTable, driver.RoleGrid, driver.RoleRowGroup, driver.RoleRow, driver.RoleListbox, driver.RoleGroup,
 		driver.RoleRegion, driver.RoleNavigation, driver.RoleTree, driver.RoleToolbar:
 		// Groups are containers, so their children stay accessible.
-		native.Send(selSetIsAccessibilityElement, false)
-		v.axElement = false
-		native.Send(selSetAccessibilityContainerType, semanticGroup)
+		if v.axElement {
+			apple.Msg(native, selSetIsAccessibilityElement, 0)
+			v.axElement = false
+		}
+		if v.axContainer != semanticGroup {
+			v.axContainer = semanticGroup
+			apple.Msg(native, selSetAccessibilityContainerType, semanticGroup)
+		}
 		if p.Role == driver.RoleTabList {
-			native.Send(selSetAccessibilityTraits, traits["TabBar"])
+			apple.Msg(native, selSetAccessibilityTraits, uintptr(traits["TabBar"]))
 		}
 		return
 	case driver.RoleNone:
@@ -302,14 +322,27 @@ func (v *view) updateAccessibility() {
 		// A canvas with named parts is their container.
 		element = false
 	}
-	native.Send(selSetIsAccessibilityElement, element)
-	native.Send(selSetAccessibilityContainerType, noContainer)
+	var el uintptr
+	if element {
+		el = 1
+	}
+	apple.Msg(native, selSetIsAccessibilityElement, el)
+	if v.axContainer != noContainer {
+		v.axContainer = noContainer
+		apple.Msg(native, selSetAccessibilityContainerType, noContainer)
+	}
 	if !element {
 		return
 	}
-	native.Send(selSetAccessibilityTraits, t)
-	native.Send(selSetAccessibilityHint, nsOrNil(p.HelpText()))
-	native.Send(selSetAccessibilityValue, nsOrNil(spokenValue(p)))
+	apple.Msg(native, selSetAccessibilityTraits, uintptr(t))
+	if hint := p.HelpText(); hint != v.axHint {
+		v.axHint = hint
+		apple.Msg(native, selSetAccessibilityHint, uintptr(nsOrNil(hint)))
+	}
+	if val := spokenValue(p); val != v.axValue {
+		v.axValue = val
+		apple.Msg(native, selSetAccessibilityValue, uintptr(nsOrNil(val)))
+	}
 	var custom []objc.ID
 	for _, a := range p.ActionList() {
 		if driver.IsStandardAction(a.Name) {

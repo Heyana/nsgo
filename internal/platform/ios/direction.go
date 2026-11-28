@@ -35,6 +35,9 @@ func (s *surface) applyDirection() {
 		objc.ID(apple.Class("UIView")).Send(sel("appearance")).Send(selSetSemantic, s.semantic())
 	}
 	s.directTree(s.native)
+	if s.spareBar != nil {
+		s.directTree(s.spareBar.bar)
+	}
 	for _, v := range s.views {
 		if v != nil && v.bar != nil {
 			s.setSwipeBack(v)

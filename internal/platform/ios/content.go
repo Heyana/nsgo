@@ -22,8 +22,16 @@ var (
 	// drawers maps content layers to their views.
 	drawers = map[objc.ID]*view{}
 
-	selContentsAreFlipped = sel("contentsAreFlipped")
-	selSetNeedsDisplayL   = sel("setNeedsDisplay")
+	selContentsAreFlipped            = sel("contentsAreFlipped")
+	selSetNeedsDisplayL              = sel("setNeedsDisplay")
+	selSetActions                    = sel("setActions:")
+	selSetDelegate                   = sel("setDelegate:")
+	selSetNeedsDisplayOnBoundsChange = sel("setNeedsDisplayOnBoundsChange:")
+	selSetDrawsAsynchronously        = sel("setDrawsAsynchronously:")
+	selSetContentsScale              = sel("setContentsScale:")
+	selSetZPosition                  = sel("setZPosition:")
+	selSetContents                   = sel("setContents:")
+	selRemoveFromSuperlayer          = sel("removeFromSuperlayer")
 )
 
 // contentZ puts a content layer below the view's other sublayers.
@@ -79,17 +87,33 @@ func drawContent(_ objc.ID, _ objc.SEL, layer objc.ID, ctx uintptr) {
 
 // newContent gives text or canvas view v its content layer.
 func (v *view) newContent() {
-	layer := objc.ID(apple.Class("CALayer")).Send(selNew)
-	layer.Send(sel("setActions:"), contentActions)
-	layer.Send(sel("setDelegate:"), contentDrawer)
-	layer.Send(sel("setNeedsDisplayOnBoundsChange:"), true)
-	// Canvases are drawn on Core Animation's threads: paths and gradients
-	// cost more than glyphs.
-	layer.Send(sel("setDrawsAsynchronously:"), v.kind == driver.KindCanvas)
-	layer.Send(sel("setContentsScale:"), v.contentScale())
-	layer.Send(sel("setZPosition:"), apple.Z(contentZ))
-	v.attachContentLayer(layer)
-	layer.Send(selRelease)
+	s := v.surface
+	var asyncDraw uintptr
+	if v.kind == driver.KindCanvas {
+		asyncDraw = 1
+	}
+	var layer objc.ID
+	if n := len(s.contentLayerPool); n > 0 {
+		layer = s.contentLayerPool[n-1]
+		s.contentLayerPool[n-1] = 0
+		s.contentLayerPool = s.contentLayerPool[:n-1]
+		apple.Msg(layer, selSetDrawsAsynchronously, asyncDraw)
+		apple.MsgFloat64(layer, selSetContentsScale, v.contentScale())
+		v.attachContentLayer(layer)
+		apple.Msg(layer, selRelease)
+	} else {
+		layer = objc.ID(apple.Msg(objc.ID(apple.Class("CALayer")), selNew))
+		apple.Msg(layer, selSetActions, uintptr(contentActions))
+		apple.Msg(layer, selSetDelegate, uintptr(contentDrawer))
+		apple.Msg(layer, selSetNeedsDisplayOnBoundsChange, 1)
+		// Canvases are drawn on Core Animation's threads: paths and gradients
+		// cost more than glyphs.
+		apple.Msg(layer, selSetDrawsAsynchronously, asyncDraw)
+		apple.MsgFloat64(layer, selSetContentsScale, v.contentScale())
+		apple.MsgFloat64(layer, selSetZPosition, apple.Z(contentZ))
+		v.attachContentLayer(layer)
+		apple.Msg(layer, selRelease)
+	}
 	v.contentLayer, v.laidFrame, v.needFrame = layer, apple.CGRect{}, apple.CGRect{}
 	drawers[layer] = v
 }
@@ -113,7 +137,7 @@ func (v *view) redrawAnimated() {
 // redraw draws v's content again.
 func (v *view) redraw() {
 	if v.contentLayer != 0 {
-		v.contentLayer.Send(selSetNeedsDisplayL)
+		apple.Msg(v.contentLayer, selSetNeedsDisplayL)
 	}
 }
 
@@ -142,7 +166,7 @@ func (v *view) sizeContent() {
 	if f != v.laidFrame {
 		v.laidFrame = f
 		apple.WithoutAnimation(func() {
-			v.contentLayer.Send(selSetFrame, f)
+			sendSetFrame(v.contentLayer, f)
 		})
 	}
 }
@@ -159,10 +183,17 @@ func (v *view) contentFrame() apple.CGRect {
 }
 
 // forgetContent drops v's content layer, which goes with its view.
-func (v *view) forgetContent() {
-	if v.contentLayer != 0 {
-		delete(drawers, v.contentLayer)
+func (v *view) forgetContent(recycle bool) {
+	if layer := v.contentLayer; layer != 0 {
+		delete(drawers, layer)
 		v.contentLayer = 0
+		if recycle && len(v.surface.contentLayerPool) < 64 {
+			apple.Msg(layer, sel("retain"))
+			apple.Msg(layer, selRemoveFromSuperlayer)
+			apple.Msg(layer, selSetContents, 0)
+			sendSetFrame(layer, apple.CGRect{})
+			v.surface.contentLayerPool = append(v.surface.contentLayerPool, layer)
+		}
 	}
 }
 

@@ -35,7 +35,10 @@ var (
 
 	caCurrentMediaTime func() float64
 	// msgSendFloat64 is objc_msgSend for a message that takes nothing and returns a double, registered once for per-frame reads.
-	msgSendFloat64     func(objc.ID, objc.SEL) float64
+	msgSendFloat64                func(objc.ID, objc.SEL) float64
+	msgSendSetFloat64             func(objc.ID, objc.SEL, float64)
+	msgSendSetFloat32             func(objc.ID, objc.SEL, float32)
+	msgSendSetCGSize              func(objc.ID, objc.SEL, CGSize)
 	selTargetTimestamp            = sel("targetTimestamp")
 	selSetPreferredFrameRateRange = sel("setPreferredFrameRateRange:")
 )
@@ -87,16 +90,16 @@ func StyleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bou
 		color(selSetBackgroundColor, vs.Background)
 	}
 	if was == nil || vs.CornerRadius != was.CornerRadius {
-		layer.Send(selSetCornerRadius, float64(vs.CornerRadius))
+		MsgFloat64(layer, selSetCornerRadius, float64(vs.CornerRadius))
 	}
 	if was == nil || vs.BorderWidth != was.BorderWidth {
-		layer.Send(selSetBorderWidth, float64(vs.BorderWidth))
+		MsgFloat64(layer, selSetBorderWidth, float64(vs.BorderWidth))
 	}
 	if was == nil || vs.BorderColor != was.BorderColor {
 		color(selSetBorderColor, vs.BorderColor)
 	}
 	if was == nil || vs.Opacity != was.Opacity {
-		layer.Send(selSetOpacity, vs.Opacity)
+		MsgFloat32(layer, selSetOpacity, vs.Opacity)
 	}
 	if was == nil || vs.Clip != was.Clip {
 		var clip uintptr
@@ -113,12 +116,12 @@ func StyleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bou
 		}
 	case was != nil && layerShadow(was) == sh:
 	case sh.Color == 0:
-		layer.Send(selSetShadowOpacity, float32(0))
+		MsgFloat32(layer, selSetShadowOpacity, 0)
 	default:
 		color(selSetShadowColor, sh.Color)
-		layer.Send(selSetShadowOffset, CGSize{Width: float64(sh.Offset.X), Height: float64(sh.Offset.Y)})
-		layer.Send(selSetShadowRadius, float64(sh.Blur)/2)
-		layer.Send(selSetShadowOpacity, float32(1))
+		MsgSize(layer, selSetShadowOffset, CGSize{Width: float64(sh.Offset.X), Height: float64(sh.Offset.Y)})
+		MsgFloat64(layer, selSetShadowRadius, float64(sh.Blur)/2)
+		MsgFloat32(layer, selSetShadowOpacity, 1)
 	}
 	setBorders(layer, vs, &tr, bound)
 	applyDecor(layer, vs, bound)
@@ -208,7 +211,7 @@ func RestyleLayer(layer objc.ID, shown, vs *driver.ViewStyle, view objc.ID, boun
 		return
 	}
 	if vs.Opacity != shown.Opacity {
-		layer.Send(selSetOpacity, vs.Opacity)
+		MsgFloat32(layer, selSetOpacity, vs.Opacity)
 	}
 	if vs.Transform != shown.Transform {
 		SetTransform(layer, vs.Transform)
@@ -400,6 +403,24 @@ type setTransformImp struct {
 	fn  func(objc.ID, objc.SEL, transform3D)
 }
 
+// MsgFloat64 sends a message taking a float64 argument without per-call reflection.
+func MsgFloat64(id objc.ID, s objc.SEL, v float64) {
+	bindTransforms()
+	msgSendSetFloat64(id, s, v)
+}
+
+// MsgFloat32 sends a message taking a float32 argument without per-call reflection.
+func MsgFloat32(id objc.ID, s objc.SEL, v float32) {
+	bindTransforms()
+	msgSendSetFloat32(id, s, v)
+}
+
+// MsgSize sends a message taking a CGSize argument without per-call reflection.
+func MsgSize(id objc.ID, s objc.SEL, v CGSize) {
+	bindTransforms()
+	msgSendSetCGSize(id, s, v)
+}
+
 func bindTransforms() {
 	if layerBounds != nil {
 		return
@@ -415,6 +436,9 @@ func bindTransforms() {
 	purego.RegisterLibFunc(&layerBounds, lib, rect)
 	purego.RegisterLibFunc(&layerAnchor, lib, "objc_msgSend")
 	purego.RegisterLibFunc(&classGetMethodImplementation, lib, "class_getMethodImplementation")
+	purego.RegisterLibFunc(&msgSendSetFloat64, lib, "objc_msgSend")
+	purego.RegisterLibFunc(&msgSendSetFloat32, lib, "objc_msgSend")
+	purego.RegisterLibFunc(&msgSendSetCGSize, lib, "objc_msgSend")
 }
 
 // setLayerTransform sets layer's transform to m. On a layer of an NSGo

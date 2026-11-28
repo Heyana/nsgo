@@ -251,27 +251,57 @@ func headerHeights() [2]driver.Points {
 	return [2]driver.Points{driver.Points(h), driver.Points(h + 52)}
 }
 
+func (s *surface) newNavBar() *navBar {
+	b := &navBar{}
+	b.bar = objc.ID(apple.Msg(objc.ID(apple.Class("UINavigationBar")), selNew))
+	apple.Msg(b.bar, selSetDeleg, uintptr(navDelegate))
+	s.directTree(b.bar)
+	const flexibleWidth = 2
+	apple.Msg(b.bar, sel("setAutoresizingMask:"), flexibleWidth)
+	if apple.MsgBool(b.bar, sel("respondsToSelector:"), uintptr(sel("setPreferredBehavioralStyle:"))) {
+		const pad = 2
+		apple.Msg(b.bar, sel("setPreferredBehavioralStyle:"), pad)
+	}
+	// Outside a navigation controller the bar has no margins of its own.
+	b.bar.Send(sel("setLayoutMargins:"), edgeInsets{Left: 16, Right: 16})
+	b.item = objc.ID(apple.Msg(objc.ID(apple.Class("UINavigationItem")), selNew))
+	b.back = objc.ID(apple.Msg(objc.ID(apple.Class("UINavigationItem")), selNew))
+	return b
+}
+
+// scheduleWarmNavBar prepares one clean spare UINavigationBar during idle main-thread
+// time so the next route push does not pay UIKit's bar allocation cost in the push frame.
+func (s *surface) scheduleWarmNavBar() {
+	if s.spareBar != nil || s.warmBarPending || s.closed {
+		return
+	}
+	s.warmBarPending = true
+	apple.OnMain(func() {
+		s.warmBarPending = false
+		if s.closed || s.spareBar != nil {
+			return
+		}
+		s.spareBar = s.newNavBar()
+	})
+}
+
 // configureScreen applies screen v's header.
 func (s *surface) configureScreen(v *view, c *driver.ScreenConfig) {
 	b := v.bar
 	if b == nil {
-		b = &navBar{}
-		b.bar = objc.ID(apple.Class("UINavigationBar")).Send(selNew)
-		b.bar.Send(selSetDeleg, navDelegate)
-		s.directTree(b.bar)
-		const flexibleWidth = 2
-		b.bar.Send(sel("setAutoresizingMask:"), flexibleWidth)
-		if objc.Send[bool](b.bar, sel("respondsToSelector:"), sel("setPreferredBehavioralStyle:")) {
-			const pad = 2
-			b.bar.Send(sel("setPreferredBehavioralStyle:"), pad)
+		if s.spareBar != nil {
+			b = s.spareBar
+			s.spareBar = nil
+		} else {
+			b = s.newNavBar()
 		}
-		// Outside a navigation controller the bar has no margins of its own.
-		b.bar.Send(sel("setLayoutMargins:"), edgeInsets{Left: 16, Right: 16})
-		b.item = objc.ID(apple.Class("UINavigationItem")).Send(selNew)
-		b.back = objc.ID(apple.Class("UINavigationItem")).Send(selNew)
 		apple.Msg(v.native, selAddSubview, uintptr(b.bar))
 		bars[b.bar] = v
 		v.bar = b
+		if !c.CanGoBack {
+			// Root screen mounted: pre-warm one spare bar for the first push.
+			s.scheduleWarmNavBar()
+		}
 		// Core already lays out a new screen using s.headers[0]/[1]; only
 		// dispatch EventScreenHeader if UIKit's measured bar height differs.
 		if c.LargeTitle {
@@ -1150,8 +1180,10 @@ func (s *surface) endSlide(sl *slide) {
 				v.native.Send(selSetHidden, v.style.Hidden)
 			}
 		}
+		s.scheduleWarmNavBar()
 		return
 	}
+	s.scheduleWarmNavBar()
 	for _, v := range []*view{sl.top, sl.below} {
 		if s.views[v.id] == v {
 			v.native.Send(sel("setTransform:"), identity)

@@ -120,9 +120,11 @@ type view struct {
 
 	// props are the view's last props; the rest what access.go last
 	// gave UIKit.
-	props               driver.ViewProps
-	propsSet, textSet   bool
-	axElement, axCustom bool
+	props                                  driver.ViewProps
+	propsSet, textSet                      bool
+	axElement, axCustom, axModal, axHidden bool
+	axContainer                            uint8
+	axHint, axValue                        string
 
 	// frame is where the view shows now; style its own style, which its
 	// animated values and a layout animation draw over.
@@ -254,9 +256,12 @@ type surface struct {
 	// tops is the screen each stack shows, as the core last said, slides
 	// the stacks whose screens move, and changes the stacks a batch
 	// changes the screens of (nav.go).
-	tops    map[*view]*view
-	slides  map[*view]*slide
-	changes []stackChange
+	tops             map[*view]*view
+	slides           map[*view]*slide
+	changes          []stackChange
+	spareBar         *navBar
+	warmBarPending   bool
+	contentLayerPool []objc.ID
 	// history is how many entries back goes through (ItemHistory).
 	history int
 	// modals are those shown, oldest first; topmostCaptures are input-capturing Topmost overlays shown, oldest first; focusScope is the active capture overlay or modal (on an Apple TV); focused is the explicitly focused view, or tvOS focus engine's, and focusBack the one to give it back to as a scope goes.
@@ -1933,7 +1938,7 @@ func (s *surface) delete(v *view, kept bool) {
 	}
 	apple.ForgetTransform(v.native.Send(selLayer))
 	apple.ForgetDecor(v.native.Send(selLayer))
-	v.forgetContent()
+	v.forgetContent(!kept && !s.inGhost(v.native) && !s.inGone(v.native))
 	forgetGate(v.pan)
 	v.layout.Release()
 	if v.image != nil {
