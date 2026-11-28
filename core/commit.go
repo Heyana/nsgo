@@ -1196,7 +1196,7 @@ func (n *node) viewStyle() driver.ViewStyle {
 			}
 		}
 	}
-	vs.Hidden = vs.Hidden || n.style.Display == DisplayNone || (n.hoist != nil && n.hidden) || (n.attach != nil && n.attach.cut)
+	vs.Hidden = vs.Hidden || n.style.Display == DisplayNone || (n.screen != nil && n.screen.hidden) || (n.hoist != nil && n.hidden) || (n.attach != nil && n.attach.cut)
 	// Effects that draw as before keep the pointer that was sent, so the
 	// comparison finds nothing to send.
 	if vs.Effects != nil && vs.Effects.Equal(n.sent.viewStyle.Effects) {

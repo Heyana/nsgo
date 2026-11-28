@@ -5,8 +5,10 @@ package ios
 import (
 	"log"
 	"math"
+	"sync"
 	"time"
 
+	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -17,7 +19,24 @@ import (
 // graph and the layout animations once a display frame while either
 // runs.
 
-var selTick = sel("nsgoTick:")
+var (
+	selTick         = sel("nsgoTick:")
+	setFrameOnce    sync.Once
+	msgSendSetFrame func(objc.ID, objc.SEL, apple.CGRect)
+)
+
+func sendSetFrame(view objc.ID, r apple.CGRect) {
+	setFrameOnce.Do(func() {
+		if lib, err := purego.Dlopen("/usr/lib/libobjc.A.dylib", purego.RTLD_NOW); err == nil {
+			purego.RegisterLibFunc(&msgSendSetFrame, lib, "objc_msgSend")
+		}
+	})
+	if msgSendSetFrame != nil {
+		msgSendSetFrame(view, selSetFrame, r)
+		return
+	}
+	view.Send(selSetFrame, r)
+}
 
 func (s *surface) clock() time.Duration {
 	if s.epoch.IsZero() {
@@ -317,7 +336,7 @@ func (v *view) styleLayer(vs *driver.ViewStyle, bound uint16) {
 	if v.styled || v.born != v.surface.batch {
 		shown = &v.drawn
 	}
-	layer := v.native.Send(selLayer)
+	layer := objc.ID(apple.Msg(v.native, selLayer))
 	if added := bound &^ v.bound; added != 0 {
 		apple.ClearBoundAnimations(layer, added)
 	}
@@ -362,7 +381,7 @@ func (v *view) place(f driver.Bounds) {
 	v.frame, v.framed = f, true
 	transformed := v.styled && v.drawn.Transform != (driver.Transform{})
 	if !transformed && v.bar == nil && v.kind != driver.KindScroll {
-		v.native.Send(selSetFrame, apple.Rect(float64(f.Origin.X+v.shift.X), float64(f.Origin.Y+v.shift.Y),
+		sendSetFrame(v.native, apple.Rect(float64(f.Origin.X+v.shift.X), float64(f.Origin.Y+v.shift.Y),
 			float64(f.Size.Width), float64(f.Size.Height)))
 	} else {
 		b := objc.Send[apple.CGRect](v.native, selBounds)
@@ -375,7 +394,7 @@ func (v *view) place(f driver.Bounds) {
 		// Its origin is a point of the old size.
 		apple.SetTransform(v.native.Send(selLayer), v.drawn.Transform)
 	}
-	apple.LayoutDecor(v.native.Send(selLayer))
+	apple.LayoutDecor(objc.ID(apple.Msg(v.native, selLayer)))
 	if resized && v.container != 0 {
 		// As last drawn, animated corners and all: only the view's own layer leaves the clip out. The perspective's centre follows the size too.
 		held := v.drawn
@@ -386,7 +405,7 @@ func (v *view) place(f driver.Bounds) {
 		v.fitBackdrop(&v.style, float64(f.Size.Width), float64(f.Size.Height))
 	}
 	if v.componentView != 0 {
-		v.componentView.Send(selSetFrame, apple.Rect(0, 0, float64(f.Size.Width), float64(f.Size.Height)))
+		sendSetFrame(v.componentView, apple.Rect(0, 0, float64(f.Size.Width), float64(f.Size.Height)))
 	}
 	v.sizeContent()
 	if resized && v.sc != nil {

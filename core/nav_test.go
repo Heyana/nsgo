@@ -374,8 +374,8 @@ func TestBackPreviewNamesTheScreenBackPops(t *testing.T) {
 	}
 	h.tree.Dispatch(driver.Event{Kind: driver.EventBackCancelled})
 	h.commit()
-	if f := h.find("home").frame; f.Size.Width != 0 {
-		t.Errorf("home's frame = %v after the gesture was cancelled", f)
+	if !h.find("home").screen.hidden {
+		t.Errorf("home is still shown after the gesture was cancelled")
 	}
 	open.Set(true)
 	if got := preview(); got != 0 {

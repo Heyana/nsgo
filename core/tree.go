@@ -1412,12 +1412,12 @@ func (t *Tree) restyle(n *node) bool {
 		}
 	}
 	if n.screen != nil && n.screen.hidden {
-		n.style.Display = DisplayNone
+		n.style.Visibility = VisibilityHidden
 	}
 	if len(t.suspended) > 0 && t.suspendedIn(n) {
 		n.style.Display = DisplayNone
 	}
-	if n.style.Display != display && len(t.keys) > 0 {
+	if (n.style.Display != display || n.style.Visibility != visibility && n.screen != nil) && len(t.keys) > 0 {
 		// The bindings of what it hides leave the keymap, and come back as it shows (keyActive).
 		t.keysChanged = true
 	}

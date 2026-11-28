@@ -1503,9 +1503,9 @@ func (s *surface) apply(b *driver.MountBatch) {
 			}
 			parent := s.views[it.Parent].children()
 			if it.Before == 0 {
-				parent.Send(selAddSubview, v.native)
+				apple.Msg(parent, selAddSubview, uintptr(v.native))
 			} else {
-				parent.Send(selInsertBelow, v.native, s.views[it.Before].native)
+				apple.Msg(parent, selInsertBelow, uintptr(v.native), uintptr(s.views[it.Before].native))
 			}
 			if v.kind == driver.KindModal && !v.presented {
 				v.presented = true
@@ -1547,7 +1547,11 @@ func (s *surface) apply(b *driver.MountBatch) {
 				// A rounded text's layer takes its exact frame (sizeContent).
 				v.sizeContent()
 			}
-			v.native.Send(selSetHidden, it.ViewStyle.Hidden)
+			var hidden uintptr
+			if it.ViewStyle.Hidden {
+				hidden = 1
+			}
+			apple.Msg(v.native, selSetHidden, hidden)
 			if (v.kind == driver.KindScroll || v.kind == driver.KindVideo) && !v.clipsInHolder(it.ViewStyle) {
 				// A scroll view shows only what it scrolls to, and a video only its frame, unless a holder clips them for their decoration.
 				v.native.Send(sel("setClipsToBounds:"), true)
@@ -1819,16 +1823,16 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 	case driver.KindInput:
 		v.newInput()
 	case driver.KindText:
-		v.native = objc.ID(classText).Send(selNew)
+		v.native = objc.ID(apple.Msg(objc.ID(classText), selNew))
 	default:
-		v.native = objc.ID(classView).Send(selNew)
+		v.native = objc.ID(apple.Msg(objc.ID(classView), selNew))
 	}
-	v.native.Send(selSetOpaque, false)
+	apple.Msg(v.native, selSetOpaque, 0)
 	switch kind {
 	case driver.KindText, driver.KindCanvas:
 		v.newContent()
 	case driver.KindImage:
-		v.image = apple.NewImageView(v.native.Send(selLayer))
+		v.image = apple.NewImageView(objc.ID(apple.Msg(v.native, selLayer)))
 		v.image.Dispatch = v.report
 		v.image.Changed = s.dirtyPictureInPictures
 	case driver.KindWeb:
@@ -1844,7 +1848,13 @@ func (s *surface) create(kind driver.ViewKind, id driver.NodeID) *view {
 			sh.newView(v)
 		}
 	}
-	s.directTree(v.native)
+	if s.directed && (s.embedded || s.rtl || kind == driver.KindInput) {
+		if kind == driver.KindInput {
+			s.directTree(v.native)
+		} else {
+			s.direct(v.native)
+		}
+	}
 	if kind == driver.KindText {
 		v.updateAccessibility() // a text is an element without props
 	}
@@ -1894,6 +1904,9 @@ func (s *surface) delete(v *view, kept bool) {
 		b.back.Send(selRelease)
 		if b.system != 0 {
 			b.system.Send(selRelease)
+		}
+		if b.symbols != 0 {
+			b.symbols.Send(selRelease)
 		}
 	}
 	if v.headerWrap != 0 {
@@ -2597,7 +2610,7 @@ func scrolled(self objc.ID, _ objc.SEL, _ objc.ID) {
 	if v == nil {
 		return
 	}
-	apple.FollowBounds(self.Send(selLayer))
+	apple.FollowBounds(objc.ID(apple.Msg(self, selLayer)))
 	if v.container != 0 {
 		clip := v.drawn
 		clip.Clip = v.clipHeld

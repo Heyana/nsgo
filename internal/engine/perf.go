@@ -502,8 +502,8 @@ func milliseconds(d time.Duration) float64 {
 // String is the snapshot as one line, as nsgo test -fps logs it.
 func (s PerfSnapshot) String() string {
 	ms := func(d time.Duration) string { return fmt.Sprintf("%.2fms", float64(d.Microseconds())/1000) }
-	line := fmt.Sprintf("fps %.0f (max %.0f) frame %s p95 %s dropped %.0f%% commits %.0f/s app %s core %s items %.0f latency %s engine %.0f%% passes %.0f/s",
-		s.FPS, s.MaxFPS, ms(s.Frame.Mean), ms(s.Frame.P95), s.Dropped*100, s.Commits, ms(s.App.Mean), ms(s.Core.Mean),
+	line := fmt.Sprintf("fps %.0f (max %.0f) frame %s p95 %s max %s dropped %.0f%% commits %.0f/s app %s core %s items %.0f latency %s engine %.0f%% passes %.0f/s",
+		s.FPS, s.MaxFPS, ms(s.Frame.Mean), ms(s.Frame.P95), ms(s.Frame.Max), s.Dropped*100, s.Commits, ms(s.App.Mean), ms(s.Core.Mean),
 		s.Items, ms(s.Latency.Mean), s.EngineBusy, s.Passes)
 	if s.TextRoundTrip != nil {
 		line += fmt.Sprintf(" text round trip %s p95 %s", ms(s.TextRoundTrip.Mean), ms(s.TextRoundTrip.P95))
