@@ -5,8 +5,10 @@ package ios
 import (
 	"log"
 	"math"
+	"sync"
 	"time"
 
+	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/nsgo-dev/nsgo/internal/driver"
@@ -18,9 +20,24 @@ import (
 // runs.
 
 var (
-	selTick     = sel("nsgoTick:")
-	selDuration = sel("duration")
+	selTick         = sel("nsgoTick:")
+	selDuration     = sel("duration")
+	setFrameOnce    sync.Once
+	msgSendSetFrame func(objc.ID, objc.SEL, apple.CGRect)
 )
+
+func sendSetFrame(view objc.ID, r apple.CGRect) {
+	setFrameOnce.Do(func() {
+		if lib, err := purego.Dlopen("/usr/lib/libobjc.A.dylib", purego.RTLD_NOW); err == nil {
+			purego.RegisterLibFunc(&msgSendSetFrame, lib, "objc_msgSend")
+		}
+	})
+	if msgSendSetFrame != nil {
+		msgSendSetFrame(view, selSetFrame, r)
+		return
+	}
+	view.Send(selSetFrame, r)
+}
 
 func (s *surface) clock() time.Duration {
 	if s.epoch.IsZero() {
@@ -374,7 +391,7 @@ func (v *view) place(f driver.Bounds) {
 	}
 	transformed := v.styled && v.drawn.Transform != (driver.Transform{})
 	if !transformed && v.bar == nil && v.kind != driver.KindScroll {
-		v.native.Send(selSetFrame, apple.Rect(float64(f.Origin.X+v.shift.X), float64(f.Origin.Y+v.shift.Y),
+		sendSetFrame(v.native, apple.Rect(float64(f.Origin.X+v.shift.X), float64(f.Origin.Y+v.shift.Y),
 			float64(f.Size.Width), float64(f.Size.Height)))
 	} else {
 		b := objc.Send[apple.CGRect](v.native, selBounds)
@@ -402,7 +419,7 @@ func (v *view) place(f driver.Bounds) {
 		v.fitBackdrop(&v.style, float64(f.Size.Width), float64(f.Size.Height))
 	}
 	if v.componentView != 0 {
-		v.componentView.Send(selSetFrame, apple.Rect(0, 0, float64(f.Size.Width), float64(f.Size.Height)))
+		sendSetFrame(v.componentView, apple.Rect(0, 0, float64(f.Size.Width), float64(f.Size.Height)))
 	}
 	v.sizeContent()
 	if resized && v.sc != nil {

@@ -32,6 +32,8 @@ type navBar struct {
 	edge            objc.ID // the swipe back's UIScreenEdgePanGestureRecognizer
 	slide           *slide  // the swipe back's, while it lasts
 	itemsSet        bool
+	styled          bool
+	styledCollapsed bool
 	// collapsed: the large title went into the bar as the content
 	// scrolled under it.
 	collapsed bool
@@ -80,6 +82,7 @@ type titleWrapState struct {
 var (
 	classNavDelegate, classSheet, classTitleView objc.Class
 	navDelegate                                  objc.ID // one delegate for every bar
+	defaultBarAppearance                         objc.ID // shared default UINavigationBarAppearance
 	bars                                         = map[objc.ID]*view{}
 	sheets                                       = map[objc.ID]*view{}
 	titleWraps                                   = map[objc.ID]*titleWrapState{}
@@ -266,9 +269,16 @@ func (s *surface) configureScreen(v *view, c *driver.ScreenConfig) {
 		b.bar.Send(sel("setLayoutMargins:"), edgeInsets{Left: 16, Right: 16})
 		b.item = objc.ID(apple.Class("UINavigationItem")).Send(selNew)
 		b.back = objc.ID(apple.Class("UINavigationItem")).Send(selNew)
-		v.native.Send(selAddSubview, b.bar)
+		apple.Msg(v.native, selAddSubview, uintptr(b.bar))
 		bars[b.bar] = v
 		v.bar = b
+		// Core already lays out a new screen using s.headers[0]/[1]; only
+		// dispatch EventScreenHeader if UIKit's measured bar height differs.
+		if c.LargeTitle {
+			b.reported = s.headers[1]
+		} else {
+			b.reported = s.headers[0]
+		}
 	}
 	old := b.config
 	b.config = *c
@@ -309,18 +319,32 @@ func (s *surface) configureScreen(v *view, c *driver.ScreenConfig) {
 		}
 		b.bar.Send(sel("setItems:animated:"), array, false)
 		array.Send(selRelease)
+		s.directTree(b.bar)
 	}
-	s.directTree(b.bar)
-	s.styleBar(b, c)
+	if !b.styled || b.styledCollapsed != b.collapsed || barStyleChanged(old, *c) {
+		s.styleBar(b, c)
+	}
 	s.layoutBar(v)
 	v.native.Send(sel("bringSubviewToFront:"), b.bar)
 	s.setSwipeBack(v)
+}
+
+func barStyleChanged(a, b driver.ScreenConfig) bool {
+	return a.TintColor != b.TintColor ||
+		a.HeaderTransparent != b.HeaderTransparent ||
+		a.LargeTitle != b.LargeTitle ||
+		a.Background != b.Background ||
+		a.TitleColor != b.TitleColor ||
+		a.TitleFont != b.TitleFont ||
+		a.LargeTitleFont != b.LargeTitleFont
 }
 
 // styleBar sets the bar's appearance from the header's colors, UIKit's
 // own where they are unset, as NSH's header_appearance. A large title has
 // no background until it collapses, as under a navigation controller.
 func (s *surface) styleBar(b *navBar, c *driver.ScreenConfig) {
+	b.styled = true
+	b.styledCollapsed = b.collapsed
 	tint := objc.ID(0)
 	if c.TintColor != 0 {
 		tint = uiColor(c.TintColor)
@@ -330,6 +354,18 @@ func (s *surface) styleBar(b *navBar, c *driver.ScreenConfig) {
 		// tvOS refuses UINavigationBarAppearance but takes the title's attributes on the bar. Without them the title is in the system appearance's color, which need not show on the app's own background; without a TitleColor it goes back to that default.
 		attrs := headerTitleAttributes(c.TitleColor, c.TitleFont, false)
 		b.bar.Send(sel("setTitleTextAttributes:"), attrs)
+		return
+	}
+	if !c.HeaderTransparent && !(c.LargeTitle && !b.collapsed) && c.Background == 0 && c.TitleColor == 0 && c.TitleFont == (driver.Font{}) && c.LargeTitleFont == (driver.Font{}) && c.TintColor == 0 {
+		if defaultBarAppearance == 0 {
+			const systemChromeMaterial = 10
+			defaultBarAppearance = objc.ID(apple.Class("UINavigationBarAppearance")).Send(selNew)
+			defaultBarAppearance.Send(sel("configureWithDefaultBackground"))
+			defaultBarAppearance.Send(sel("setBackgroundEffect:"), objc.ID(apple.Class("UIBlurEffect")).Send(sel("effectWithStyle:"), systemChromeMaterial))
+		}
+		b.bar.Send(sel("setStandardAppearance:"), defaultBarAppearance)
+		b.bar.Send(sel("setScrollEdgeAppearance:"), defaultBarAppearance)
+		b.bar.Send(sel("setCompactAppearance:"), defaultBarAppearance)
 		return
 	}
 	a := objc.ID(apple.Class("UINavigationBarAppearance")).Send(selNew)
@@ -385,7 +421,8 @@ func (s *surface) showLargeTitle(b *navBar) {
 func (s *surface) layoutBar(v *view) {
 	b := v.bar
 	w := objc.Send[apple.CGRect](v.native, selBounds).Size.Width
-	if w != b.barWidth {
+	widthChanged := w != b.barWidth
+	if widthChanged {
 		b.barWidth = w
 		if tw := titleWraps[b.titleWrap]; tw != nil {
 			if tw.fills {
@@ -395,7 +432,7 @@ func (s *surface) layoutBar(v *view) {
 			}
 		}
 	}
-	if !b.config.LargeTitle {
+	if !b.config.LargeTitle && (b.fit == 0 || widthChanged) {
 		if fit := objc.Send[apple.CGSize](b.bar, sel("sizeThatFits:"), apple.CGSize{Width: w}); fit.Height > 0 {
 			b.fit = driver.Points(fit.Height)
 		}
@@ -1050,15 +1087,16 @@ func (s *surface) animateSlide(sl *slide, from, to, seconds float64) {
 	tx.Send(sel("begin"))
 	done := objcblock.New(func(objc.Block) { s.endSlide(sl) })
 	tx.Send(sel("setCompletionBlock:"), done)
+	maxFPS := s.screenRate()
 	if sl.fade {
 		// Off is transparent: the top screen fades in over the one below,
 		// or out of it.
-		slideLayer(top, "opacity", 1-from, 1-to, seconds, false)
+		slideLayer(top, "opacity", 1-from, 1-to, seconds, false, maxFPS)
 	} else {
 		sl.dim.Send(sel("setAlpha:"), (1-to)*dimmed)
-		slideLayer(top, "transform.translation.x", from*w, to*w, seconds, true)
-		slideLayer(below, "transform.translation.x", -(1-from)*w*parallax, -(1-to)*w*parallax, seconds, true)
-		slideLayer(sl.dim, "opacity", (1-from)*dimmed, (1-to)*dimmed, seconds, false)
+		slideLayer(top, "transform.translation.x", from*w, to*w, seconds, true, maxFPS)
+		slideLayer(below, "transform.translation.x", -(1-from)*w*parallax, -(1-to)*w*parallax, seconds, true, maxFPS)
+		slideLayer(sl.dim, "opacity", (1-from)*dimmed, (1-to)*dimmed, seconds, false, maxFPS)
 	}
 	tx.Send(sel("commit"))
 	done.Release()
@@ -1066,7 +1104,7 @@ func (s *surface) animateSlide(sl *slide, from, to, seconds float64) {
 
 // slideLayer animates key of view's layer from from to to, over its
 // value when additive, and holds the end until the slide ends.
-func slideLayer(view objc.ID, key string, from, to, seconds float64, additive bool) {
+func slideLayer(view objc.ID, key string, from, to, seconds float64, additive bool, maxFPS int) {
 	if view == 0 {
 		return
 	}
@@ -1081,6 +1119,7 @@ func slideLayer(view objc.ID, key string, from, to, seconds float64, additive bo
 		sel("functionWithControlPoints::::"), c.X1, c.Y1, c.X2, c.Y2))
 	anim.Send(sel("setFillMode:"), apple.NSString("forwards"))
 	anim.Send(sel("setRemovedOnCompletion:"), false)
+	apple.SetAnimationFrameRate(anim, maxFPS)
 	view.Send(selLayer).Send(sel("addAnimation:forKey:"), anim, apple.NSString(slideKey))
 }
 

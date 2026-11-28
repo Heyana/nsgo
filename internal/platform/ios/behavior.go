@@ -122,10 +122,15 @@ func behaviorMethods() []objc.MethodDef {
 func newScroll(v *view) {
 	v.native.Send(selSetDeleg, v.native)
 	v.native.Send(sel("setContentInsetAdjustmentBehavior:"), 2) // never
+	// Deliver taps to buttons and rows inside scroll views immediately instead
+	// of waiting ~150ms for UIScrollView's default touch delay; canCancelContentTouches
+	// remains true so drags still begin scrolling without delay.
+	v.native.Send(sel("setDelaysContentTouches:"), false)
 	v.sc = &scrollState{}
 	tap := objc.ID(apple.Class("UITapGestureRecognizer")).Send(selAlloc).
 		Send(sel("initWithTarget:action:"), v.native, selDismissKeyboard)
 	tap.Send(sel("setCancelsTouchesInView:"), false)
+	tap.Send(sel("setDelaysTouchesEnded:"), false)
 	tap.Send(selSetDeleg, v.native)
 	v.native.Send(sel("addGestureRecognizer:"), tap)
 	tap.Send(selRelease)

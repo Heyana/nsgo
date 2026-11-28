@@ -588,7 +588,7 @@ func (t *Tree) keyPlaces() *keyPlaces {
 	p.modal = len(hosts) > 1
 	var walk func(n *node, above bool)
 	walk = func(n *node, above bool) {
-		if n.deleted || n.style.Display == DisplayNone || n.hoist != nil && n.hoist.dismissed {
+		if n.deleted || n.style.Display == DisplayNone || (n.screen != nil && n.screen.hidden) || n.hoist != nil && n.hoist.dismissed {
 			return
 		}
 		if n == top || n.hoist != nil && n.hoist.topmost() && slices.Contains(hosts, n.hoist.host) {

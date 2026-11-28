@@ -1538,7 +1538,7 @@ func (t *Tree) restyle(n *node) bool {
 	}
 	n.applyEnvStyle(&t.sscratch)
 	if n.screen != nil && n.screen.hidden {
-		t.sscratch.Display = DisplayNone
+		t.sscratch.Visibility = VisibilityHidden
 	}
 	if len(t.suspended) > 0 && t.suspendedIn(n) {
 		t.sscratch.Display = DisplayNone
@@ -1577,7 +1577,7 @@ func (t *Tree) finishRestyle(n *node, z int, sticky bool, lines int, overflow El
 			t.reorder(parent)
 		}
 	}
-	if n.style.Display != display && len(t.keys) > 0 {
+	if (n.style.Display != display || n.style.Visibility != visibility && n.screen != nil) && len(t.keys) > 0 {
 		// The bindings of what it hides leave the keymap, and come back as it shows (keyActive).
 		t.keysChanged = true
 	}

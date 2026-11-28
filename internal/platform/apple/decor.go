@@ -223,11 +223,15 @@ func LayoutDecor(layer objc.ID) {
 // FollowBounds keeps a layer's decoration on its box after its bounds
 // origin moved, as a scroll view's does when it scrolls.
 func FollowBounds(layer objc.ID) {
+	d, r := decors[layer], rings[layer]
+	if d == nil && r == nil {
+		return
+	}
 	b := objc.Send[CGRect](layer, selBounds)
-	if d := decors[layer]; d != nil && d.at != b.Origin {
+	if d != nil && d.at != b.Origin {
 		WithoutAnimation(func() { d.follow(b.Origin) })
 	}
-	if r := rings[layer]; r != nil {
+	if r != nil {
 		WithoutAnimation(func() {
 			for _, side := range r.sides {
 				if side != 0 {

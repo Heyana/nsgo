@@ -52,8 +52,7 @@ func (s *surface) semantic() int {
 // direct gives a view the app's direction, once the app has one.
 func (s *surface) direct(v objc.ID) {
 	if s.directed && v != 0 {
-		v.Send(selSetSemantic, s.semantic())
-		v.Send(selSetNeedsLayout)
+		apple.Msg(v, selSetSemantic, uintptr(s.semantic()))
 	}
 }
 
@@ -62,11 +61,11 @@ func (s *surface) directTree(v objc.ID) {
 	if !s.directed || v == 0 {
 		return
 	}
-	v.Send(selSetSemantic, s.semantic())
-	v.Send(selSetNeedsLayout)
-	subs := v.Send(sel("subviews"))
-	n := objc.Send[uint](subs, sel("count"))
-	for i := uint(0); i < n; i++ {
-		s.directTree(subs.Send(sel("objectAtIndex:"), i))
+	apple.Msg(v, selSetSemantic, uintptr(s.semantic()))
+	apple.Msg(v, selSetNeedsLayout)
+	subs := objc.ID(apple.Msg(v, sel("subviews")))
+	n := apple.Msg(subs, sel("count"))
+	for i := uintptr(0); i < n; i++ {
+		s.directTree(objc.ID(apple.Msg(subs, sel("objectAtIndex:"), i)))
 	}
 }

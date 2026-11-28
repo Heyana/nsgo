@@ -919,6 +919,7 @@ func AnimateIn(layer objc.ID, a driver.ModalAnimation, distance float64, reduceM
 		}
 		return
 	}
+	SetAnimationFrameRate(anim, 0)
 	if done != nil {
 		tx := objc.ID(Class("CATransaction"))
 		tx.Send(sel("begin"))

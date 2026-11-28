@@ -36,7 +36,8 @@ var (
 	caCurrentMediaTime func() float64
 	// msgSendFloat64 is objc_msgSend for a message that takes nothing and returns a double, registered once for per-frame reads.
 	msgSendFloat64     func(objc.ID, objc.SEL) float64
-	selTargetTimestamp = sel("targetTimestamp")
+	selTargetTimestamp            = sel("targetTimestamp")
+	selSetPreferredFrameRateRange = sel("setPreferredFrameRateRange:")
 )
 
 // StyleLayer draws vs with a view's CALayer. An NSView whose layer it
@@ -79,25 +80,42 @@ func styleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bou
 	}
 	color := func(sel objc.SEL, c driver.Color) {
 		if c == 0 {
-			layer.Send(sel, uintptr(0))
+			Msg(layer, sel, 0)
 			return
 		}
 		ref := CGColor(c)
-		layer.Send(sel, ref)
+		Msg(layer, sel, ref)
 		Release(ref)
 	}
-	color(selSetBackgroundColor, vs.Background)
-	layer.Send(selSetCornerRadius, float64(vs.CornerRadius))
-	layer.Send(selSetBorderWidth, float64(vs.BorderWidth))
-	color(selSetBorderColor, vs.BorderColor)
-	layer.Send(selSetOpacity, vs.Opacity)
-	layer.Send(selSetMasksToBounds, vs.Clip)
+	if was == nil || vs.Background != was.Background {
+		color(selSetBackgroundColor, vs.Background)
+	}
+	if was == nil || vs.CornerRadius != was.CornerRadius {
+		layer.Send(selSetCornerRadius, float64(vs.CornerRadius))
+	}
+	if was == nil || vs.BorderWidth != was.BorderWidth {
+		layer.Send(selSetBorderWidth, float64(vs.BorderWidth))
+	}
+	if was == nil || vs.BorderColor != was.BorderColor {
+		color(selSetBorderColor, vs.BorderColor)
+	}
+	if was == nil || vs.Opacity != was.Opacity {
+		layer.Send(selSetOpacity, vs.Opacity)
+	}
+	if was == nil || vs.Clip != was.Clip {
+		var clip uintptr
+		if vs.Clip {
+			clip = 1
+		}
+		Msg(layer, selSetMasksToBounds, clip)
+	}
 	sh := layerShadow(vs)
 	switch {
 	case view != 0:
 		if was == nil || layerShadow(was) != sh {
 			setViewShadow(view, sh)
 		}
+	case was != nil && layerShadow(was) == sh:
 	case sh.Color == 0:
 		layer.Send(selSetShadowOpacity, float32(0))
 	default:
@@ -108,7 +126,9 @@ func styleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bou
 	}
 	setBorders(layer, vs, &tr, bound)
 	applyDecor(layer, vs, bound)
-	SetTransformGeometry(layer, vs.Transform, geom)
+	if _, isHeld := held[layer]; isHeld || vs.Transform != (driver.Transform{}) {
+		SetTransformGeometry(layer, vs.Transform, geom)
+	}
 	for i, k := range keys {
 		to := layer.Send(selValueForKey, NSString(k))
 		if from[i] == to || (from[i] != 0 && objc.Send[bool](from[i], sel("isEqual:"), to)) {
@@ -129,6 +149,7 @@ func styleLayerBound(layer objc.ID, was, vs *driver.ViewStyle, view objc.ID, bou
 		}
 		anim.Send(sel("setDuration:"), tr.Duration.Seconds())
 		anim.Send(sel("setTimingFunction:"), timing(tr.Easing))
+		SetAnimationFrameRate(anim, 0)
 		if tr.Delay > 0 {
 			anim.Send(sel("setBeginTime:"), caCurrentMediaTime()+tr.Delay.Seconds())
 			anim.Send(sel("setFillMode:"), NSString("backwards"))
@@ -740,6 +761,25 @@ func (r CAFrameRateRange) Clamped(screen float32) CAFrameRateRange {
 // registration.
 func MsgFloat64(id objc.ID, sel objc.SEL) float64 {
 	return msgSendFloat64(id, sel)
+}
+
+// SetAnimationFrameRate hints Core Animation to drive anim at the display's
+// high refresh rate (e.g. 80-120 Hz on ProMotion displays) instead of falling
+// back to 60 Hz or lower during deceleration.
+func SetAnimationFrameRate(anim objc.ID, maxFPS int) {
+	if anim == 0 || !objc.Send[bool](anim, sel("respondsToSelector:"), selSetPreferredFrameRateRange) {
+		return
+	}
+	if maxFPS <= 0 {
+		maxFPS = 120
+	}
+	top := float32(maxFPS)
+	low := min(float32(80), top)
+	anim.Send(selSetPreferredFrameRateRange, CAFrameRateRange{
+		Minimum:   low,
+		Maximum:   top,
+		Preferred: top,
+	})
 }
 
 // LinkFrameTime returns when the frame of a display link (a CADisplayLink, or the one an NSView makes) will show, its targetTimestamp, on time.Now's base: a frame's time for engine.Engine.FrameAt, from within the link's callback.
